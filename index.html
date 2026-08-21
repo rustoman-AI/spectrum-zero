@@ -1,0 +1,2528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Spectrum Zero</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #000; touch-action: none; }
+canvas { display: block; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<script src="./vendor/three.min.js"></script>
+<script>
+// THREE is available as a global from the vendor script above
+
+// === src/config.js ===
+// ============================================================
+// src/config.js — All balance numbers and world dimensions
+// Tune ONLY this file. No magic numbers elsewhere.
+// ============================================================
+
+// --- World ---
+const WORLD_HEIGHT = 100;
+// Width is derived from aspect ratio at runtime; portrait ~56 at 9:16
+
+// --- Layout (Y positions, origin at centre, Y-up) ---
+// Zone order top-to-bottom: Aperture -> Mirror Field -> Foundry Band -> Breach Line -> Enemy Zone
+const APERTURE_Y = 45;          // beam source (top)
+const MIRROR_FIELD_TOP = 25;    // top of mirror sockets
+const MIRROR_FIELD_BOT = -5;    // bottom of mirror sockets
+const FOUNDRY_Y = -15;          // foundry band centre (between mirrors and enemies)
+const BREACH_Y = -24;           // enemies breach here = lose a heart
+const ENEMY_SPAWN_Y = -48;      // where enemies appear (bottom)
+const ENEMY_LANE_COUNT = 5;
+const LENS_Y = BREACH_Y;        // alias for breach threshold
+
+// --- Enemy travel time ---
+// Mote crosses spawn-to-breach in this many seconds during Phase 1.
+// Speeds for other types are ratios of this.
+const MOTE_TRAVEL_TIME_S = 8;
+// Distance from spawn to breach
+const ENEMY_TRAVEL_DIST = BREACH_Y - ENEMY_SPAWN_Y; // positive (24 units)
+
+// --- Beam ---
+const MAX_BOUNCES = 8;
+const MAX_SEGMENTS = 12;
+const BEAM_WIDTH = 1.2;        // world units, visual width of quad
+const BEAM_GLOW_WIDTH = 2.4;   // wider glow layer behind
+// Total spread between outer bands in degrees. Each outer band deviates by half this.
+const PRISM_SPREAD_DEG = 20;
+const PRISM_SPLIT_ANGLE = (PRISM_SPREAD_DEG / 2) * (Math.PI / 180); // radians per outer band
+
+// --- Damage ---
+const D_BASE = 10;
+const SYNERGY_BONUS = 0.3;
+// DPS = N * D_BASE * (1 + SYNERGY_BONUS * (N - 1))
+// final = max(0, DPS - armour * N)
+
+// --- Enemy base stats (at t=0) ---
+// Speeds derived from MOTE_TRAVEL_TIME_S so travel time is tunable.
+// Mote is fastest, others are ratios.
+const ENEMY_TYPES = {
+  mote:      { hp: 30,   armour: 0, speed: ENEMY_TRAVEL_DIST / MOTE_TRAVEL_TIME_S,       reward: 5  },
+  husk:      { hp: 100,  armour: 0, speed: ENEMY_TRAVEL_DIST / (MOTE_TRAVEL_TIME_S * 1.5), reward: 10 },
+  carapace:  { hp: 200,  armour: 2, speed: ENEMY_TRAVEL_DIST / (MOTE_TRAVEL_TIME_S * 2),   reward: 20 },
+  devourer:  { hp: 1500, armour: 4, speed: ENEMY_TRAVEL_DIST / (MOTE_TRAVEL_TIME_S * 4),   reward: 0  },
+};
+
+// --- Escalation ---
+// hp_multiplier = 1 + (t / 900) * 3
+const ESCALATION_HP_FACTOR = 3;
+const SESSION_DURATION = 900;  // seconds (15 minutes)
+
+// --- Foundry rates ---
+const FORGE_SLAG_PER_SEC = 4;
+const LENS_INSIGHT_PER_SEC = 3;
+const CHORUS_RECOMBO_PER_SEC = 1.5; // percent per second
+const CHORUS_SLOW_FACTOR = 0.5;
+
+// --- Foundry positions (Option 2: off default band paths, absorption) ---
+// Forge=-15, Lens=+14, Chorus=+22, hw=5
+// Gold band at 10deg hits x=7 at y=-15.2. Lens left edge must be > 7 at that y.
+// Lens at x=14: left edge x=9. Gold reaches x=9 at y=-26.5 (below foundry). MISS.
+// All bands miss all foundries on load. Each reachable with one mirror.
+const FOUNDRY_POSITIONS = [
+  { x: -15, type: 'forge',     colour: 0xff8c1a },  // Amber
+  { x:  14, type: 'lensworks', colour: 0x00ddff },  // Cyan
+  { x:  22, type: 'chorus',    colour: 0xffe9a0 },  // Gold
+];
+const FOUNDRY_HW = 5;
+const FOUNDRY_HH = 3;
+
+// --- Crafting costs ---
+const CRAFT_PRISM      = { slag: 25, insight: 10 };
+const CRAFT_REPAIR     = { slag: 15, insight: 0  };
+const CRAFT_REINFORCED = { slag: 40, insight: 0  };
+const CRAFT_IGNITION   = { slag: 20, insight: 0  };
+const CRAFT_FOCUS      = { slag: 0,  insight: 30 };
+const CRAFT_ANCHOR     = { slag: 0,  insight: 25 };
+
+// --- Focus buff ---
+const FOCUS_DAMAGE_MULT = 0.15; // +15% per Focus purchased
+
+// --- Mirror ---
+const MIRROR_MAX_HITS = 3;      // shatters after 3 hits
+const MIRROR_COUNT_START = 4;
+const MIRROR_TWEEN_MS = 120;    // ease-out snap duration when landing in a socket
+const ROTATION_SENSITIVITY = 1.0; // multiplier on swipe-to-angle conversion
+
+// --- Sockets (generic grid, holds mirror or prism) ---
+// 3 columns x 4 rows = 12 sockets in the mirror field (y: 22 to -2).
+//
+// DEFAULT PATH (zero player input):
+//   Beam falls from aperture (0, 45) straight down.
+//   Hits PRISM at socket 1 (0, 22) near the top.
+//   Splits into 3 bands diverging ~10deg each, all traveling downward
+//   through the mirror field, through the foundry band, into enemy zone.
+//
+//   Canonical segments after init + 1 frame:
+//     WHT: (0, 45) -> (0, ~24.5)      source to prism edge
+//     AMB: (0, ~24.5) -> (~-13, -50)   diverges left to bottom
+//     CYN: (0, ~24.5) -> (0, -50)      straight down through centre
+//     GLD: (0, ~24.5) -> (~13, -50)    diverges right to bottom
+//
+const SOCKET_POSITIONS = [
+  // Row 1 (top of mirror field, y=22)
+  [-15, 22], [0, 22], [15, 22],
+  // Row 2 (y=12)
+  [-15, 12], [0, 12], [15, 12],
+  // Row 3 (y=2)
+  [-15, 2],  [0, 2],  [15, 2],
+  // Row 4 (bottom of mirror field, y=-2, above foundry band)
+  [-15, -2], [0, -2], [15, -2],
+];
+
+// Default object placement:
+// Prism goes in socket 1 (0, 22) — directly below aperture.
+// Mirrors go in sockets 3, 5, 9, 11 — sides, out of the beam path.
+const DEFAULT_PRISM_SOCKET = 1;
+const DEFAULT_MIRROR_SOCKETS = [3, 5, 9, 11];
+
+// --- Phase timings (seconds) ---
+const PHASE_1_END = 240;   // 4:00
+const PHASE_2_END = 600;   // 10:00
+const PHASE_3_END = 840;   // 14:00
+// Phase 4 runs from 840 to 900
+
+// --- Drift (Phase 3+) ---
+const DRIFT_AMPLITUDE = 12;     // max x offset
+const DRIFT_SPEED = 0.4;        // oscillation speed
+
+// --- Source dim (Phase 4) ---
+const SOURCE_DIM_WIDTH = 0.6;   // 60% beam width in phase 4
+
+// --- Pool sizes ---
+const ENEMY_POOL_SIZE = 64;
+const BEAM_SEGMENT_POOL_SIZE = 16;  // slightly above MAX_SEGMENTS for glow layers
+const PARTICLE_POOL_SIZE = 32;
+
+// --- Colours ---
+const COLOUR_WHITE = 0xffffff;
+const COLOUR_AMBER = 0xff8c1a;  // warm orange, distinct from gold
+const COLOUR_CYAN  = 0x00ddff;
+const COLOUR_GOLD  = 0xffe9a0;  // pale white-gold, thinner + pulses
+const COLOUR_GREY  = 0x333333;
+
+
+// === src/renderer.js ===
+// ============================================================
+// src/renderer.js — Three.js scene, orthographic camera, resize
+// Fixed 9:16 portrait render target with letterboxing.
+// Two-pass rendering: main scene + overlay scene (always on top).
+// ============================================================
+
+
+
+const TARGET_ASPECT = 9 / 16;
+
+let scene, camera, renderer, worldWidth;
+// Overlay scene renders on top of main scene (second pass, no depth issues)
+let overlayScene, overlayCamera;
+
+function initRenderer() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0a0a0a);
+
+  worldWidth = WORLD_HEIGHT * TARGET_ASPECT;
+  const hw = worldWidth / 2;
+  const hh = WORLD_HEIGHT / 2;
+
+  camera = new THREE.OrthographicCamera(-hw, hw, hh, -hh, 0.1, 100);
+  camera.position.z = 50;
+
+  // Overlay scene (no background, renders on top)
+  overlayScene = new THREE.Scene();
+  overlayCamera = new THREE.OrthographicCamera(-hw, hw, hh, -hh, 0.1, 100);
+  overlayCamera.position.z = 50;
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.autoClear = false; // we manage clearing manually for two-pass
+  document.body.appendChild(renderer.domElement);
+
+  applyLetterbox();
+  window.addEventListener('resize', applyLetterbox);
+}
+
+function applyLetterbox() {
+  const winW = window.innerWidth;
+  const winH = window.innerHeight;
+  const winAspect = winW / winH;
+
+  let canvasW, canvasH;
+  if (winAspect > TARGET_ASPECT) {
+    canvasH = winH;
+    canvasW = Math.floor(winH * TARGET_ASPECT);
+  } else {
+    canvasW = winW;
+    canvasH = Math.floor(winW / TARGET_ASPECT);
+  }
+
+  renderer.setSize(canvasW, canvasH);
+
+  const el = renderer.domElement;
+  el.style.position = 'absolute';
+  el.style.left = Math.floor((winW - canvasW) / 2) + 'px';
+  el.style.top = Math.floor((winH - canvasH) / 2) + 'px';
+}
+
+function getScene() { return scene; }
+function getOverlayScene() { return overlayScene; }
+function getCamera() { return camera; }
+function getRenderer() { return renderer; }
+function getWorldWidth() { return worldWidth; }
+
+function render() {
+  renderer.clear();
+  renderer.render(scene, camera);
+  // Second pass: overlay scene renders on top without clearing
+  renderer.clearDepth();
+  renderer.render(overlayScene, overlayCamera);
+}
+
+function screenToWorld(sx, sy) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  const nx = ((sx - rect.left) / rect.width) * 2 - 1;
+  const ny = -((sy - rect.top) / rect.height) * 2 + 1;
+  const hw = worldWidth / 2;
+  const hh = WORLD_HEIGHT / 2;
+  return { x: nx * hw, y: ny * hh };
+}
+
+
+// === src/beam.js ===
+// ============================================================
+// src/beam.js — Iterative raycast beam solver
+//
+// Solves the beam path from the aperture through mirrors and
+// prisms. Produces a flat segment list consumed by beam-render.
+//
+// Recomputed ONLY when dirty flag is true (event-driven).
+//
+// Mirrors are DOUBLE-SIDED: if a beam hits from behind, the
+// normal is flipped so reflection always works regardless of
+// approach direction. This is a deliberate design decision —
+// beams cannot pass through a mirror from any side.
+// ============================================================
+
+
+
+// Segment: { start, end, colour, intensity, bounces }
+let segments = [];
+let dirty = true;
+
+// Diagnostics — read by debug overlay
+let maxBouncesUsed = 0;
+let hitBounceCap = false;
+
+function markDirty() { dirty = true; }
+function isDirty() { return dirty; }
+function getSegments() { return segments; }
+function getBeamDiag() { return { maxBouncesUsed, hitBounceCap }; }
+
+// Called by main loop when dirty
+function solve(sourceX, sourceY, mirrors, prisms, worldWidth, foundryColliders) {
+  segments = [];
+  maxBouncesUsed = 0;
+  hitBounceCap = false;
+  const dir = { x: 0, y: -1 };
+  traceBeam(
+    { x: sourceX, y: sourceY },
+    dir,
+    COLOUR_WHITE,
+    1.0,
+    mirrors,
+    prisms,
+    foundryColliders || [],
+    worldWidth,
+    MAX_BOUNCES,
+    null,
+    0
+  );
+  dirty = false;
+}
+
+function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft, excludePrism, bouncesUsed) {
+  if (segments.length >= MAX_SEGMENTS) return;
+  if (bouncesLeft < 0) {
+    hitBounceCap = true;
+    return;
+  }
+
+  const hit = castRay(origin, direction, mirrors, prisms, foundryColliders, worldWidth, excludePrism);
+
+  segments.push({
+    start: { x: origin.x, y: origin.y },
+    end: { x: hit.point.x, y: hit.point.y },
+    colour,
+    intensity,
+    bounces: bouncesUsed
+  });
+
+  if (hit.type === 'mirror' && bouncesLeft > 0) {
+    // -------------------------------------------------------
+    // Reflection math (double-sided):
+    // Given incident direction d and surface normal n,
+    // reflected direction r = d - 2*(d·n)*n
+    //
+    // If d·n > 0, beam is hitting from behind — flip n so
+    // reflection works correctly from either side.
+    // -------------------------------------------------------
+    let n = { x: hit.normal.x, y: hit.normal.y };
+    const dot = direction.x * n.x + direction.y * n.y;
+    // Flip normal if beam approaches from behind
+    if (dot > 0) {
+      n.x = -n.x;
+      n.y = -n.y;
+    }
+    const dotFixed = direction.x * n.x + direction.y * n.y;
+    const reflected = {
+      x: direction.x - 2 * dotFixed * n.x,
+      y: direction.y - 2 * dotFixed * n.y
+    };
+    // Normalise to avoid drift
+    const len = Math.sqrt(reflected.x * reflected.x + reflected.y * reflected.y);
+    reflected.x /= len;
+    reflected.y /= len;
+
+    const newBounces = bouncesUsed + 1;
+    if (newBounces > maxBouncesUsed) maxBouncesUsed = newBounces;
+
+    traceBeam(hit.point, reflected, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, null, newBounces);
+
+  } else if (hit.type === 'prism') {
+    if (colour === COLOUR_WHITE) {
+      const bands = [
+        { colour: COLOUR_AMBER, angleOffset: -PRISM_SPLIT_ANGLE },
+        { colour: COLOUR_CYAN,  angleOffset: 0 },
+        { colour: COLOUR_GOLD,  angleOffset: PRISM_SPLIT_ANGLE },
+      ];
+      for (const band of bands) {
+        if (segments.length >= MAX_SEGMENTS) break;
+        const newDir = rotateVec(direction, band.angleOffset);
+        traceBeam(hit.point, newDir, band.colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, hit.object, bouncesUsed);
+      }
+    } else {
+      // Second prism on a coloured band: split into two weaker sub-rays
+      const subRays = [
+        { angleOffset: -PRISM_SPLIT_ANGLE * 0.5 },
+        { angleOffset: PRISM_SPLIT_ANGLE * 0.5 },
+      ];
+      for (const sub of subRays) {
+        if (segments.length >= MAX_SEGMENTS) break;
+        const newDir = rotateVec(direction, sub.angleOffset);
+        traceBeam(hit.point, newDir, colour, intensity * 0.5, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, hit.object, bouncesUsed);
+      }
+    }
+  }
+  // else: beam terminates (edge, foundry, enemy)
+}
+
+// Cast a ray and find the nearest intersection
+function castRay(origin, direction, mirrors, prisms, foundryColliders, worldWidth, excludePrism) {
+  let nearest = null;
+  let nearestDist = Infinity;
+
+  // Test mirrors
+  for (const mirror of mirrors) {
+    if (mirror.shattered) continue;
+    const result = raySegmentIntersect(origin, direction, mirror.p1, mirror.p2);
+    if (result && result.dist > 0.1 && result.dist < nearestDist) {
+      nearestDist = result.dist;
+      nearest = { type: 'mirror', point: result.point, normal: mirror.normal, object: mirror };
+    }
+  }
+
+  // Test prisms
+  for (const prism of prisms) {
+    if (prism === excludePrism) continue;
+    const result = rayCircleIntersect(origin, direction, prism.position, prism.radius);
+    if (result && result.dist > 0.1 && result.dist < nearestDist) {
+      nearestDist = result.dist;
+      nearest = { type: 'prism', point: result.point, normal: null, object: prism };
+    }
+  }
+
+  // Test foundries (absorbing — beam terminates here)
+  for (const fnd of foundryColliders) {
+    const result = rayAABBIntersect(origin, direction, fnd.x, fnd.y, FOUNDRY_HW, FOUNDRY_HH);
+    if (result && result.dist > 0.1 && result.dist < nearestDist) {
+      nearestDist = result.dist;
+      nearest = { type: 'foundry', point: result.point, normal: null, object: fnd };
+    }
+  }
+
+  // Test world bounds
+  const edgeHit = rayBoundsIntersect(origin, direction, worldWidth);
+  if (edgeHit && edgeHit.dist > 0.1 && edgeHit.dist < nearestDist) {
+    nearestDist = edgeHit.dist;
+    nearest = { type: 'edge', point: edgeHit.point, normal: null, object: null };
+  }
+
+  if (!nearest) {
+    nearest = {
+      type: 'edge',
+      point: { x: origin.x + direction.x * 200, y: origin.y + direction.y * 200 },
+      normal: null,
+      object: null
+    };
+  }
+
+  return nearest;
+}
+
+// Ray vs AABB intersection (for foundries)
+// Returns first intersection point with the box boundary
+function rayAABBIntersect(origin, dir, cx, cy, hw, hh) {
+  const xmin = cx - hw, xmax = cx + hw;
+  const ymin = cy - hh, ymax = cy + hh;
+  let tmin = -Infinity, tmax = Infinity;
+
+  if (Math.abs(dir.x) < 1e-8) {
+    if (origin.x < xmin || origin.x > xmax) return null;
+  } else {
+    let t1 = (xmin - origin.x) / dir.x;
+    let t2 = (xmax - origin.x) / dir.x;
+    if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
+    tmin = Math.max(tmin, t1);
+    tmax = Math.min(tmax, t2);
+    if (tmin > tmax) return null;
+  }
+
+  if (Math.abs(dir.y) < 1e-8) {
+    if (origin.y < ymin || origin.y > ymax) return null;
+  } else {
+    let t1 = (ymin - origin.y) / dir.y;
+    let t2 = (ymax - origin.y) / dir.y;
+    if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
+    tmin = Math.max(tmin, t1);
+    tmax = Math.min(tmax, t2);
+    if (tmin > tmax) return null;
+  }
+
+  // tmin is the entry point
+  if (tmin < 0.1) tmin = tmax; // if inside the box, use exit
+  if (tmin < 0.1) return null;
+  return {
+    dist: tmin,
+    point: { x: origin.x + dir.x * tmin, y: origin.y + dir.y * tmin }
+  };
+}
+
+// Ray vs line segment intersection (for mirrors)
+// Ray: P = origin + t * direction, t > 0
+// Segment: from A to B
+function raySegmentIntersect(origin, dir, A, B) {
+  const dx = B.x - A.x;
+  const dy = B.y - A.y;
+  const denom = dir.x * dy - dir.y * dx;
+  if (Math.abs(denom) < 1e-8) return null; // parallel
+
+  const ox = A.x - origin.x;
+  const oy = A.y - origin.y;
+  const t = (ox * dy - oy * dx) / denom;
+  const u = (ox * dir.y - oy * dir.x) / denom;
+
+  if (t > 0 && u >= 0 && u <= 1) {
+    return {
+      dist: t,
+      point: { x: origin.x + dir.x * t, y: origin.y + dir.y * t }
+    };
+  }
+  return null;
+}
+
+// Ray vs circle intersection (for prisms)
+function rayCircleIntersect(origin, dir, centre, radius) {
+  const ocx = origin.x - centre.x;
+  const ocy = origin.y - centre.y;
+  const a = dir.x * dir.x + dir.y * dir.y;
+  const b = 2 * (ocx * dir.x + ocy * dir.y);
+  const c = ocx * ocx + ocy * ocy - radius * radius;
+  const disc = b * b - 4 * a * c;
+  if (disc < 0) return null;
+  const sqrtDisc = Math.sqrt(disc);
+  let t = (-b - sqrtDisc) / (2 * a);
+  if (t < 0.1) t = (-b + sqrtDisc) / (2 * a);
+  if (t < 0.1) return null;
+  return {
+    dist: t,
+    point: { x: origin.x + dir.x * t, y: origin.y + dir.y * t }
+  };
+}
+
+// Ray vs world bounds (rectangle from -hw to hw, -hh to hh)
+function rayBoundsIntersect(origin, dir, worldWidth) {
+  const hw = worldWidth / 2;
+  const hh = WORLD_HEIGHT / 2;
+  let tMin = Infinity;
+  let hitPoint = null;
+
+  const edges = [
+    { axis: 'x', val: -hw },
+    { axis: 'x', val: hw },
+    { axis: 'y', val: -hh },
+    { axis: 'y', val: hh },
+  ];
+
+  for (const edge of edges) {
+    let t;
+    if (edge.axis === 'x') {
+      if (Math.abs(dir.x) < 1e-8) continue;
+      t = (edge.val - origin.x) / dir.x;
+      if (t > 0.1 && t < tMin) {
+        const y = origin.y + dir.y * t;
+        if (y >= -hh && y <= hh) {
+          tMin = t;
+          hitPoint = { x: edge.val, y };
+        }
+      }
+    } else {
+      if (Math.abs(dir.y) < 1e-8) continue;
+      t = (edge.val - origin.y) / dir.y;
+      if (t > 0.1 && t < tMin) {
+        const x = origin.x + dir.x * t;
+        if (x >= -hw && x <= hw) {
+          tMin = t;
+          hitPoint = { x, y: edge.val };
+        }
+      }
+    }
+  }
+
+  if (hitPoint) return { dist: tMin, point: hitPoint };
+  return null;
+}
+
+// Rotate a 2D vector by angle (radians)
+function rotateVec(v, angle) {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  return {
+    x: v.x * cos - v.y * sin,
+    y: v.x * sin + v.y * cos
+  };
+}
+
+
+// === src/beam-render.js ===
+// ============================================================
+// src/beam-render.js — Quad mesh pool for beam segment rendering
+//
+// Each segment is a textured quad with additive blending.
+// A second wider quad behind provides soft glow.
+// Pool is pre-allocated; unused meshes are hidden.
+//
+// Width encodes power: thicker = stronger beam.
+// Gold band renders thinner and pulses slowly.
+// ============================================================
+
+
+
+
+const meshes = [];      // { core: Mesh, glow: Mesh }
+let poolReady = false;
+let pulseTime = 0;
+
+// Gold is rendered at 60% width of other bands to be visually distinct
+const GOLD_WIDTH_FACTOR = 0.6;
+
+function initBeamRenderer() {
+  const scene = getScene();
+  for (let i = 0; i < BEAM_SEGMENT_POOL_SIZE; i++) {
+    const core = createQuadMesh(1.0);
+    const glow = createQuadMesh(0.35);
+    core.visible = false;
+    glow.visible = false;
+    // Beams render behind objects (z < 0)
+    glow.position.z = -0.5;
+    core.position.z = -0.3;
+    scene.add(glow);
+    scene.add(core);
+    meshes.push({ core, glow });
+  }
+  poolReady = true;
+}
+
+function updateBeamPulse(dt) {
+  pulseTime += dt;
+}
+
+function rebuildBeams(segments) {
+  if (!poolReady) return;
+
+  for (let i = 0; i < BEAM_SEGMENT_POOL_SIZE; i++) {
+    const entry = meshes[i];
+    if (i < segments.length) {
+      const seg = segments[i];
+
+      // Width proportional to intensity: full=1.0, halved sub-ray=0.5
+      let widthMult = seg.intensity;
+      // Gold is thinner
+      if (seg.colour === COLOUR_GOLD) widthMult *= GOLD_WIDTH_FACTOR;
+      // Gold pulses: opacity oscillates 0.7–1.0
+      let opacityMult = 1.0;
+      if (seg.colour === COLOUR_GOLD) {
+        opacityMult = 0.7 + 0.3 * Math.sin(pulseTime * 2.5);
+      }
+
+      const coreW = BEAM_WIDTH * widthMult;
+      const glowW = BEAM_GLOW_WIDTH * widthMult;
+
+      positionQuad(entry.core, seg.start, seg.end, coreW);
+      positionQuad(entry.glow, seg.start, seg.end, glowW);
+      setQuadColour(entry.core, seg.colour, seg.intensity * opacityMult);
+      setQuadColour(entry.glow, seg.colour, seg.intensity * 0.35 * opacityMult);
+      entry.core.visible = true;
+      entry.glow.visible = true;
+    } else {
+      entry.core.visible = false;
+      entry.glow.visible = false;
+    }
+  }
+}
+
+function createQuadMesh(opacity) {
+  const geo = new THREE.PlaneGeometry(1, 1);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  return new THREE.Mesh(geo, mat);
+}
+
+function positionQuad(mesh, start, end, width) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = Math.sqrt(dx * dx + dy * dy);
+  const angle = Math.atan2(dy, dx);
+
+  mesh.position.x = (start.x + end.x) / 2;
+  mesh.position.y = (start.y + end.y) / 2;
+
+  mesh.scale.x = length;
+  mesh.scale.y = width;
+
+  mesh.rotation.z = angle;
+}
+
+function setQuadColour(mesh, colour, intensity) {
+  mesh.material.color.setHex(colour);
+  mesh.material.opacity = Math.min(1.0, intensity);
+}
+
+
+// === src/mirror.js ===
+// ============================================================
+// src/mirror.js — Mirror objects, generic socket system, tweens
+// ============================================================
+
+
+
+
+
+const sockets = [];
+const mirrors = [];
+let mirrorMeshGroup = null;
+
+const MIRROR_LENGTH = 8;
+const MIRROR_THICKNESS = 1;
+
+// Active tweens: { mirror, fromX, fromY, toX, toY, elapsed, duration }
+const tweens = [];
+
+function initSockets() {
+  sockets.length = 0;
+  for (let i = 0; i < SOCKET_POSITIONS.length; i++) {
+    sockets.push({ type: null, objectRef: null });
+  }
+}
+
+function getSockets() { return sockets; }
+function getSocketPositions() { return SOCKET_POSITIONS; }
+function getMirrors() { return mirrors; }
+
+function initMirrors() {
+  const scene = getScene();
+  mirrors.length = 0;
+  tweens.length = 0;
+  mirrorMeshGroup = new THREE.Group();
+  scene.add(mirrorMeshGroup);
+
+  for (let i = 0; i < MIRROR_COUNT_START; i++) {
+    const socketIdx = DEFAULT_MIRROR_SOCKETS[i];
+    const mirror = createMirror(socketIdx);
+    mirrors.push(mirror);
+    sockets[socketIdx].type = 'mirror';
+    sockets[socketIdx].objectRef = mirror;
+  }
+
+  for (let i = 0; i < SOCKET_POSITIONS.length; i++) {
+    const [sx, sy] = SOCKET_POSITIONS[i];
+    const indicator = new THREE.Mesh(
+      new THREE.RingGeometry(1.5, 1.8, 16),
+      new THREE.MeshBasicMaterial({ color: 0x222222, transparent: true, opacity: 0.5 })
+    );
+    indicator.position.set(sx, sy, -1.0);
+    mirrorMeshGroup.add(indicator);
+  }
+}
+
+function createMirror(socketIndex) {
+  const [sx, sy] = SOCKET_POSITIONS[socketIndex];
+  const angle = Math.PI / 4;
+
+  const geo = new THREE.PlaneGeometry(MIRROR_LENGTH, MIRROR_THICKNESS);
+  const mat = new THREE.MeshBasicMaterial({ color: 0x8888cc });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(sx, sy, 0);
+  mesh.rotation.z = angle;
+  mirrorMeshGroup.add(mesh);
+
+  return {
+    id: socketIndex,
+    socketIndex,
+    angle,
+    hits: 0,
+    shattered: false,
+    reinforced: false,
+    anchored: false,
+    mesh,
+    p1: { x: 0, y: 0 },
+    p2: { x: 0, y: 0 },
+    normal: { x: 0, y: 0 },
+    length: MIRROR_LENGTH,
+  };
+}
+
+function updateMirrorGeometry(mirror) {
+  const [sx, sy] = SOCKET_POSITIONS[mirror.socketIndex];
+  const halfLen = mirror.length / 2;
+  const cos = Math.cos(mirror.angle);
+  const sin = Math.sin(mirror.angle);
+
+  mirror.p1 = { x: sx - halfLen * cos, y: sy - halfLen * sin };
+  mirror.p2 = { x: sx + halfLen * cos, y: sy + halfLen * sin };
+  mirror.normal = { x: -sin, y: cos };
+
+  mirror.mesh.position.set(sx, sy, 0);
+  mirror.mesh.rotation.z = mirror.angle;
+}
+
+// --- Tween system ---
+
+// Ease-out cubic: decelerates to zero
+function easeOut(t) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+// Start a tween from current visual position to target socket
+function startTween(mirror, fromX, fromY) {
+  const [toX, toY] = SOCKET_POSITIONS[mirror.socketIndex];
+  // Remove any existing tween for this mirror
+  for (let i = tweens.length - 1; i >= 0; i--) {
+    if (tweens[i].mirror === mirror) tweens.splice(i, 1);
+  }
+  tweens.push({
+    mirror,
+    fromX, fromY,
+    toX, toY,
+    elapsed: 0,
+    duration: MIRROR_TWEEN_MS / 1000
+  });
+}
+
+// Called from main loop each frame. Returns true if any tween is active.
+function updateMirrorTweens(dt) {
+  let anyActive = false;
+  for (let i = tweens.length - 1; i >= 0; i--) {
+    const tw = tweens[i];
+    tw.elapsed += dt;
+    const t = Math.min(tw.elapsed / tw.duration, 1);
+    const e = easeOut(t);
+
+    const x = tw.fromX + (tw.toX - tw.fromX) * e;
+    const y = tw.fromY + (tw.toY - tw.fromY) * e;
+    tw.mirror.mesh.position.x = x;
+    tw.mirror.mesh.position.y = y;
+
+    // During tween, update geometry based on interpolated position
+    // so beam sweeps smoothly
+    const halfLen = tw.mirror.length / 2;
+    const cos = Math.cos(tw.mirror.angle);
+    const sin = Math.sin(tw.mirror.angle);
+    tw.mirror.p1 = { x: x - halfLen * cos, y: y - halfLen * sin };
+    tw.mirror.p2 = { x: x + halfLen * cos, y: y + halfLen * sin };
+    tw.mirror.normal = { x: -sin, y: cos };
+
+    markDirty(); // re-solve beam every frame during tween
+    anyActive = true;
+
+    if (t >= 1) {
+      // Tween complete — snap to final position
+      updateMirrorGeometry(tw.mirror);
+      tweens.splice(i, 1);
+    }
+  }
+  return anyActive;
+}
+
+// Move mirror to a new socket with tween
+function moveMirrorToSocket(mirror, newSocketIndex) {
+  const oldIndex = mirror.socketIndex;
+  const targetSocket = sockets[newSocketIndex];
+
+  // Capture current visual position for tween start
+  const fromX = mirror.mesh.position.x;
+  const fromY = mirror.mesh.position.y;
+
+  if (targetSocket.type !== null && targetSocket.objectRef !== mirror) {
+    const other = targetSocket.objectRef;
+    sockets[oldIndex].type = targetSocket.type;
+    sockets[oldIndex].objectRef = other;
+    if (other.socketIndex !== undefined) {
+      other.socketIndex = oldIndex;
+      const [ox, oy] = SOCKET_POSITIONS[oldIndex];
+      if (other.mesh) other.mesh.position.set(ox, oy, 0);
+      if (other.p1) updateMirrorGeometry(other);
+      if (other.position) {
+        other.position.x = ox;
+        other.position.y = oy;
+      }
+    }
+  } else {
+    sockets[oldIndex].type = null;
+    sockets[oldIndex].objectRef = null;
+  }
+
+  sockets[newSocketIndex].type = 'mirror';
+  sockets[newSocketIndex].objectRef = mirror;
+  mirror.socketIndex = newSocketIndex;
+
+  // Start tween from dragged position to target socket
+  startTween(mirror, fromX, fromY);
+  markDirty();
+}
+
+function rotateMirror(mirror, newAngle) {
+  mirror.angle = newAngle;
+  updateMirrorGeometry(mirror);
+  markDirty();
+}
+
+function damageMirror(mirror) {
+  if (mirror.shattered) return;
+  mirror.hits++;
+  if (mirror.hits >= MIRROR_MAX_HITS && !mirror.reinforced) {
+    mirror.shattered = true;
+    mirror.mesh.material.color.setHex(0x330000);
+    mirror.mesh.material.opacity = 0.3;
+    mirror.mesh.material.transparent = true;
+    markDirty();
+  } else {
+    const darkness = 1 - (mirror.hits / MIRROR_MAX_HITS) * 0.4;
+    mirror.mesh.material.color.setRGB(0.53 * darkness, 0.53 * darkness, 0.8 * darkness);
+  }
+}
+
+function repairMirror(mirror) {
+  mirror.hits = 0;
+  mirror.shattered = false;
+  mirror.mesh.material.color.setHex(0x8888cc);
+  mirror.mesh.material.opacity = 1.0;
+  mirror.mesh.material.transparent = false;
+  markDirty();
+}
+
+function updateAllMirrorGeometries() {
+  for (const mirror of mirrors) {
+    updateMirrorGeometry(mirror);
+  }
+}
+
+
+// === src/prism.js ===
+// ============================================================
+// src/prism.js — Prism object, uses generic socket grid
+// ============================================================
+
+
+
+
+
+
+const prisms = [];
+const PRISM_RADIUS = 2.5; // hit radius for beam intersection
+
+function getPrisms() { return prisms; }
+
+function initPrisms() {
+  prisms.length = 0;
+  // Place prism in default socket — directly below aperture
+  placePrism(DEFAULT_PRISM_SOCKET);
+}
+
+function placePrism(socketIndex) {
+  const scene = getScene();
+  const sockets = getSockets();
+  const [sx, sy] = SOCKET_POSITIONS[socketIndex];
+
+  // Visible equilateral triangle, point-up
+  const shape = new THREE.Shape();
+  const r = PRISM_RADIUS;
+  shape.moveTo(0, r);
+  shape.lineTo(-r * 0.866, -r * 0.5);
+  shape.lineTo(r * 0.866, -r * 0.5);
+  shape.closePath();
+
+  const geo = new THREE.ShapeGeometry(shape);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xeeeeff,
+    transparent: true,
+    opacity: 0.85,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(sx, sy, 0.2);
+  scene.add(mesh);
+
+  const prism = {
+    id: prisms.length,
+    socketIndex,
+    position: { x: sx, y: sy },
+    radius: PRISM_RADIUS,
+    mesh,
+  };
+
+  prisms.push(prism);
+  sockets[socketIndex].type = 'prism';
+  sockets[socketIndex].objectRef = prism;
+
+  markDirty();
+  return prism;
+}
+
+// Move prism to a new socket (swap if occupied)
+function movePrismToSocket(prism, newSocketIndex) {
+  const sockets = getSockets();
+  const oldIndex = prism.socketIndex;
+  const targetSocket = sockets[newSocketIndex];
+
+  if (targetSocket.type !== null && targetSocket.objectRef !== prism) {
+    // Swap
+    const other = targetSocket.objectRef;
+    sockets[oldIndex].type = targetSocket.type;
+    sockets[oldIndex].objectRef = other;
+    if (other.socketIndex !== undefined) {
+      other.socketIndex = oldIndex;
+      const [ox, oy] = SOCKET_POSITIONS[oldIndex];
+      if (other.mesh) other.mesh.position.set(ox, oy, 0);
+      // If it's a mirror, update its geometry
+      if (other.p1) {
+        updateMirrorGeometry(other);
+      }
+      if (other.position) {
+        other.position.x = ox;
+        other.position.y = oy;
+      }
+    }
+  } else {
+    sockets[oldIndex].type = null;
+    sockets[oldIndex].objectRef = null;
+  }
+
+  // Place prism in new socket
+  const [sx, sy] = SOCKET_POSITIONS[newSocketIndex];
+  sockets[newSocketIndex].type = 'prism';
+  sockets[newSocketIndex].objectRef = prism;
+  prism.socketIndex = newSocketIndex;
+  prism.position.x = sx;
+  prism.position.y = sy;
+  prism.mesh.position.set(sx, sy, 0);
+
+  markDirty();
+}
+
+
+// === src/enemy.js ===
+// ============================================================
+// src/enemy.js — Enemy pool with burn feedback
+//
+// Visual feedback:
+//  - Burn meter (bar above enemy) fills as HP drops
+//  - Body heats up in the beam colour as it burns
+//  - Kill effect: flash + slag number popup
+//  - Multi-band synergy: burn meter fills faster, visually brighter
+// ============================================================
+
+
+
+
+const pool = [];
+let enemyGroup = null;
+let breachLineMesh = null;
+
+// Kill effect pool (reusable popup meshes)
+const killPopups = [];
+const MAX_POPUPS = 8;
+
+function initEnemies() {
+  const scene = getScene();
+  enemyGroup = new THREE.Group();
+  scene.add(enemyGroup);
+
+  // Breach line
+  const worldWidth = getWorldWidth();
+  const lineGeo = new THREE.PlaneGeometry(worldWidth, 0.4);
+  const lineMat = new THREE.MeshBasicMaterial({ color: 0xff2222, transparent: true, opacity: 0.4 });
+  breachLineMesh = new THREE.Mesh(lineGeo, lineMat);
+  breachLineMesh.position.set(0, BREACH_Y, -0.8);
+  scene.add(breachLineMesh);
+
+  // Enemy pool
+  for (let i = 0; i < ENEMY_POOL_SIZE; i++) {
+    // Body mesh
+    const geo = new THREE.PlaneGeometry(3, 3);
+    const mat = new THREE.MeshBasicMaterial({ color: 0x666666 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.visible = false;
+    mesh.position.z = -0.2;
+
+    // Burn meter (wide bar above enemy, with dark backing)
+    const barBg = new THREE.Mesh(
+      new THREE.PlaneGeometry(5, 0.8),
+      new THREE.MeshBasicMaterial({ color: 0x111111 })
+    );
+    barBg.position.y = 2.5;
+    barBg.position.z = 0.1;
+    mesh.add(barBg);
+
+    const barFill = new THREE.Mesh(
+      new THREE.PlaneGeometry(5, 0.8),
+      new THREE.MeshBasicMaterial({ color: 0xff4400 })
+    );
+    barFill.position.y = 2.5;
+    barFill.position.z = 0.15;
+    barFill.scale.x = 0;
+    mesh.add(barFill);
+
+    enemyGroup.add(mesh);
+
+    pool.push({
+      active: false, type: 'mote',
+      hp: 0, maxHp: 0, armour: 0,
+      lane: 0, y: ENEMY_SPAWN_Y,
+      speed: 0, baseSpeed: 0,
+      burn: 0, slowed: false,
+      bandsHitting: 0, lastHitColour: 0,
+      mesh, barFill
+    });
+  }
+
+  // Kill popups
+  for (let i = 0; i < MAX_POPUPS; i++) {
+    const pCanvas = document.createElement('canvas');
+    pCanvas.width = 48; pCanvas.height = 20;
+    const pTex = new THREE.CanvasTexture(pCanvas);
+    pTex.minFilter = THREE.LinearFilter;
+    const pMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(5, 2),
+      new THREE.MeshBasicMaterial({ map: pTex, transparent: true, depthWrite: false })
+    );
+    pMesh.visible = false;
+    pMesh.position.z = 0.5;
+    scene.add(pMesh);
+    killPopups.push({ mesh: pMesh, canvas: pCanvas, tex: pTex, life: 0 });
+  }
+}
+
+function getEnemyPool() { return pool; }
+
+function spawnEnemy(type, lane, hpMultiplier) {
+  const template = ENEMY_TYPES[type];
+  if (!template) return null;
+  for (let i = 0; i < pool.length; i++) {
+    const e = pool[i];
+    if (!e.active) {
+      e.active = true;
+      e.type = type;
+      e.maxHp = template.hp * hpMultiplier;
+      e.hp = e.maxHp;
+      e.armour = template.armour;
+      e.lane = lane;
+      e.y = ENEMY_SPAWN_Y;
+      e.speed = template.speed;
+      e.baseSpeed = template.speed;
+      e.burn = 0;
+      e.slowed = false;
+      e.bandsHitting = 0;
+      e.lastHitColour = 0;
+      e.mesh.visible = true;
+      e.barFill.scale.x = 0;
+      positionEnemy(e);
+      updateEnemyVisual(e);
+      return e;
+    }
+  }
+  return null;
+}
+
+function updateEnemies(dt) {
+  let breaches = 0;
+  for (let i = 0; i < pool.length; i++) {
+    const e = pool[i];
+    if (!e.active) continue;
+    e.slowed = false;
+    e.y += e.speed * dt;
+    if (e.y >= BREACH_Y) {
+      deactivateEnemy(e);
+      breaches++;
+      continue;
+    }
+    positionEnemy(e);
+    updateEnemyVisual(e);
+  }
+  // Update kill popups
+  for (const p of killPopups) {
+    if (p.life > 0) {
+      p.life -= dt;
+      p.mesh.position.y += 8 * dt;
+      p.mesh.material.opacity = Math.max(0, p.life);
+      if (p.life <= 0) p.mesh.visible = false;
+    }
+  }
+  return breaches;
+}
+
+function applyGoldSlow(enemy) { enemy.slowed = true; }
+
+function applySlowStates() {
+  for (let i = 0; i < pool.length; i++) {
+    const e = pool[i];
+    if (!e.active) continue;
+    e.speed = e.slowed ? e.baseSpeed * 0.5 : e.baseSpeed;
+  }
+}
+
+function deactivateEnemy(enemy) {
+  enemy.active = false;
+  enemy.mesh.visible = false;
+}
+
+// Called from damage.js when an enemy is killed
+function triggerKillEffect(enemy, slagReward) {
+  // Flash: briefly brighten mesh before hiding
+  enemy.mesh.material.color.setHex(0xffffff);
+  // Spawn kill popup showing slag reward
+  for (const p of killPopups) {
+    if (p.life <= 0) {
+      const ctx = p.canvas.getContext('2d');
+      ctx.clearRect(0, 0, 48, 20);
+      ctx.fillStyle = '#ffaa00';
+      ctx.font = 'bold 14px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('+' + slagReward + 'S', 24, 15);
+      p.tex.needsUpdate = true;
+      p.mesh.position.x = enemy.mesh.position.x;
+      p.mesh.position.y = enemy.mesh.position.y + 3;
+      p.mesh.visible = true;
+      p.mesh.material.opacity = 1;
+      p.life = 0.8;
+      break;
+    }
+  }
+}
+
+function getActiveEnemies() { return pool.filter(e => e.active); }
+
+function resetEnemies() {
+  for (let i = 0; i < pool.length; i++) {
+    pool[i].active = false;
+    pool[i].mesh.visible = false;
+  }
+  for (const p of killPopups) { p.life = 0; p.mesh.visible = false; }
+}
+
+function positionEnemy(e) {
+  const worldWidth = getWorldWidth();
+  const laneWidth = worldWidth / ENEMY_LANE_COUNT;
+  const x = -worldWidth / 2 + laneWidth * (e.lane + 0.5);
+  e.mesh.position.x = x;
+  e.mesh.position.y = e.y;
+}
+
+function updateEnemyVisual(e) {
+  e.burn = Math.max(0, 1 - (e.hp / e.maxHp));
+  // Burn meter: wide, thick, anchored left
+  e.barFill.scale.x = e.burn;
+  e.barFill.position.x = -2.5 * (1 - e.burn);
+  // Body heats up IMMEDIATELY in the beam's colour (30% base tint + burn)
+  if (e.bandsHitting > 0 && e.lastHitColour !== 0) {
+    const r = ((e.lastHitColour >> 16) & 0xff) / 255;
+    const g = ((e.lastHitColour >> 8) & 0xff) / 255;
+    const b = (e.lastHitColour & 0xff) / 255;
+    const t = Math.min(0.3 + e.burn * 1.0, 1.0);
+    e.mesh.material.color.setRGB(
+      0.25 * (1 - t) + r * t,
+      0.2 * (1 - t) + g * t,
+      0.2 * (1 - t) + b * t
+    );
+    const barBright = Math.min(1, 0.5 + e.bandsHitting * 0.25);
+    e.barFill.material.color.setRGB(barBright, barBright * 0.4, 0);
+  } else {
+    const brightness = 0.35 + 0.15 * (1 - e.burn);
+    e.mesh.material.color.setRGB(brightness, brightness * 0.8, brightness * 0.8);
+    e.barFill.material.color.setHex(0xff4400);
+  }
+  const sizes = { mote: 2.5, husk: 3.5, carapace: 4.5, devourer: 8 };
+  const s = sizes[e.type] || 3;
+  e.mesh.scale.set(s / 3, s / 3, 1);
+}
+
+
+// === src/enemy-spawner.js ===
+// ============================================================
+// src/enemy-spawner.js — Spawn schedule, escalation curve
+//
+// Phase 1 (0:00–4:00): Motes only, interval ramps from 3.5s to 2.0s
+// Phase 2 (4:00–10:00): Husks + Carapaces, interval 1.8s
+// Phase 3+ (10:00+): heavier mix, interval 1.5s (M4 will refine)
+//
+// Initial delay: 3.0s (no enemies in the first few seconds)
+// Escalation: hp_multiplier = 1 + (t / 900) * 3
+// ============================================================
+
+
+
+
+// Interval bounds
+const PHASE1_INTERVAL_START = 3.5; // seconds, at t=0
+const PHASE1_INTERVAL_END = 2.0;   // seconds, at t=PHASE_1_END
+const PHASE2_INTERVAL = 1.8;
+const PHASE3_INTERVAL = 1.5;
+const INITIAL_DELAY = 3.0;         // no spawns before this
+
+let spawnTimer = 0;
+let spawnerElapsed = 0;
+let totalSpawns = 0;
+
+function getSpawnCount() { return totalSpawns; }
+function getCurrentInterval() { return getInterval(); }
+
+function updateSpawner(dt, sessionTime) {
+  spawnerElapsed = sessionTime;
+  spawnTimer -= dt;
+  if (spawnTimer <= 0 && spawnerElapsed >= INITIAL_DELAY) {
+    doSpawn();
+    totalSpawns++;
+    spawnTimer = getInterval();
+  }
+}
+
+function resetSpawner() {
+  spawnTimer = INITIAL_DELAY;
+  spawnerElapsed = 0;
+  totalSpawns = 0;
+}
+
+function getInterval() {
+  if (spawnerElapsed < PHASE_1_END) {
+    // Ramp: linearly interpolate from START to END over Phase 1
+    const t = (spawnerElapsed - INITIAL_DELAY) / (PHASE_1_END - INITIAL_DELAY);
+    const clamped = Math.max(0, Math.min(1, t));
+    return PHASE1_INTERVAL_START + (PHASE1_INTERVAL_END - PHASE1_INTERVAL_START) * clamped;
+  }
+  if (spawnerElapsed < PHASE_2_END) return PHASE2_INTERVAL;
+  return PHASE3_INTERVAL;
+}
+
+function doSpawn() {
+  const hpMult = getEscalationMultiplier(spawnerElapsed);
+  const lane = Math.floor(Math.random() * ENEMY_LANE_COUNT);
+
+  if (spawnerElapsed < PHASE_1_END) {
+    spawnEnemy('mote', lane, hpMult);
+  } else if (spawnerElapsed < PHASE_2_END) {
+    const roll = Math.random();
+    if (roll < 0.5) {
+      spawnEnemy('husk', lane, hpMult);
+    } else if (roll < 0.85) {
+      spawnEnemy('mote', lane, hpMult);
+    } else {
+      spawnEnemy('carapace', lane, hpMult);
+    }
+  } else {
+    const roll = Math.random();
+    if (roll < 0.3) {
+      spawnEnemy('carapace', lane, hpMult);
+    } else if (roll < 0.7) {
+      spawnEnemy('husk', lane, hpMult);
+    } else {
+      spawnEnemy('mote', lane, hpMult);
+    }
+  }
+}
+
+// hp_multiplier = 1 + (t / 900) * 3
+function getEscalationMultiplier(t) {
+  return 1 + (t / SESSION_DURATION) * ESCALATION_HP_FACTOR;
+}
+
+
+// === src/foundry.js ===
+// ============================================================
+// src/foundry.js — Foundries with visible absorption feedback
+//
+// When fed: glow at contact, body brightens, rate shown, ghost
+// path shows the defence the player gave up.
+// ============================================================
+
+
+
+
+
+let slag = 0;
+let insight = 0;
+let recombination = 0;
+
+const insightLog = [];
+function logInsight(delta, reason) {
+  insightLog.push({
+    t: typeof getElapsed === 'function' ? getElapsed().toFixed(2) : '?',
+    delta: delta.toFixed(3),
+    total: insight.toFixed(3),
+    reason
+  });
+  if (insightLog.length > 200) insightLog.shift();
+}
+function getInsightLog() { return insightLog; }
+
+const foundries = [];
+
+function getSlag() { return slag; }
+function getInsight() { return insight; }
+function getRecombination() { return recombination; }
+function spendSlag(amount) { if (amount > 0) slag -= amount; }
+function spendInsight(amount) {
+  if (amount > 0) {
+    insight -= amount;
+    logInsight(-amount, 'craft:' + amount);
+  }
+  if (insight < 0) { console.warn('[BUG] insight negative:', insight); insight = 0; }
+}
+function addSlagDirect(amount) { slag += amount; }
+
+function resetFoundries() {
+  slag = 0; insight = 0; recombination = 0;
+  logInsight(0, 'RESET');
+  for (const fnd of foundries) {
+    fnd.ghostMesh.visible = false;
+    fnd.glowMesh.visible = false;
+    fnd.rateMesh.visible = false;
+  }
+}
+
+function getFoundryColliders() {
+  return foundries.map(f => ({ x: f.x, y: f.y, type: f.type, colour: f.colour }));
+}
+
+function initFoundries() {
+  const scene = getScene();
+  slag = 0; insight = 0; recombination = 0;
+  foundries.length = 0;
+
+  for (let i = 0; i < FOUNDRY_POSITIONS.length; i++) {
+    const def = FOUNDRY_POSITIONS[i];
+    const x = def.x;
+    const y = FOUNDRY_Y;
+
+    // Body
+    const geo = new THREE.PlaneGeometry(FOUNDRY_HW * 2 - 1, FOUNDRY_HH * 2 - 0.5);
+    const mat = new THREE.MeshBasicMaterial({ color: def.colour, transparent: true, opacity: 0.25 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, y, -0.1);
+    scene.add(mesh);
+
+    // Border
+    const bGeo = new THREE.RingGeometry(FOUNDRY_HW - 0.3, FOUNDRY_HW + 0.1, 4);
+    const bMat = new THREE.MeshBasicMaterial({ color: def.colour, transparent: true, opacity: 0.5 });
+    const bMesh = new THREE.Mesh(bGeo, bMat);
+    bMesh.position.set(x, y, -0.05);
+    bMesh.rotation.z = Math.PI / 4;
+    scene.add(bMesh);
+
+    // Glow (visible when fed, at contact point)
+    const glowGeo = new THREE.PlaneGeometry(4, 4);
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: def.colour, transparent: true, opacity: 0.0,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    });
+    const glowMesh = new THREE.Mesh(glowGeo, glowMat);
+    glowMesh.position.set(x, y + FOUNDRY_HH, -0.02);
+    glowMesh.visible = false;
+    scene.add(glowMesh);
+
+    // Rate label (canvas texture, shown when fed)
+    const rCanvas = document.createElement('canvas');
+    rCanvas.width = 64; rCanvas.height = 20;
+    const rCtx = rCanvas.getContext('2d');
+    const rTex = new THREE.CanvasTexture(rCanvas);
+    rTex.minFilter = THREE.LinearFilter;
+    const rGeo = new THREE.PlaneGeometry(7, 2.2);
+    const rMat = new THREE.MeshBasicMaterial({ map: rTex, transparent: true, depthWrite: false });
+    const rateMesh = new THREE.Mesh(rGeo, rMat);
+    rateMesh.position.set(x, y - FOUNDRY_HH - 1.5, 0.3);
+    rateMesh.visible = false;
+    scene.add(rateMesh);
+
+    // Ghost path (shows where the band WOULD go if not absorbed)
+    // A faint dashed line from the foundry bottom edge to the screen bottom
+    const ghostGeo = new THREE.PlaneGeometry(0.8, WORLD_HEIGHT / 2 - Math.abs(y) - FOUNDRY_HH);
+    const ghostMat = new THREE.MeshBasicMaterial({
+      color: def.colour, transparent: true, opacity: 0.0, depthWrite: false
+    });
+    const ghostMesh = new THREE.Mesh(ghostGeo, ghostMat);
+    const ghostLen = WORLD_HEIGHT / 2 - Math.abs(y) - FOUNDRY_HH;
+    ghostMesh.position.set(x, y - FOUNDRY_HH - ghostLen / 2, -0.6);
+    ghostMesh.visible = false;
+    scene.add(ghostMesh);
+
+    // Label
+    const labels = { forge: 'FORGE', lensworks: 'LENS', chorus: 'CHORUS' };
+    const lCanvas = document.createElement('canvas');
+    lCanvas.width = 64; lCanvas.height = 24;
+    const lCtx = lCanvas.getContext('2d');
+    lCtx.fillStyle = '#ffffff';
+    lCtx.font = 'bold 14px monospace';
+    lCtx.textAlign = 'center';
+    lCtx.fillText(labels[def.type], 32, 16);
+    const lTex = new THREE.CanvasTexture(lCanvas);
+    lTex.minFilter = THREE.LinearFilter;
+    const lGeo = new THREE.PlaneGeometry(8, 3);
+    const lMat = new THREE.MeshBasicMaterial({ map: lTex, transparent: true, depthWrite: false });
+    const labelMesh = new THREE.Mesh(lGeo, lMat);
+    labelMesh.position.set(x, y + FOUNDRY_HH + 2, 0.3);
+    scene.add(labelMesh);
+
+    foundries.push({
+      type: def.type, colour: def.colour, x, y,
+      mesh, glowMesh, rateMesh, ghostMesh,
+      rCanvas, rCtx, rTex,
+      active: false, ghostFade: 0
+    });
+  }
+}
+
+function updateFoundries(dt) {
+  const segments = getSegments();
+
+  for (let f = 0; f < foundries.length; f++) {
+    const fnd = foundries[f];
+    const wasFed = fnd.active;
+    fnd.active = false;
+
+    for (let s = 0; s < segments.length; s++) {
+      const seg = segments[s];
+      const ex = seg.end.x;
+      const ey = seg.end.y;
+      if (ex >= fnd.x - FOUNDRY_HW && ex <= fnd.x + FOUNDRY_HW &&
+          ey >= fnd.y - FOUNDRY_HH && ey <= fnd.y + FOUNDRY_HH) {
+        if (seg.colour === fnd.colour || seg.colour === COLOUR_WHITE) {
+          fnd.active = true;
+          // Position glow at contact point
+          fnd.glowMesh.position.x = ex;
+          fnd.glowMesh.position.y = ey + 1;
+          break;
+        }
+      }
+    }
+
+    if (fnd.active) {
+      // Brighten body
+      fnd.mesh.material.opacity = 0.65;
+      // Show glow
+      fnd.glowMesh.visible = true;
+      fnd.glowMesh.material.opacity = 0.5 + 0.3 * Math.sin(performance.now() * 0.005);
+      // Show rate label
+      fnd.rateMesh.visible = true;
+      updateRateLabel(fnd);
+      // Show ghost path (the defence cost)
+      fnd.ghostMesh.visible = true;
+      fnd.ghostMesh.material.opacity = 0.15;
+      fnd.ghostFade = 1.0;
+
+      // Accumulate resources
+      if (fnd.type === 'forge') {
+        slag += FORGE_SLAG_PER_SEC * dt;
+      } else if (fnd.type === 'lensworks') {
+        const gain = LENS_INSIGHT_PER_SEC * dt;
+        insight += gain;
+        if (Math.floor(insight) !== Math.floor(insight - gain)) {
+          logInsight(gain, 'lens:tick');
+        }
+      } else if (fnd.type === 'chorus') {
+        recombination = Math.min(100, recombination + CHORUS_RECOMBO_PER_SEC * dt);
+      }
+    } else {
+      fnd.mesh.material.opacity = 0.25;
+      fnd.glowMesh.visible = false;
+      fnd.rateMesh.visible = false;
+      // Fade ghost path over 1 second after band leaves
+      if (fnd.ghostFade > 0) {
+        fnd.ghostFade -= dt;
+        fnd.ghostMesh.material.opacity = Math.max(0, fnd.ghostFade * 0.15);
+        if (fnd.ghostFade <= 0) fnd.ghostMesh.visible = false;
+      }
+    }
+  }
+}
+
+function updateRateLabel(fnd) {
+  const rates = { forge: '+4/s', lensworks: '+3/s', chorus: '+1.5%/s' };
+  fnd.rCtx.clearRect(0, 0, 64, 20);
+  fnd.rCtx.fillStyle = '#ffffff';
+  fnd.rCtx.font = 'bold 12px monospace';
+  fnd.rCtx.textAlign = 'center';
+  fnd.rCtx.fillText(rates[fnd.type], 32, 14);
+  fnd.rTex.needsUpdate = true;
+}
+
+
+// === src/crafting.js ===
+// ============================================================
+// src/crafting.js — Craft tray UI, purchase logic
+//
+// Rendered as a canvas-texture mesh INSIDE the 9:16 playfield,
+// at the very bottom of the screen (below enemy zone).
+// ============================================================
+
+
+
+
+
+
+
+
+const CRAFTS = [
+  { id: 'prism',      label: 'Prism',   slag: CRAFT_PRISM.slag,      insight: CRAFT_PRISM.insight },
+  { id: 'repair',     label: 'Repair',  slag: CRAFT_REPAIR.slag,     insight: CRAFT_REPAIR.insight },
+  { id: 'reinforced', label: 'Reinf.',  slag: CRAFT_REINFORCED.slag, insight: CRAFT_REINFORCED.insight },
+  { id: 'ignition',   label: 'Ignite',  slag: CRAFT_IGNITION.slag,   insight: CRAFT_IGNITION.insight },
+  { id: 'focus',      label: 'Focus',   slag: CRAFT_FOCUS.slag,      insight: CRAFT_FOCUS.insight },
+  { id: 'anchor',     label: 'Anchor',  slag: CRAFT_ANCHOR.slag,     insight: CRAFT_ANCHOR.insight },
+];
+
+let trayMesh = null;
+let trayCanvas = null;
+let trayCtx = null;
+let trayTexture = null;
+let trayY = 0;
+let trayWidth = 0;
+let trayHeight = 4;
+let focusCount = 0;
+
+function initCrafting() {
+  const oScene = getOverlayScene();
+  const worldWidth = getWorldWidth();
+  focusCount = 0;
+
+  trayWidth = worldWidth * 0.95;
+  trayY = -WORLD_HEIGHT / 2 + 3;
+
+  trayCanvas = document.createElement('canvas');
+  trayCanvas.width = 512;
+  trayCanvas.height = 40;
+  trayCtx = trayCanvas.getContext('2d');
+
+  trayTexture = new THREE.CanvasTexture(trayCanvas);
+  trayTexture.minFilter = THREE.LinearFilter;
+
+  const geo = new THREE.PlaneGeometry(trayWidth, trayHeight);
+  const mat = new THREE.MeshBasicMaterial({
+    map: trayTexture,
+    transparent: true,
+    depthWrite: false
+  });
+  trayMesh = new THREE.Mesh(geo, mat);
+  trayMesh.position.set(0, trayY, 0);
+  oScene.add(trayMesh);
+}
+
+function updateCraftingTray() {
+  if (!trayCtx) return;
+  const currentSlag = getSlag();
+  const currentInsight = getInsight();
+
+  trayCtx.clearRect(0, 0, 512, 40);
+  trayCtx.fillStyle = 'rgba(0,0,0,0.7)';
+  trayCtx.fillRect(0, 0, 512, 40);
+
+  const btnW = 512 / CRAFTS.length;
+  for (let i = 0; i < CRAFTS.length; i++) {
+    const c = CRAFTS[i];
+    const affordable = currentSlag >= c.slag && currentInsight >= c.insight;
+    const x = i * btnW;
+
+    trayCtx.fillStyle = affordable ? 'rgba(80,80,120,0.9)' : 'rgba(30,30,30,0.7)';
+    trayCtx.fillRect(x + 1, 1, btnW - 2, 38);
+
+    trayCtx.fillStyle = affordable ? '#ffffff' : '#555555';
+    trayCtx.font = 'bold 10px monospace';
+    trayCtx.textAlign = 'center';
+    trayCtx.fillText(c.label, x + btnW / 2, 15);
+
+    trayCtx.font = '8px monospace';
+    trayCtx.fillStyle = affordable ? '#aaaaaa' : '#333333';
+    let costStr = '';
+    if (c.slag > 0) costStr += c.slag + 'S';
+    if (c.insight > 0) costStr += (costStr ? ' ' : '') + c.insight + 'I';
+    trayCtx.fillText(costStr, x + btnW / 2, 30);
+  }
+
+  trayTexture.needsUpdate = true;
+}
+
+// Called from input.js on tap — checks if tap is in the tray area
+function handleCraftTap(worldX, worldY) {
+  const halfW = trayWidth / 2;
+  const halfH = trayHeight / 2;
+  if (worldY < trayY - halfH || worldY > trayY + halfH) return false;
+  if (worldX < -halfW || worldX > halfW) return false;
+
+  const normX = (worldX + halfW) / trayWidth;
+  const btnIndex = Math.floor(normX * CRAFTS.length);
+  if (btnIndex < 0 || btnIndex >= CRAFTS.length) return false;
+
+  return attemptPurchase(CRAFTS[btnIndex]);
+}
+
+function getFocusMultiplier() {
+  return 1 + focusCount * FOCUS_DAMAGE_MULT;
+}
+
+function resetCrafting() {
+  focusCount = 0;
+}
+
+function attemptPurchase(craft) {
+  const currentSlag = getSlag();
+  const currentInsight = getInsight();
+  if (currentSlag < craft.slag || currentInsight < craft.insight) return false;
+
+  spendSlag(craft.slag);
+  spendInsight(craft.insight);
+
+  switch (craft.id) {
+    case 'prism':
+      autoPlacePrism();
+      break;
+    case 'repair':
+      repairCrackedMirror();
+      break;
+    case 'reinforced':
+      reinforceMirror();
+      break;
+    case 'ignition':
+      break;
+    case 'focus':
+      focusCount++;
+      markDirty();
+      break;
+    case 'anchor':
+      anchorMirror();
+      break;
+  }
+  return true;
+}
+
+function autoPlacePrism() {
+  const sockets = getSockets();
+  for (let i = 0; i < sockets.length; i++) {
+    if (sockets[i].type === null) {
+      placePrism(i);
+      return;
+    }
+  }
+}
+
+function repairCrackedMirror() {
+  const mirrors = getMirrors();
+  for (const m of mirrors) {
+    if (m.hits > 0 && !m.shattered) { repairMirror(m); return; }
+  }
+  for (const m of mirrors) {
+    if (m.shattered) { repairMirror(m); return; }
+  }
+}
+
+function reinforceMirror() {
+  const mirrors = getMirrors();
+  for (const m of mirrors) {
+    if (!m.reinforced) {
+      m.reinforced = true;
+      m.mesh.material.color.setHex(0xaaaaee);
+      return;
+    }
+  }
+}
+
+function anchorMirror() {
+  const mirrors = getMirrors();
+  for (const m of mirrors) {
+    if (!m.anchored) { m.anchored = true; return; }
+  }
+}
+
+
+// === src/damage.js ===
+// ============================================================
+// src/damage.js — DPS formula, armour, kill handling
+//
+// Per frame: for each active enemy, count beam segments that
+// intersect its hitbox. Apply the DPS formula from the GDD:
+//
+//   DPS = N * D_BASE * (1 + SYNERGY_BONUS * (N - 1))
+//   final = max(0, DPS - armour * N)
+//   enemy.hp -= final * dt
+//
+// Gold band also applies slow via enemy.js.
+// On kill: deactivate enemy, award Slag.
+// ============================================================
+
+
+
+
+
+
+
+
+const ENEMY_HIT_HALF_W = 3;
+const ENEMY_HIT_HALF_H = 3;
+let totalKills = 0;
+
+function getKillCount() { return totalKills; }
+function resetDamage() { totalKills = 0; }
+
+function updateDamage(dt) {
+  const segments = getSegments();
+  const pool = getEnemyPool();
+  const worldWidth = getWorldWidth();
+  const laneWidth = worldWidth / ENEMY_LANE_COUNT;
+
+  for (let i = 0; i < pool.length; i++) {
+    const enemy = pool[i];
+    if (!enemy.active) continue;
+
+    // Enemy world position
+    const ex = -worldWidth / 2 + laneWidth * (enemy.lane + 0.5);
+    const ey = enemy.y;
+
+    // Count how many beam segments hit this enemy
+    let bandsHitting = 0;
+    let goldHitting = false;
+    let hitColour = 0;
+
+    for (let s = 0; s < segments.length; s++) {
+      const seg = segments[s];
+      if (segmentIntersectsBox(seg, ex, ey, ENEMY_HIT_HALF_W, ENEMY_HIT_HALF_H)) {
+        bandsHitting++;
+        hitColour = seg.colour;
+        if (seg.colour === COLOUR_GOLD) goldHitting = true;
+      }
+    }
+
+    // Update visual state for burn feedback
+    enemy.bandsHitting = bandsHitting;
+    if (hitColour) enemy.lastHitColour = hitColour;
+
+    // Apply gold slow
+    if (goldHitting) {
+      applyGoldSlow(enemy);
+    }
+
+    // Apply damage
+    if (bandsHitting > 0) {
+      // -------------------------------------------------------
+      // Damage formula (from GDD §8.1):
+      //   DPS = N * D_BASE * (1 + SYNERGY_BONUS * (N - 1)) * focusMult
+      //   final = max(0, DPS - armour * N)
+      // -------------------------------------------------------
+      const N = bandsHitting;
+      const focusMult = getFocusMultiplier();
+      const raw = N * D_BASE * (1 + SYNERGY_BONUS * (N - 1)) * focusMult;
+      const dmg = Math.max(0, raw - enemy.armour * N);
+      enemy.hp -= dmg * dt;
+      enemy.burn = 1 - (enemy.hp / enemy.maxHp);
+
+      if (enemy.hp <= 0) {
+        const rewards = { mote: 5, husk: 10, carapace: 20, devourer: 0 };
+        const reward = rewards[enemy.type] || 0;
+        addSlagDirect(reward);
+        totalKills++;
+        triggerKillEffect(enemy, reward);
+        deactivateEnemy(enemy);
+      }
+    } else {
+      enemy.bandsHitting = 0;
+    }
+  }
+}
+
+// Test if a line segment (beam) intersects an axis-aligned box (enemy hitbox)
+function segmentIntersectsBox(seg, cx, cy, hw, hh) {
+  // Use parametric line-vs-AABB test
+  const sx = seg.start.x;
+  const sy = seg.start.y;
+  const ex = seg.end.x;
+  const ey = seg.end.y;
+  const dx = ex - sx;
+  const dy = ey - sy;
+
+  // Box bounds
+  const xmin = cx - hw;
+  const xmax = cx + hw;
+  const ymin = cy - hh;
+  const ymax = cy + hh;
+
+  let tmin = 0;
+  let tmax = 1;
+
+  // X slab
+  if (Math.abs(dx) < 1e-8) {
+    if (sx < xmin || sx > xmax) return false;
+  } else {
+    let t1 = (xmin - sx) / dx;
+    let t2 = (xmax - sx) / dx;
+    if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
+    tmin = Math.max(tmin, t1);
+    tmax = Math.min(tmax, t2);
+    if (tmin > tmax) return false;
+  }
+
+  // Y slab
+  if (Math.abs(dy) < 1e-8) {
+    if (sy < ymin || sy > ymax) return false;
+  } else {
+    let t1 = (ymin - sy) / dy;
+    let t2 = (ymax - sy) / dy;
+    if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
+    tmin = Math.max(tmin, t1);
+    tmax = Math.min(tmax, t2);
+    if (tmin > tmax) return false;
+  }
+
+  return true;
+}
+
+
+// === src/session.js ===
+// ============================================================
+// src/session.js — Timer, breach counter, win/lose state, reset
+//
+// Win: Recombination >= 100% at 15:00, OR Devourer killed.
+// Lose: 3 breaches, OR 15:00 with Devourer alive + Recombination < 100%.
+// ============================================================
+
+
+
+
+
+
+
+
+
+
+let elapsed = 0;
+let breaches = 0;
+let gameOver = false;
+let gameWon = false;
+let devourerKilled = false;
+
+const MAX_BREACHES = 3;
+
+// HUD
+let hudCanvas = null;
+let hudCtx = null;
+let hudTexture = null;
+let hudMesh = null;
+
+// Overlay
+let overlayMesh = null;
+let overlayCanvas = null;
+let overlayCtx = null;
+let overlayTexture = null;
+let dimMesh = null;
+
+function initSession() {
+  elapsed = 0;
+  breaches = 0;
+  gameOver = false;
+  gameWon = false;
+  devourerKilled = false;
+  createHud();
+  createOverlay();
+}
+
+function getElapsed() { return elapsed; }
+function getBreaches() { return breaches; }
+function isGameOver() { return gameOver; }
+function isGameWon() { return gameWon; }
+function notifyDevourerKilled() { devourerKilled = true; }
+
+function updateSession(dt) {
+  if (gameOver) return;
+  elapsed += dt;
+
+  // Check win/lose at session end
+  if (elapsed >= SESSION_DURATION) {
+    const recombo = getRecombination();
+    if (recombo >= 100 || devourerKilled) {
+      triggerWin();
+    } else {
+      triggerLose();
+    }
+  }
+
+  // Devourer killed mid-session is also a win
+  if (devourerKilled && !gameOver) {
+    triggerWin();
+  }
+}
+
+function addBreaches(count) {
+  if (count <= 0 || gameOver) return;
+  breaches += count;
+  if (breaches >= MAX_BREACHES) {
+    triggerLose();
+  }
+}
+
+function updateHud() {
+  if (!hudCtx) return;
+  const mins = Math.floor(elapsed / 60);
+  const secs = Math.floor(elapsed % 60);
+  const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
+  const breachStr = '\u2665'.repeat(MAX_BREACHES - breaches) + '\u2661'.repeat(breaches);
+  const recombo = Math.floor(getRecombination());
+  const slagVal = Math.floor(getSlag());
+  const insightVal = Math.floor(getInsight());
+
+  hudCtx.clearRect(0, 0, 512, 64);
+  // Timer (top-left)
+  hudCtx.fillStyle = elapsed >= 720 ? '#ff4444' : '#ffffff';
+  hudCtx.font = 'bold 26px monospace';
+  hudCtx.textAlign = 'left';
+  hudCtx.fillText(timeStr, 8, 22);
+  // Hearts (top-right)
+  hudCtx.textAlign = 'right';
+  hudCtx.fillStyle = '#ff4444';
+  hudCtx.font = '22px monospace';
+  hudCtx.fillText(breachStr, 504, 22);
+  // Resources (bottom row)
+  hudCtx.font = '16px monospace';
+  hudCtx.textAlign = 'left';
+  hudCtx.fillStyle = '#ff8c1a';
+  hudCtx.fillText(`S:${slagVal}`, 8, 52);
+  hudCtx.fillStyle = '#00ddff';
+  hudCtx.fillText(`I:${insightVal}`, 110, 52);
+  hudCtx.fillStyle = '#ffe9a0';
+  hudCtx.fillText(`R:${recombo}%`, 210, 52);
+
+  hudTexture.needsUpdate = true;
+}
+
+function resetSession() {
+  elapsed = 0;
+  breaches = 0;
+  gameOver = false;
+  gameWon = false;
+  devourerKilled = false;
+  resetEnemies();
+  resetSpawner();
+  resetDamage();
+  resetFoundries();
+  resetCrafting();
+  markDirty();
+  hideOverlay();
+}
+
+function triggerWin() {
+  gameOver = true;
+  gameWon = true;
+  showOverlay('LIGHT RESTORED\n\nTap to play again');
+}
+
+function triggerLose() {
+  gameOver = true;
+  gameWon = false;
+  showOverlay('THE GREY WINS\n\nTap to restart');
+}
+
+// --- HUD ---
+
+function createHud() {
+  const oScene = getOverlayScene();
+  const worldWidth = getWorldWidth();
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+
+  hudCanvas = document.createElement('canvas');
+  hudCanvas.width = 512 * dpr;
+  hudCanvas.height = 64 * dpr;
+  hudCtx = hudCanvas.getContext('2d');
+  hudCtx.scale(dpr, dpr);
+
+  hudTexture = new THREE.CanvasTexture(hudCanvas);
+  hudTexture.minFilter = THREE.LinearFilter;
+
+  const hudGeo = new THREE.PlaneGeometry(worldWidth * 0.95, 7);
+  const hudMat = new THREE.MeshBasicMaterial({
+    map: hudTexture,
+    transparent: true,
+    depthWrite: false
+  });
+  hudMesh = new THREE.Mesh(hudGeo, hudMat);
+  hudMesh.position.set(0, WORLD_HEIGHT / 2 - 5, 0);
+  oScene.add(hudMesh);
+}
+
+// --- Overlay ---
+
+function createOverlay() {
+  const oScene = getOverlayScene();
+  const worldWidth = getWorldWidth();
+
+  const dimGeo = new THREE.PlaneGeometry(worldWidth * 1.2, WORLD_HEIGHT * 1.2);
+  const dimMat = new THREE.MeshBasicMaterial({
+    color: 0x000000,
+    transparent: true,
+    opacity: 0.7,
+    depthWrite: false
+  });
+  dimMesh = new THREE.Mesh(dimGeo, dimMat);
+  dimMesh.position.set(0, 0, 0);
+  dimMesh.visible = false;
+  oScene.add(dimMesh);
+
+  overlayCanvas = document.createElement('canvas');
+  overlayCanvas.width = 256;
+  overlayCanvas.height = 128;
+  overlayCtx = overlayCanvas.getContext('2d');
+
+  overlayTexture = new THREE.CanvasTexture(overlayCanvas);
+  overlayTexture.minFilter = THREE.LinearFilter;
+
+  const geo = new THREE.PlaneGeometry(worldWidth * 0.8, 30);
+  const mat = new THREE.MeshBasicMaterial({
+    map: overlayTexture,
+    transparent: true,
+    depthWrite: false
+  });
+  overlayMesh = new THREE.Mesh(geo, mat);
+  overlayMesh.position.set(0, 5, 1);
+  overlayMesh.visible = false;
+  oScene.add(overlayMesh);
+}
+
+function showOverlay(text) {
+  overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  overlayCtx.fillStyle = gameWon ? '#00ff88' : '#ff4444';
+  overlayCtx.font = 'bold 22px monospace';
+  overlayCtx.textAlign = 'center';
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    overlayCtx.fillText(lines[i], 128, 40 + i * 28);
+  }
+  overlayTexture.needsUpdate = true;
+  overlayMesh.visible = true;
+  dimMesh.visible = true;
+}
+
+function hideOverlay() {
+  if (overlayMesh) overlayMesh.visible = false;
+  if (dimMesh) dimMesh.visible = false;
+}
+
+function handleRestartTap() {
+  if (gameOver) {
+    resetSession();
+  }
+}
+
+
+// === src/input.js ===
+// ============================================================
+// src/input.js — Pointer events, drag/rotate, debug overlay
+// ============================================================
+
+
+
+
+
+
+
+
+
+
+const STATE_IDLE = 0;
+const STATE_SELECTED = 1;
+const STATE_DRAG = 2;
+const STATE_ROTATE = 3;
+let state = STATE_IDLE;
+let selectedObject = null;   // currently selected (highlighted)
+let selectedType = null;     // 'mirror' or 'prism'
+let dragObject = null;       // object being dragged (may differ from selected)
+let dragType = null;
+let pointerStart = null;     // world coords at pointer down
+let pointerDownOnObject = null;  // what was under pointer at down
+let pointerDownType = null;
+const DRAG_THRESHOLD = 3;
+const HIT_RADIUS = 8;
+const SOCKET_SNAP_RADIUS = 10;
+// Selection highlight ring
+let highlightMesh = null;
+// Drop-target highlight (shown during drag at nearest socket)
+let dropTargetMesh = null;
+// --- Debug overlay ---
+let debugEl = null;
+let debugVisible = false;
+let lastPointerEvent = 'none';
+let lastWorldCoord = { x: 0, y: 0 };
+let lastHitCount = 0;
+function initInput(canvas) {
+  canvas.style.touchAction = 'none';
+  canvas.addEventListener('pointerdown', onPointerDown, { passive: false });
+  canvas.addEventListener('pointermove', onPointerMove, { passive: false });
+  canvas.addEventListener('pointerup', onPointerUp, { passive: false });
+  canvas.addEventListener('pointercancel', onPointerUp, { passive: false });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'd' || e.key === 'D') toggleDebug();
+  });
+  createHighlight();
+  createDebugOverlay();
+}
+function createHighlight() {
+  const geo = new THREE.RingGeometry(4, 4.6, 24);
+  const mat = new THREE.MeshBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0.9 });
+  highlightMesh = new THREE.Mesh(geo, mat);
+  highlightMesh.position.z = 0.5;
+  highlightMesh.visible = false;
+  getScene().add(highlightMesh);
+  // Drop target: yellow-ish ring shown at nearest socket while dragging
+  const geo2 = new THREE.RingGeometry(4.2, 4.8, 24);
+  const mat2 = new THREE.MeshBasicMaterial({ color: 0xffcc00, transparent: true, opacity: 0.7 });
+  dropTargetMesh = new THREE.Mesh(geo2, mat2);
+  dropTargetMesh.position.z = 0.5;
+  dropTargetMesh.visible = false;
+  getScene().add(dropTargetMesh);
+}
+function showHighlight(obj) {
+  const [sx, sy] = SOCKET_POSITIONS[obj.socketIndex];
+  highlightMesh.position.x = sx;
+  highlightMesh.position.y = sy;
+  highlightMesh.visible = true;
+}
+function hideHighlight() {
+  highlightMesh.visible = false;
+}
+function selectObject(obj, type) {
+  selectedObject = obj;
+  selectedType = type;
+  state = STATE_SELECTED;
+  showHighlight(obj);
+}
+function deselect() {
+  selectedObject = null;
+  selectedType = null;
+  state = STATE_IDLE;
+  hideHighlight();
+}
+// --- Pointer handlers ---
+function onPointerDown(e) {
+  e.preventDefault();
+  // If game over, any tap restarts
+  if (isGameOver()) {
+    handleRestartTap();
+    return;
+  }
+  const world = screenToWorld(e.clientX, e.clientY);
+  lastPointerEvent = `down@${e.clientX},${e.clientY}`;
+  lastWorldCoord = world;
+  pointerStart = world;
+  const hit = findObjectAt(world.x, world.y);
+  lastHitCount = hit ? 1 : 0;
+  pointerDownOnObject = hit ? hit.object : null;
+  pointerDownType = hit ? hit.type : null;
+  updateDebug();
+}
+function onPointerMove(e) {
+  e.preventDefault();
+  const world = screenToWorld(e.clientX, e.clientY);
+  lastPointerEvent = `move@${e.clientX},${e.clientY}`;
+  lastWorldCoord = world;
+  if (!pointerStart) { updateDebug(); return; }
+  const dx = world.x - pointerStart.x;
+  const dy = world.y - pointerStart.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  // If we haven't committed to a gesture yet
+  if (state === STATE_IDLE || state === STATE_SELECTED) {
+    if (dist > DRAG_THRESHOLD) {
+      // Pointer moved significantly
+      if (pointerDownOnObject && pointerDownType === 'mirror' && pointerDownOnObject !== selectedObject) {
+        // Dragging an unselected mirror — start drag
+        startDrag(pointerDownOnObject, pointerDownType);
+      } else if (pointerDownOnObject && pointerDownType === 'prism') {
+        // Dragging a prism
+        startDrag(pointerDownOnObject, pointerDownType);
+      } else if (selectedObject && selectedType === 'mirror') {
+        // Swipe with a mirror selected — rotate it
+        state = STATE_ROTATE;
+      } else if (pointerDownOnObject && pointerDownOnObject === selectedObject) {
+        // Dragging the selected mirror
+        startDrag(pointerDownOnObject, pointerDownType);
+      } else if (selectedObject && selectedType === 'mirror') {
+        // Swiping on empty space with mirror selected — rotate
+        state = STATE_ROTATE;
+      }
+    }
+  }
+  if (state === STATE_DRAG && dragObject) {
+    dragObject.mesh.position.x = world.x;
+    dragObject.mesh.position.y = world.y;
+    // Show drop target at nearest socket
+    const nearest = findNearestSocket(world.x, world.y);
+    if (nearest !== null) {
+      const [sx, sy] = SOCKET_POSITIONS[nearest];
+      dropTargetMesh.position.x = sx;
+      dropTargetMesh.position.y = sy;
+      dropTargetMesh.visible = true;
+    } else {
+      dropTargetMesh.visible = false;
+    }
+  } else if (state === STATE_ROTATE && selectedObject && selectedType === 'mirror') {
+    // Rotation: horizontal swipe delta maps to angle change
+    const angleDelta = dx * ROTATION_SENSITIVITY * 0.03;
+    rotateMirror(selectedObject, selectedObject.angle + angleDelta);
+    // Reset start so rotation is incremental
+    pointerStart = world;
+  }
+  updateDebug();
+}
+function onPointerUp(e) {
+  e.preventDefault();
+  const world = screenToWorld(e.clientX, e.clientY);
+  lastPointerEvent = `up@${e.clientX},${e.clientY}`;
+  lastWorldCoord = world;
+  if (state === STATE_DRAG && dragObject) {
+    // Drop: find nearest socket
+    const nearest = findNearestSocket(world.x, world.y);
+    if (nearest !== null && nearest !== dragObject.socketIndex) {
+      if (dragType === 'mirror') {
+        moveMirrorToSocket(dragObject, nearest);
+      } else if (dragType === 'prism') {
+        movePrismToSocket(dragObject, nearest);
+      }
+      console.log(`[input] Dropped ${dragType} into socket ${nearest}, beam dirty`);
+    } else {
+      // Snap back
+      const [sx, sy] = SOCKET_POSITIONS[dragObject.socketIndex];
+      dragObject.mesh.position.set(sx, sy, dragObject.mesh.position.z);
+    }
+    dragObject = null;
+    dragType = null;
+    dropTargetMesh.visible = false;
+    state = selectedObject ? STATE_SELECTED : STATE_IDLE;
+  } else if (state === STATE_ROTATE) {
+    // Rotation done, stay selected
+    state = STATE_SELECTED;
+  } else {
+    // It was a tap (no drag, no rotate)
+    const hit = findObjectAt(world.x, world.y);
+    if (hit) {
+      if (hit.object === selectedObject) {
+        // Tap on already-selected → deselect
+        deselect();
+      } else {
+        // Tap on a different object → select it
+        selectObject(hit.object, hit.type);
+      }
+    } else {
+      // Tap on empty space — check crafting tray first
+      if (!handleCraftTap(world.x, world.y)) {
+        deselect();
+      }
+    }
+  }
+  pointerStart = null;
+  pointerDownOnObject = null;
+  pointerDownType = null;
+  updateDebug();
+}
+function startDrag(obj, type) {
+  state = STATE_DRAG;
+  dragObject = obj;
+  dragType = type;
+}
+// --- Hit detection (world coords) ---
+function findObjectAt(wx, wy) {
+  const mirrors = getMirrors();
+  const prisms = getPrisms();
+  for (const mirror of mirrors) {
+    if (mirror.shattered) continue;
+    const [sx, sy] = SOCKET_POSITIONS[mirror.socketIndex];
+    const dist = Math.sqrt((wx - sx) ** 2 + (wy - sy) ** 2);
+    if (dist < HIT_RADIUS) {
+      return { type: 'mirror', object: mirror };
+    }
+  }
+  for (const prism of prisms) {
+    const dist = Math.sqrt((wx - prism.position.x) ** 2 + (wy - prism.position.y) ** 2);
+    if (dist < HIT_RADIUS) {
+      return { type: 'prism', object: prism };
+    }
+  }
+  return null;
+}
+function findNearestSocket(wx, wy) {
+  let best = null;
+  let bestDist = SOCKET_SNAP_RADIUS;
+  for (let i = 0; i < SOCKET_POSITIONS.length; i++) {
+    const [sx, sy] = SOCKET_POSITIONS[i];
+    const dist = Math.sqrt((wx - sx) ** 2 + (wy - sy) ** 2);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = i;
+    }
+  }
+  return best;
+}
+// --- Debug overlay ---
+function createDebugOverlay() {
+  debugEl = document.createElement('div');
+  debugEl.style.cssText =
+    'position:fixed;top:0;left:0;padding:8px;background:rgba(0,0,0,0.8);' +
+    'color:#0f0;font:12px monospace;pointer-events:none;z-index:9999;' +
+    'white-space:pre;display:none;';
+  document.body.appendChild(debugEl);
+}
+function toggleDebug() {
+  debugVisible = !debugVisible;
+  debugEl.style.display = debugVisible ? 'block' : 'none';
+}
+function updateDebug() {
+  if (!debugVisible) return;
+  const segs = getSegments();
+  const totalSegs = segs.length;
+  const colouredSegs = segs.filter(s => s.colour !== COLOUR_WHITE);
+  const bandCount = colouredSegs.length;
+  const diag = getBeamDiag();
+  // Per-segment colour names
+  const colourName = (c) => {
+    if (c === 0xffffff) return 'WHT';
+    if (c === 0xff8c1a) return 'AMB';
+    if (c === 0x00ddff) return 'CYN';
+    if (c === 0xffe9a0) return 'GLD';
+    return '???';
+  };
+  const segList = segs.map((s, i) =>
+    `  ${i}: ${colourName(s.colour)} (${s.start.x.toFixed(0)},${s.start.y.toFixed(0)})->(${s.end.x.toFixed(0)},${s.end.y.toFixed(0)})`
+  ).join('\n');
+  debugEl.textContent =
+    `ptr: ${lastPointerEvent}\n` +
+    `world: (${lastWorldCoord.x.toFixed(1)}, ${lastWorldCoord.y.toFixed(1)})\n` +
+    `state: ${['IDLE','SEL','DRAG','ROTATE'][state]}\n` +
+    `hit: ${lastHitCount} objects\n` +
+    `selected: ${selectedType || 'none'}\n` +
+    `segments: ${totalSegs} | bands: ${bandCount}\n` +
+    `max bounces: ${diag.maxBouncesUsed} | cap hit: ${diag.hitBounceCap}\n` +
+    `mote spd: ${ENEMY_TYPES.mote.speed.toFixed(1)} | travel: ${MOTE_TRAVEL_TIME_S}s (${ENEMY_TRAVEL_DIST.toFixed(0)}u)\n` +
+    `spawns: ${getSpawnCount()} | kills: ${getKillCount()} | t: ${getElapsed().toFixed(0)}s\n` +
+    segList;
+  const _t = Math.max(getElapsed(), 1), _m = _t / 60;
+  debugEl.textContent += `\nrate: ${(getSpawnCount()/_m).toFixed(1)}sp/m ${(getKillCount()/_m).toFixed(1)}k/m ${(getBreaches()/_m).toFixed(1)}br/m intv:${getCurrentInterval().toFixed(1)}s`;
+  const iLog = getInsightLog();
+  if (iLog.length > 0) debugEl.textContent += '\n--- Insight ---\n' + iLog.slice(-5).map(e => `${e.t} ${e.delta} =${e.total} [${e.reason}]`).join('\n');
+}
+// Called from main loop each frame so overlay stays current when visible
+function tickDebug() {
+  updateDebug();
+}
+
+
+// === src/main.js ===
+// ============================================================
+// src/main.js — Entry point: init scene, start game loop
+// ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// --- Source state ---
+let sourceX = 0;
+let sourceY = APERTURE_Y;
+
+// --- Clock ---
+let lastTime = 0;
+const MAX_DT = 1 / 30;
+
+function init() {
+  console.log('[Spectrum Zero] init starting');
+  initRenderer();
+  initSockets();
+  initMirrors();
+  updateAllMirrorGeometries();
+  initPrisms();
+  initBeamRenderer();
+  initEnemies();
+  initFoundries();
+  initCrafting();
+  initSession();
+  resetSpawner();
+
+  const canvas = getRenderer().domElement;
+  initInput(canvas);
+
+  markDirty();
+
+  lastTime = performance.now();
+  requestAnimationFrame(loop);
+  console.log('[Spectrum Zero] init complete, loop running');
+}
+
+function loop(now) {
+  requestAnimationFrame(loop);
+
+  let dt = (now - lastTime) / 1000;
+  lastTime = now;
+  if (dt > MAX_DT) dt = MAX_DT;
+
+  if (isGameOver()) {
+    render();
+    return;
+  }
+
+  // --- Update ---
+  updateSession(dt);
+  const sessionTime = getElapsed();
+
+  updateBeamPulse(dt);
+  updateMirrorTweens(dt);
+
+  // Beam solve (only on dirty)
+  if (isDirty()) {
+    const mirrors = getMirrors().filter(m => !m.shattered);
+    const prisms = getPrisms();
+    const worldWidth = getWorldWidth();
+    const fndColliders = getFoundryColliders();
+    solve(sourceX, sourceY, mirrors, prisms, worldWidth, fndColliders);
+    rebuildBeams(getSegments());
+  } else {
+    rebuildBeams(getSegments());
+  }
+
+  // Spawner + enemies
+  updateSpawner(dt, sessionTime);
+  applySlowStates();
+  const newBreaches = updateEnemies(dt);
+  if (newBreaches > 0) {
+    addBreaches(newBreaches);
+  }
+
+  // Damage
+  updateDamage(dt);
+
+  // Foundries (resource accumulation)
+  updateFoundries(dt);
+
+  // HUD + crafting tray
+  updateHud();
+  updateCraftingTray();
+  tickDebug();
+
+  // --- Render ---
+  render();
+}
+
+// Boot
+init();
+
+
+
+</script>
+</body>
+</html>
