@@ -1,9 +1,9 @@
 // ============================================================
 // src/input.js — Pointer events, drag/rotate, debug overlay
 // ============================================================
-import { SOCKET_POSITIONS, COLOUR_WHITE, ROTATION_SENSITIVITY, MOTE_TRAVEL_TIME_S, ENEMY_TRAVEL_DIST, ENEMY_TYPES } from './config.js';
+import { SOCKET_POSITIONS, COLOUR_WHITE, ROTATION_SENSITIVITY, MOTE_TRAVEL_TIME_S, ENEMY_TRAVEL_DIST, ENEMY_TYPES, FREE_PLACEMENT } from './config.js';
 import { screenToWorld, getScene } from './renderer.js';
-import { getMirrors, moveMirrorToSocket, rotateMirror, getSockets, updateMirrorGeometry } from './mirror.js';
+import { getMirrors, moveMirrorToSocket, rotateMirror, getSockets, updateMirrorGeometry, moveMirrorFree } from './mirror.js';
 import { getPrisms, movePrismToSocket } from './prism.js';
 import { getSegments, getBeamDiag } from './beam.js';
 import { isGameOver, handleRestartTap, getElapsed, getBreaches } from './session.js';
@@ -64,9 +64,10 @@ function createHighlight() {
   getScene().add(dropTargetMesh);
 }
 function showHighlight(obj) {
-  const [sx, sy] = SOCKET_POSITIONS[obj.socketIndex];
-  highlightMesh.position.x = sx;
-  highlightMesh.position.y = sy;
+  const hx = FREE_PLACEMENT ? obj.freeX : SOCKET_POSITIONS[obj.socketIndex][0];
+  const hy = FREE_PLACEMENT ? obj.freeY : SOCKET_POSITIONS[obj.socketIndex][1];
+  highlightMesh.position.x = hx;
+  highlightMesh.position.y = hy;
   highlightMesh.visible = true;
 }
 function hideHighlight() {
@@ -140,7 +141,8 @@ function onPointerMove(e) {
     }
   } else if (state === STATE_ROTATE && selectedObject && selectedType === 'mirror') {
     // Rotation: pointer angle relative to mirror centre = mirror angle
-    const [mx, my] = SOCKET_POSITIONS[selectedObject.socketIndex];
+    const mx = FREE_PLACEMENT ? selectedObject.freeX : SOCKET_POSITIONS[selectedObject.socketIndex][0];
+    const my = FREE_PLACEMENT ? selectedObject.freeY : SOCKET_POSITIONS[selectedObject.socketIndex][1];
     const angle = Math.atan2(world.y - my, world.x - mx);
     rotateMirror(selectedObject, angle);
   }
@@ -152,19 +154,22 @@ function onPointerUp(e) {
   lastPointerEvent = `up@${e.clientX},${e.clientY}`;
   lastWorldCoord = world;
   if (state === STATE_DRAG && dragObject) {
-    // Drop: find nearest socket
-    const nearest = findNearestSocket(world.x, world.y);
-    if (nearest !== null && nearest !== dragObject.socketIndex) {
-      if (dragType === 'mirror') {
-        moveMirrorToSocket(dragObject, nearest);
-      } else if (dragType === 'prism') {
-        movePrismToSocket(dragObject, nearest);
-      }
-      console.log(`[input] Dropped ${dragType} into socket ${nearest}, beam dirty`);
+    // Drop
+    if (FREE_PLACEMENT && dragType === 'mirror') {
+      // Free placement: drop wherever pointer is, clamped to mirror field
+      moveMirrorFree(dragObject, world.x, world.y);
     } else {
-      // Snap back
-      const [sx, sy] = SOCKET_POSITIONS[dragObject.socketIndex];
-      dragObject.mesh.position.set(sx, sy, dragObject.mesh.position.z);
+      const nearest = findNearestSocket(world.x, world.y);
+      if (nearest !== null && nearest !== dragObject.socketIndex) {
+        if (dragType === 'mirror') {
+          moveMirrorToSocket(dragObject, nearest);
+        } else if (dragType === 'prism') {
+          movePrismToSocket(dragObject, nearest);
+        }
+      } else {
+        const [sx, sy] = SOCKET_POSITIONS[dragObject.socketIndex];
+        dragObject.mesh.position.set(sx, sy, dragObject.mesh.position.z);
+      }
     }
     dragObject = null;
     dragType = null;
@@ -207,8 +212,9 @@ function findObjectAt(wx, wy) {
   const prisms = getPrisms();
   for (const mirror of mirrors) {
     if (mirror.shattered) continue;
-    const [sx, sy] = SOCKET_POSITIONS[mirror.socketIndex];
-    const dist = Math.sqrt((wx - sx) ** 2 + (wy - sy) ** 2);
+    const mx = FREE_PLACEMENT ? mirror.freeX : SOCKET_POSITIONS[mirror.socketIndex][0];
+    const my = FREE_PLACEMENT ? mirror.freeY : SOCKET_POSITIONS[mirror.socketIndex][1];
+    const dist = Math.sqrt((wx - mx) ** 2 + (wy - my) ** 2);
     if (dist < HIT_RADIUS) {
       return { type: 'mirror', object: mirror };
     }

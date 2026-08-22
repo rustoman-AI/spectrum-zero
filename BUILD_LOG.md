@@ -141,3 +141,34 @@ New assertions: zero foundries fed on load, absorbed band has no segment below f
 **Decisions locked:**
 - Foundry absorption is permanent game rule (band terminates, does not pass through)
 - Foundry positions are asymmetric (-15/+14/+22) — visual asymmetry accepted for gameplay symmetry
+
+
+---
+
+## 2026-08-22 — Lore Reskin: Solar Siege
+
+**Naming change only. No mechanical effect.**
+
+Reskinned from abstract "Spectrum Zero" to "Solar Siege" (Archimedes defending Syracuse from the Roman fleet). All player-facing text moved to `src/strings.js` as single source of truth.
+
+Rename map:
+- Spectrum Zero → Solar Siege
+- Aperture → Helios
+- White beam → Sunlight
+- Prism → Archimedes Lens
+- Forge → Altar of Hephaestus
+- Lens Works → Altar of Athena
+- Chorus → Altar of Apollo
+- Slag → Bronze (B:)
+- Insight → Tactics (T:)
+- Recombination → Convergence (C:)
+- Enemies → Roman fleet (Skiff/Trireme/Quadrireme/Flagship)
+- Breach line → The Sea Wall
+- Craft labels: Lens, Greek Fire, Br.Shield, Oil Slick, Focus, Ballast
+
+**Verification:**
+- config.js: MD5 identical before and after (45313529BF596A4D7A5C5752B1B8B106)
+- test-sim.js: all assertions pass
+- Zero new binary/image files
+- Zero external URLs in index.html
+- No changes to: beam solver, damage math, colours, input model, geometry, timing

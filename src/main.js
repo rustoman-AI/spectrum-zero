@@ -25,7 +25,7 @@ let lastTime = 0;
 const MAX_DT = 1 / 30;
 
 export function init() {
-  console.log('[Spectrum Zero] init starting');
+  console.log('[Solar Siege] init starting');
   initRenderer();
   initSockets();
   initMirrors();
@@ -45,7 +45,7 @@ export function init() {
 
   lastTime = performance.now();
   requestAnimationFrame(loop);
-  console.log('[Spectrum Zero] init complete, loop running');
+  console.log('[Solar Siege] init complete, loop running');
 }
 
 function loop(now) {

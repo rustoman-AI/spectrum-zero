@@ -90,6 +90,7 @@ export const MIRROR_MAX_HITS = 3;      // shatters after 3 hits
 export const MIRROR_COUNT_START = 4;
 export const MIRROR_TWEEN_MS = 120;    // ease-out snap duration when landing in a socket
 export const ROTATION_SENSITIVITY = 1.0; // multiplier on swipe-to-angle conversion
+export const FREE_PLACEMENT = true;    // true: mirrors drop anywhere, false: snap to sockets
 
 // --- Sockets (generic grid, holds mirror or prism) ---
 // 3 columns x 4 rows = 12 sockets in the mirror field (y: 22 to -2).

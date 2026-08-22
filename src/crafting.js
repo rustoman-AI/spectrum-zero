@@ -9,6 +9,7 @@ import {
   CRAFT_PRISM, CRAFT_REPAIR, CRAFT_REINFORCED, CRAFT_IGNITION,
   CRAFT_FOCUS, CRAFT_ANCHOR, FOCUS_DAMAGE_MULT, WORLD_HEIGHT
 } from './config.js';
+import { CRAFT_LABELS, HUD_COST_SLAG, HUD_COST_INSIGHT } from './strings.js';
 import { getScene, getWorldWidth, screenToWorld, getOverlayScene } from './renderer.js';
 import { getSlag, getInsight, spendSlag, spendInsight } from './foundry.js';
 import { placePrism } from './prism.js';
@@ -16,12 +17,12 @@ import { getMirrors, repairMirror, getSockets } from './mirror.js';
 import { markDirty } from './beam.js';
 
 const CRAFTS = [
-  { id: 'prism',      label: 'Prism',   slag: CRAFT_PRISM.slag,      insight: CRAFT_PRISM.insight },
-  { id: 'repair',     label: 'Repair',  slag: CRAFT_REPAIR.slag,     insight: CRAFT_REPAIR.insight },
-  { id: 'reinforced', label: 'Reinf.',  slag: CRAFT_REINFORCED.slag, insight: CRAFT_REINFORCED.insight },
-  { id: 'ignition',   label: 'Ignite',  slag: CRAFT_IGNITION.slag,   insight: CRAFT_IGNITION.insight },
-  { id: 'focus',      label: 'Focus',   slag: CRAFT_FOCUS.slag,      insight: CRAFT_FOCUS.insight },
-  { id: 'anchor',     label: 'Anchor',  slag: CRAFT_ANCHOR.slag,     insight: CRAFT_ANCHOR.insight },
+  { id: 'prism',      label: CRAFT_LABELS.prism,      slag: CRAFT_PRISM.slag,      insight: CRAFT_PRISM.insight },
+  { id: 'repair',     label: CRAFT_LABELS.repair,     slag: CRAFT_REPAIR.slag,     insight: CRAFT_REPAIR.insight },
+  { id: 'reinforced', label: CRAFT_LABELS.reinforced, slag: CRAFT_REINFORCED.slag, insight: CRAFT_REINFORCED.insight },
+  { id: 'ignition',   label: CRAFT_LABELS.ignition,   slag: CRAFT_IGNITION.slag,   insight: CRAFT_IGNITION.insight },
+  { id: 'focus',      label: CRAFT_LABELS.focus,      slag: CRAFT_FOCUS.slag,      insight: CRAFT_FOCUS.insight },
+  { id: 'anchor',     label: CRAFT_LABELS.anchor,     slag: CRAFT_ANCHOR.slag,     insight: CRAFT_ANCHOR.insight },
 ];
 
 let trayMesh = null;
@@ -86,8 +87,8 @@ export function updateCraftingTray() {
     trayCtx.font = '8px monospace';
     trayCtx.fillStyle = affordable ? '#aaaaaa' : '#333333';
     let costStr = '';
-    if (c.slag > 0) costStr += c.slag + 'S';
-    if (c.insight > 0) costStr += (costStr ? ' ' : '') + c.insight + 'I';
+    if (c.slag > 0) costStr += c.slag + HUD_COST_SLAG;
+    if (c.insight > 0) costStr += (costStr ? ' ' : '') + c.insight + HUD_COST_INSIGHT;
     trayCtx.fillText(costStr, x + btnW / 2, 30);
   }
 

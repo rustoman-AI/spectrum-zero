@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Spectrum Zero</title>
+<title>Solar Siege</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { width: 100%; height: 100%; overflow: hidden; background: #000; touch-action: none; }
@@ -108,6 +108,7 @@ const MIRROR_MAX_HITS = 3;      // shatters after 3 hits
 const MIRROR_COUNT_START = 4;
 const MIRROR_TWEEN_MS = 120;    // ease-out snap duration when landing in a socket
 const ROTATION_SENSITIVITY = 1.0; // multiplier on swipe-to-angle conversion
+const FREE_PLACEMENT = true;    // true: mirrors drop anywhere, false: snap to sockets
 
 // --- Sockets (generic grid, holds mirror or prism) ---
 // 3 columns x 4 rows = 12 sockets in the mirror field (y: 22 to -2).
@@ -165,6 +166,64 @@ const COLOUR_AMBER = 0xff8c1a;  // warm orange, distinct from gold
 const COLOUR_CYAN  = 0x00ddff;
 const COLOUR_GOLD  = 0xffe9a0;  // pale white-gold, thinner + pulses
 const COLOUR_GREY  = 0x333333;
+
+
+// === src/strings.js ===
+// ============================================================
+// src/strings.js — All player-facing text (single source of truth)
+//
+// Game: Solar Siege (Archimedes defending Syracuse)
+// ============================================================
+
+// --- Game title ---
+const TITLE = 'Solar Siege';
+
+// --- Source / beam ---
+const SOURCE_NAME = 'Helios';
+const BEAM_WHITE_NAME = 'Sunlight';
+const PRISM_NAME = 'Archimedes Lens';
+
+// --- Foundries (Altars) ---
+const FOUNDRY_LABELS = {
+  forge: 'HEPHAESTUS',
+  lensworks: 'ATHENA',
+  chorus: 'APOLLO',
+};
+
+// --- Resources ---
+const RES_SLAG = 'Bronze';
+const RES_SLAG_SHORT = 'B';
+const RES_INSIGHT = 'Tactics';
+const RES_INSIGHT_SHORT = 'T';
+const RES_RECOMBO = 'Convergence';
+const RES_RECOMBO_SHORT = 'C';
+
+// --- Enemies (Roman fleet) ---
+const ENEMY_NAMES = {
+  mote: 'Skiff',
+  husk: 'Trireme',
+  carapace: 'Quadrireme',
+  devourer: 'Flagship',
+};
+
+// --- Crafting ---
+const CRAFT_LABELS = {
+  prism: 'Lens',
+  repair: 'Greek Fire',
+  reinforced: 'Br.Shield',
+  ignition: 'Oil Slick',
+  focus: 'Focus',
+  anchor: 'Ballast',
+};
+
+// --- UI messages ---
+const MSG_LOSE = 'SYRACUSE HAS FALLEN\n\nTap to retry';
+const MSG_WIN = 'THE FLEET BURNS\n\nTap to play again';
+const MSG_BREACH_LINE = 'The Sea Wall';
+
+// --- HUD ---
+const HUD_COST_SLAG = 'B';
+const HUD_COST_INSIGHT = 'T';
 
 
 // === src/renderer.js ===
@@ -723,14 +782,17 @@ function initMirrors() {
     sockets[socketIdx].objectRef = mirror;
   }
 
-  for (let i = 0; i < SOCKET_POSITIONS.length; i++) {
-    const [sx, sy] = SOCKET_POSITIONS[i];
-    const indicator = new THREE.Mesh(
-      new THREE.RingGeometry(1.5, 1.8, 16),
-      new THREE.MeshBasicMaterial({ color: 0x222222, transparent: true, opacity: 0.5 })
-    );
-    indicator.position.set(sx, sy, -1.0);
-    mirrorMeshGroup.add(indicator);
+  // Socket indicators: hidden when FREE_PLACEMENT is true
+  if (!FREE_PLACEMENT) {
+    for (let i = 0; i < SOCKET_POSITIONS.length; i++) {
+      const [sx, sy] = SOCKET_POSITIONS[i];
+      const indicator = new THREE.Mesh(
+        new THREE.RingGeometry(1.5, 1.8, 16),
+        new THREE.MeshBasicMaterial({ color: 0x222222, transparent: true, opacity: 0.5 })
+      );
+      indicator.position.set(sx, sy, -1.0);
+      mirrorMeshGroup.add(indicator);
+    }
   }
 }
 
@@ -753,6 +815,8 @@ function createMirror(socketIndex) {
     shattered: false,
     reinforced: false,
     anchored: false,
+    freeX: sx,
+    freeY: sy,
     mesh,
     p1: { x: 0, y: 0 },
     p2: { x: 0, y: 0 },
@@ -762,7 +826,13 @@ function createMirror(socketIndex) {
 }
 
 function updateMirrorGeometry(mirror) {
-  const [sx, sy] = SOCKET_POSITIONS[mirror.socketIndex];
+  let sx, sy;
+  if (FREE_PLACEMENT && mirror.freeX !== undefined) {
+    sx = mirror.freeX;
+    sy = mirror.freeY;
+  } else {
+    [sx, sy] = SOCKET_POSITIONS[mirror.socketIndex];
+  }
   const halfLen = mirror.length / 2;
   const cos = Math.cos(mirror.angle);
   const sin = Math.sin(mirror.angle);
@@ -773,6 +843,16 @@ function updateMirrorGeometry(mirror) {
 
   mirror.mesh.position.set(sx, sy, 0);
   mirror.mesh.rotation.z = mirror.angle;
+}
+
+// Free placement: move mirror to arbitrary position, clamped to mirror field
+function moveMirrorFree(mirror, x, y) {
+  const ww = getWorldWidth();
+  const hw = ww / 2;
+  mirror.freeX = Math.max(-hw + 2, Math.min(hw - 2, x));
+  mirror.freeY = Math.max(MIRROR_FIELD_BOT, Math.min(MIRROR_FIELD_TOP, y));
+  updateMirrorGeometry(mirror);
+  markDirty();
 }
 
 // --- Tween system ---
@@ -1346,6 +1426,7 @@ function getEscalationMultiplier(t) {
 
 
 
+
 let slag = 0;
 let insight = 0;
 let recombination = 0;
@@ -1453,14 +1534,13 @@ function initFoundries() {
     scene.add(ghostMesh);
 
     // Label
-    const labels = { forge: 'FORGE', lensworks: 'LENS', chorus: 'CHORUS' };
     const lCanvas = document.createElement('canvas');
-    lCanvas.width = 64; lCanvas.height = 24;
+    lCanvas.width = 96; lCanvas.height = 24;
     const lCtx = lCanvas.getContext('2d');
     lCtx.fillStyle = '#ffffff';
-    lCtx.font = 'bold 14px monospace';
+    lCtx.font = 'bold 11px monospace';
     lCtx.textAlign = 'center';
-    lCtx.fillText(labels[def.type], 32, 16);
+    lCtx.fillText(FOUNDRY_LABELS[def.type], 48, 16);
     const lTex = new THREE.CanvasTexture(lCanvas);
     lTex.minFilter = THREE.LinearFilter;
     const lGeo = new THREE.PlaneGeometry(8, 3);
@@ -1533,7 +1613,7 @@ function updateFoundries(dt) {
 }
 
 function updateRateLabel(fnd) {
-  const rates = { forge: '+4/s', lensworks: '+3/s', chorus: '+1.5%/s' };
+  const rates = { forge: '+4' + RES_SLAG_SHORT + '/s', lensworks: '+3' + RES_INSIGHT_SHORT + '/s', chorus: '+1.5%/s' };
   fnd.rCtx.clearRect(0, 0, 64, 20);
   fnd.rCtx.fillStyle = '#ffffff';
   fnd.rCtx.font = 'bold 12px monospace';
@@ -1585,13 +1665,14 @@ function segCrossesBox(seg, cx, cy, hw, hh) {
 
 
 
+
 const CRAFTS = [
-  { id: 'prism',      label: 'Prism',   slag: CRAFT_PRISM.slag,      insight: CRAFT_PRISM.insight },
-  { id: 'repair',     label: 'Repair',  slag: CRAFT_REPAIR.slag,     insight: CRAFT_REPAIR.insight },
-  { id: 'reinforced', label: 'Reinf.',  slag: CRAFT_REINFORCED.slag, insight: CRAFT_REINFORCED.insight },
-  { id: 'ignition',   label: 'Ignite',  slag: CRAFT_IGNITION.slag,   insight: CRAFT_IGNITION.insight },
-  { id: 'focus',      label: 'Focus',   slag: CRAFT_FOCUS.slag,      insight: CRAFT_FOCUS.insight },
-  { id: 'anchor',     label: 'Anchor',  slag: CRAFT_ANCHOR.slag,     insight: CRAFT_ANCHOR.insight },
+  { id: 'prism',      label: CRAFT_LABELS.prism,      slag: CRAFT_PRISM.slag,      insight: CRAFT_PRISM.insight },
+  { id: 'repair',     label: CRAFT_LABELS.repair,     slag: CRAFT_REPAIR.slag,     insight: CRAFT_REPAIR.insight },
+  { id: 'reinforced', label: CRAFT_LABELS.reinforced, slag: CRAFT_REINFORCED.slag, insight: CRAFT_REINFORCED.insight },
+  { id: 'ignition',   label: CRAFT_LABELS.ignition,   slag: CRAFT_IGNITION.slag,   insight: CRAFT_IGNITION.insight },
+  { id: 'focus',      label: CRAFT_LABELS.focus,      slag: CRAFT_FOCUS.slag,      insight: CRAFT_FOCUS.insight },
+  { id: 'anchor',     label: CRAFT_LABELS.anchor,     slag: CRAFT_ANCHOR.slag,     insight: CRAFT_ANCHOR.insight },
 ];
 
 let trayMesh = null;
@@ -1656,8 +1737,8 @@ function updateCraftingTray() {
     trayCtx.font = '8px monospace';
     trayCtx.fillStyle = affordable ? '#aaaaaa' : '#333333';
     let costStr = '';
-    if (c.slag > 0) costStr += c.slag + 'S';
-    if (c.insight > 0) costStr += (costStr ? ' ' : '') + c.insight + 'I';
+    if (c.slag > 0) costStr += c.slag + HUD_COST_SLAG;
+    if (c.insight > 0) costStr += (costStr ? ' ' : '') + c.insight + HUD_COST_INSIGHT;
     trayCtx.fillText(costStr, x + btnW / 2, 30);
   }
 
@@ -1914,6 +1995,7 @@ function segmentIntersectsBox(seg, cx, cy, hw, hh) {
 
 
 
+
 let elapsed = 0;
 let breaches = 0;
 let gameOver = false;
@@ -1921,6 +2003,7 @@ let gameWon = false;
 let devourerKilled = false;
 
 const MAX_BREACHES = 999; // TESTING: unlimited lives
+const WALL_DISPLAY = 3;  // hearts shown in HUD (visual integrity)
 
 // HUD
 let hudCanvas = null;
@@ -1984,7 +2067,7 @@ function updateHud() {
   const mins = Math.floor(elapsed / 60);
   const secs = Math.floor(elapsed % 60);
   const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
-  const breachStr = '\u2665'.repeat(MAX_BREACHES - breaches) + '\u2661'.repeat(breaches);
+  const breachStr = '\u2665'.repeat(Math.max(0, WALL_DISPLAY - breaches)) + '\u2661'.repeat(Math.min(breaches, WALL_DISPLAY));
   const recombo = Math.floor(getRecombination());
   const slagVal = Math.floor(getSlag());
   const insightVal = Math.floor(getInsight());
@@ -2004,11 +2087,11 @@ function updateHud() {
   hudCtx.font = '16px monospace';
   hudCtx.textAlign = 'left';
   hudCtx.fillStyle = '#ff8c1a';
-  hudCtx.fillText(`S:${slagVal}`, 8, 52);
+  hudCtx.fillText(`${RES_SLAG_SHORT}:${slagVal}`, 8, 52);
   hudCtx.fillStyle = '#00ddff';
-  hudCtx.fillText(`I:${insightVal}`, 110, 52);
+  hudCtx.fillText(`${RES_INSIGHT_SHORT}:${insightVal}`, 110, 52);
   hudCtx.fillStyle = '#ffe9a0';
-  hudCtx.fillText(`R:${recombo}%`, 210, 52);
+  hudCtx.fillText(`${RES_RECOMBO_SHORT}:${recombo}%`, 210, 52);
 
   hudTexture.needsUpdate = true;
 }
@@ -2031,13 +2114,13 @@ function resetSession() {
 function triggerWin() {
   gameOver = true;
   gameWon = true;
-  showOverlay('LIGHT RESTORED\n\nTap to play again');
+  showOverlay(MSG_WIN);
 }
 
 function triggerLose() {
   gameOver = true;
   gameWon = false;
-  showOverlay('THE GREY WINS\n\nTap to restart');
+  showOverlay(MSG_LOSE);
 }
 
 // --- HUD ---
@@ -2198,9 +2281,10 @@ function createHighlight() {
   getScene().add(dropTargetMesh);
 }
 function showHighlight(obj) {
-  const [sx, sy] = SOCKET_POSITIONS[obj.socketIndex];
-  highlightMesh.position.x = sx;
-  highlightMesh.position.y = sy;
+  const hx = FREE_PLACEMENT ? obj.freeX : SOCKET_POSITIONS[obj.socketIndex][0];
+  const hy = FREE_PLACEMENT ? obj.freeY : SOCKET_POSITIONS[obj.socketIndex][1];
+  highlightMesh.position.x = hx;
+  highlightMesh.position.y = hy;
   highlightMesh.visible = true;
 }
 function hideHighlight() {
@@ -2274,7 +2358,8 @@ function onPointerMove(e) {
     }
   } else if (state === STATE_ROTATE && selectedObject && selectedType === 'mirror') {
     // Rotation: pointer angle relative to mirror centre = mirror angle
-    const [mx, my] = SOCKET_POSITIONS[selectedObject.socketIndex];
+    const mx = FREE_PLACEMENT ? selectedObject.freeX : SOCKET_POSITIONS[selectedObject.socketIndex][0];
+    const my = FREE_PLACEMENT ? selectedObject.freeY : SOCKET_POSITIONS[selectedObject.socketIndex][1];
     const angle = Math.atan2(world.y - my, world.x - mx);
     rotateMirror(selectedObject, angle);
   }
@@ -2286,19 +2371,22 @@ function onPointerUp(e) {
   lastPointerEvent = `up@${e.clientX},${e.clientY}`;
   lastWorldCoord = world;
   if (state === STATE_DRAG && dragObject) {
-    // Drop: find nearest socket
-    const nearest = findNearestSocket(world.x, world.y);
-    if (nearest !== null && nearest !== dragObject.socketIndex) {
-      if (dragType === 'mirror') {
-        moveMirrorToSocket(dragObject, nearest);
-      } else if (dragType === 'prism') {
-        movePrismToSocket(dragObject, nearest);
-      }
-      console.log(`[input] Dropped ${dragType} into socket ${nearest}, beam dirty`);
+    // Drop
+    if (FREE_PLACEMENT && dragType === 'mirror') {
+      // Free placement: drop wherever pointer is, clamped to mirror field
+      moveMirrorFree(dragObject, world.x, world.y);
     } else {
-      // Snap back
-      const [sx, sy] = SOCKET_POSITIONS[dragObject.socketIndex];
-      dragObject.mesh.position.set(sx, sy, dragObject.mesh.position.z);
+      const nearest = findNearestSocket(world.x, world.y);
+      if (nearest !== null && nearest !== dragObject.socketIndex) {
+        if (dragType === 'mirror') {
+          moveMirrorToSocket(dragObject, nearest);
+        } else if (dragType === 'prism') {
+          movePrismToSocket(dragObject, nearest);
+        }
+      } else {
+        const [sx, sy] = SOCKET_POSITIONS[dragObject.socketIndex];
+        dragObject.mesh.position.set(sx, sy, dragObject.mesh.position.z);
+      }
     }
     dragObject = null;
     dragType = null;
@@ -2341,8 +2429,9 @@ function findObjectAt(wx, wy) {
   const prisms = getPrisms();
   for (const mirror of mirrors) {
     if (mirror.shattered) continue;
-    const [sx, sy] = SOCKET_POSITIONS[mirror.socketIndex];
-    const dist = Math.sqrt((wx - sx) ** 2 + (wy - sy) ** 2);
+    const mx = FREE_PLACEMENT ? mirror.freeX : SOCKET_POSITIONS[mirror.socketIndex][0];
+    const my = FREE_PLACEMENT ? mirror.freeY : SOCKET_POSITIONS[mirror.socketIndex][1];
+    const dist = Math.sqrt((wx - mx) ** 2 + (wy - my) ** 2);
     if (dist < HIT_RADIUS) {
       return { type: 'mirror', object: mirror };
     }
@@ -2449,7 +2538,7 @@ let lastTime = 0;
 const MAX_DT = 1 / 30;
 
 function init() {
-  console.log('[Spectrum Zero] init starting');
+  console.log('[Solar Siege] init starting');
   initRenderer();
   initSockets();
   initMirrors();
@@ -2469,7 +2558,7 @@ function init() {
 
   lastTime = performance.now();
   requestAnimationFrame(loop);
-  console.log('[Spectrum Zero] init complete, loop running');
+  console.log('[Solar Siege] init complete, loop running');
 }
 
 function loop(now) {

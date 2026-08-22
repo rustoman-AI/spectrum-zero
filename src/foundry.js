@@ -10,6 +10,7 @@ import {
   FORGE_SLAG_PER_SEC, LENS_INSIGHT_PER_SEC, CHORUS_RECOMBO_PER_SEC,
   FOUNDRY_POSITIONS, FOUNDRY_HW, FOUNDRY_HH, WORLD_HEIGHT
 } from './config.js';
+import { FOUNDRY_LABELS, RES_SLAG_SHORT, RES_INSIGHT_SHORT, RES_RECOMBO_SHORT } from './strings.js';
 import { getScene, getWorldWidth } from './renderer.js';
 import { getSegments } from './beam.js';
 
@@ -120,14 +121,13 @@ export function initFoundries() {
     scene.add(ghostMesh);
 
     // Label
-    const labels = { forge: 'FORGE', lensworks: 'LENS', chorus: 'CHORUS' };
     const lCanvas = document.createElement('canvas');
-    lCanvas.width = 64; lCanvas.height = 24;
+    lCanvas.width = 96; lCanvas.height = 24;
     const lCtx = lCanvas.getContext('2d');
     lCtx.fillStyle = '#ffffff';
-    lCtx.font = 'bold 14px monospace';
+    lCtx.font = 'bold 11px monospace';
     lCtx.textAlign = 'center';
-    lCtx.fillText(labels[def.type], 32, 16);
+    lCtx.fillText(FOUNDRY_LABELS[def.type], 48, 16);
     const lTex = new THREE.CanvasTexture(lCanvas);
     lTex.minFilter = THREE.LinearFilter;
     const lGeo = new THREE.PlaneGeometry(8, 3);
@@ -200,7 +200,7 @@ export function updateFoundries(dt) {
 }
 
 function updateRateLabel(fnd) {
-  const rates = { forge: '+4/s', lensworks: '+3/s', chorus: '+1.5%/s' };
+  const rates = { forge: '+4' + RES_SLAG_SHORT + '/s', lensworks: '+3' + RES_INSIGHT_SHORT + '/s', chorus: '+1.5%/s' };
   fnd.rCtx.clearRect(0, 0, 64, 20);
   fnd.rCtx.fillStyle = '#ffffff';
   fnd.rCtx.font = 'bold 12px monospace';

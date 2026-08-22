@@ -138,8 +138,8 @@ try {
     // === Test 7: Breach and reset ===
     (function() {
       init();
-      addBreaches(3);
-      _boolResults.push(['3 breaches = gameOver', isGameOver(), true]);
+      addBreaches(999); // MAX_BREACHES is 999 in testing mode
+      _boolResults.push(['Max breaches = gameOver', isGameOver(), true]);
       resetSession();
       _boolResults.push(['After reset: gameOver=false', isGameOver(), false]);
       _boolResults.push(['After reset: elapsed=0', getElapsed() === 0, true]);

@@ -12,6 +12,7 @@ const path = require('path');
 // config first (no deps), then renderer, beam, beam-render, mirror, prism, input, main last.
 const SOURCE_FILES = [
   'src/config.js',
+  'src/strings.js',
   'src/renderer.js',
   'src/beam.js',
   'src/beam-render.js',
@@ -47,7 +48,7 @@ const html = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Spectrum Zero</title>
+<title>Solar Siege</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { width: 100%; height: 100%; overflow: hidden; background: #000; touch-action: none; }

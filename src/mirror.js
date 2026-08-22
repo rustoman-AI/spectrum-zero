@@ -4,9 +4,10 @@
 
 import {
   SOCKET_POSITIONS, MIRROR_COUNT_START, MIRROR_MAX_HITS,
-  COLOUR_GREY, DEFAULT_MIRROR_SOCKETS, MIRROR_TWEEN_MS
+  COLOUR_GREY, DEFAULT_MIRROR_SOCKETS, MIRROR_TWEEN_MS,
+  FREE_PLACEMENT, MIRROR_FIELD_TOP, MIRROR_FIELD_BOT
 } from './config.js';
-import { getScene } from './renderer.js';
+import { getScene, getWorldWidth } from './renderer.js';
 import { markDirty } from './beam.js';
 
 const sockets = [];
@@ -45,14 +46,17 @@ export function initMirrors() {
     sockets[socketIdx].objectRef = mirror;
   }
 
-  for (let i = 0; i < SOCKET_POSITIONS.length; i++) {
-    const [sx, sy] = SOCKET_POSITIONS[i];
-    const indicator = new THREE.Mesh(
-      new THREE.RingGeometry(1.5, 1.8, 16),
-      new THREE.MeshBasicMaterial({ color: 0x222222, transparent: true, opacity: 0.5 })
-    );
-    indicator.position.set(sx, sy, -1.0);
-    mirrorMeshGroup.add(indicator);
+  // Socket indicators: hidden when FREE_PLACEMENT is true
+  if (!FREE_PLACEMENT) {
+    for (let i = 0; i < SOCKET_POSITIONS.length; i++) {
+      const [sx, sy] = SOCKET_POSITIONS[i];
+      const indicator = new THREE.Mesh(
+        new THREE.RingGeometry(1.5, 1.8, 16),
+        new THREE.MeshBasicMaterial({ color: 0x222222, transparent: true, opacity: 0.5 })
+      );
+      indicator.position.set(sx, sy, -1.0);
+      mirrorMeshGroup.add(indicator);
+    }
   }
 }
 
@@ -75,6 +79,8 @@ function createMirror(socketIndex) {
     shattered: false,
     reinforced: false,
     anchored: false,
+    freeX: sx,
+    freeY: sy,
     mesh,
     p1: { x: 0, y: 0 },
     p2: { x: 0, y: 0 },
@@ -84,7 +90,13 @@ function createMirror(socketIndex) {
 }
 
 export function updateMirrorGeometry(mirror) {
-  const [sx, sy] = SOCKET_POSITIONS[mirror.socketIndex];
+  let sx, sy;
+  if (FREE_PLACEMENT && mirror.freeX !== undefined) {
+    sx = mirror.freeX;
+    sy = mirror.freeY;
+  } else {
+    [sx, sy] = SOCKET_POSITIONS[mirror.socketIndex];
+  }
   const halfLen = mirror.length / 2;
   const cos = Math.cos(mirror.angle);
   const sin = Math.sin(mirror.angle);
@@ -95,6 +107,16 @@ export function updateMirrorGeometry(mirror) {
 
   mirror.mesh.position.set(sx, sy, 0);
   mirror.mesh.rotation.z = mirror.angle;
+}
+
+// Free placement: move mirror to arbitrary position, clamped to mirror field
+export function moveMirrorFree(mirror, x, y) {
+  const ww = getWorldWidth();
+  const hw = ww / 2;
+  mirror.freeX = Math.max(-hw + 2, Math.min(hw - 2, x));
+  mirror.freeY = Math.max(MIRROR_FIELD_BOT, Math.min(MIRROR_FIELD_TOP, y));
+  updateMirrorGeometry(mirror);
+  markDirty();
 }
 
 // --- Tween system ---

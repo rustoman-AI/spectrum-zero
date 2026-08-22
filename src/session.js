@@ -13,6 +13,7 @@ import { resetDamage } from './damage.js';
 import { markDirty } from './beam.js';
 import { getRecombination, resetFoundries, getSlag, getInsight } from './foundry.js';
 import { resetCrafting } from './crafting.js';
+import { MSG_LOSE, MSG_WIN, RES_SLAG_SHORT, RES_INSIGHT_SHORT, RES_RECOMBO_SHORT } from './strings.js';
 
 let elapsed = 0;
 let breaches = 0;
@@ -21,6 +22,7 @@ let gameWon = false;
 let devourerKilled = false;
 
 const MAX_BREACHES = 999; // TESTING: unlimited lives
+const WALL_DISPLAY = 3;  // hearts shown in HUD (visual integrity)
 
 // HUD
 let hudCanvas = null;
@@ -84,7 +86,7 @@ export function updateHud() {
   const mins = Math.floor(elapsed / 60);
   const secs = Math.floor(elapsed % 60);
   const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
-  const breachStr = '\u2665'.repeat(MAX_BREACHES - breaches) + '\u2661'.repeat(breaches);
+  const breachStr = '\u2665'.repeat(Math.max(0, WALL_DISPLAY - breaches)) + '\u2661'.repeat(Math.min(breaches, WALL_DISPLAY));
   const recombo = Math.floor(getRecombination());
   const slagVal = Math.floor(getSlag());
   const insightVal = Math.floor(getInsight());
@@ -104,11 +106,11 @@ export function updateHud() {
   hudCtx.font = '16px monospace';
   hudCtx.textAlign = 'left';
   hudCtx.fillStyle = '#ff8c1a';
-  hudCtx.fillText(`S:${slagVal}`, 8, 52);
+  hudCtx.fillText(`${RES_SLAG_SHORT}:${slagVal}`, 8, 52);
   hudCtx.fillStyle = '#00ddff';
-  hudCtx.fillText(`I:${insightVal}`, 110, 52);
+  hudCtx.fillText(`${RES_INSIGHT_SHORT}:${insightVal}`, 110, 52);
   hudCtx.fillStyle = '#ffe9a0';
-  hudCtx.fillText(`R:${recombo}%`, 210, 52);
+  hudCtx.fillText(`${RES_RECOMBO_SHORT}:${recombo}%`, 210, 52);
 
   hudTexture.needsUpdate = true;
 }
@@ -131,13 +133,13 @@ export function resetSession() {
 function triggerWin() {
   gameOver = true;
   gameWon = true;
-  showOverlay('LIGHT RESTORED\n\nTap to play again');
+  showOverlay(MSG_WIN);
 }
 
 function triggerLose() {
   gameOver = true;
   gameWon = false;
-  showOverlay('THE GREY WINS\n\nTap to restart');
+  showOverlay(MSG_LOSE);
 }
 
 // --- HUD ---
