@@ -296,7 +296,7 @@ function solve(sourceX, sourceY, mirrors, prisms, worldWidth, foundryColliders) 
     1.0,
     mirrors,
     prisms,
-    foundryColliders || [],
+    [], // foundries are pass-through, not colliders
     worldWidth,
     MAX_BOUNCES,
     null,
@@ -1488,33 +1488,23 @@ function updateFoundries(dt) {
 
     for (let s = 0; s < segments.length; s++) {
       const seg = segments[s];
-      const ex = seg.end.x;
-      const ey = seg.end.y;
-      if (ex >= fnd.x - FOUNDRY_HW && ex <= fnd.x + FOUNDRY_HW &&
-          ey >= fnd.y - FOUNDRY_HH && ey <= fnd.y + FOUNDRY_HH) {
+      if (segCrossesBox(seg, fnd.x, fnd.y, FOUNDRY_HW, FOUNDRY_HH)) {
         if (seg.colour === fnd.colour || seg.colour === COLOUR_WHITE) {
           fnd.active = true;
-          // Position glow at contact point
-          fnd.glowMesh.position.x = ex;
-          fnd.glowMesh.position.y = ey + 1;
+          fnd.glowMesh.position.x = fnd.x;
+          fnd.glowMesh.position.y = fnd.y + FOUNDRY_HH;
           break;
         }
       }
     }
 
     if (fnd.active) {
-      // Brighten body
       fnd.mesh.material.opacity = 0.65;
-      // Show glow
       fnd.glowMesh.visible = true;
       fnd.glowMesh.material.opacity = 0.5 + 0.3 * Math.sin(performance.now() * 0.005);
-      // Show rate label
       fnd.rateMesh.visible = true;
       updateRateLabel(fnd);
-      // Show ghost path (the defence cost)
-      fnd.ghostMesh.visible = true;
-      fnd.ghostMesh.material.opacity = 0.15;
-      fnd.ghostFade = 1.0;
+      fnd.ghostMesh.visible = false;
 
       // Accumulate resources
       if (fnd.type === 'forge') {
@@ -1550,6 +1540,33 @@ function updateRateLabel(fnd) {
   fnd.rCtx.textAlign = 'center';
   fnd.rCtx.fillText(rates[fnd.type], 32, 14);
   fnd.rTex.needsUpdate = true;
+}
+
+// Segment-vs-AABB: does the line from seg.start to seg.end cross the box?
+function segCrossesBox(seg, cx, cy, hw, hh) {
+  const sx = seg.start.x, sy = seg.start.y;
+  const ex = seg.end.x, ey = seg.end.y;
+  const dx = ex - sx, dy = ey - sy;
+  const xmin = cx - hw, xmax = cx + hw;
+  const ymin = cy - hh, ymax = cy + hh;
+  let tmin = 0, tmax = 1;
+  if (Math.abs(dx) < 1e-8) {
+    if (sx < xmin || sx > xmax) return false;
+  } else {
+    let t1 = (xmin - sx) / dx, t2 = (xmax - sx) / dx;
+    if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
+    tmin = Math.max(tmin, t1); tmax = Math.min(tmax, t2);
+    if (tmin > tmax) return false;
+  }
+  if (Math.abs(dy) < 1e-8) {
+    if (sy < ymin || sy > ymax) return false;
+  } else {
+    let t1 = (ymin - sy) / dy, t2 = (ymax - sy) / dy;
+    if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
+    tmin = Math.max(tmin, t1); tmax = Math.min(tmax, t2);
+    if (tmin > tmax) return false;
+  }
+  return true;
 }
 
 
@@ -1903,7 +1920,7 @@ let gameOver = false;
 let gameWon = false;
 let devourerKilled = false;
 
-const MAX_BREACHES = 3;
+const MAX_BREACHES = 999; // TESTING: unlimited lives
 
 // HUD
 let hudCanvas = null;
@@ -2233,19 +2250,11 @@ function onPointerMove(e) {
     if (dist > DRAG_THRESHOLD) {
       // Pointer moved significantly
       if (pointerDownOnObject && pointerDownType === 'mirror' && pointerDownOnObject !== selectedObject) {
-        // Dragging an unselected mirror — start drag
         startDrag(pointerDownOnObject, pointerDownType);
       } else if (pointerDownOnObject && pointerDownType === 'prism') {
-        // Dragging a prism
         startDrag(pointerDownOnObject, pointerDownType);
       } else if (selectedObject && selectedType === 'mirror') {
-        // Swipe with a mirror selected — rotate it
-        state = STATE_ROTATE;
-      } else if (pointerDownOnObject && pointerDownOnObject === selectedObject) {
-        // Dragging the selected mirror
-        startDrag(pointerDownOnObject, pointerDownType);
-      } else if (selectedObject && selectedType === 'mirror') {
-        // Swiping on empty space with mirror selected — rotate
+        // Any swipe while a mirror is selected = rotate (including on the mirror itself)
         state = STATE_ROTATE;
       }
     }
@@ -2264,11 +2273,10 @@ function onPointerMove(e) {
       dropTargetMesh.visible = false;
     }
   } else if (state === STATE_ROTATE && selectedObject && selectedType === 'mirror') {
-    // Rotation: horizontal swipe delta maps to angle change
-    const angleDelta = dx * ROTATION_SENSITIVITY * 0.03;
-    rotateMirror(selectedObject, selectedObject.angle + angleDelta);
-    // Reset start so rotation is incremental
-    pointerStart = world;
+    // Rotation: pointer angle relative to mirror centre = mirror angle
+    const [mx, my] = SOCKET_POSITIONS[selectedObject.socketIndex];
+    const angle = Math.atan2(world.y - my, world.x - mx);
+    rotateMirror(selectedObject, angle);
   }
   updateDebug();
 }

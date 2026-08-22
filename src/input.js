@@ -116,19 +116,11 @@ function onPointerMove(e) {
     if (dist > DRAG_THRESHOLD) {
       // Pointer moved significantly
       if (pointerDownOnObject && pointerDownType === 'mirror' && pointerDownOnObject !== selectedObject) {
-        // Dragging an unselected mirror — start drag
         startDrag(pointerDownOnObject, pointerDownType);
       } else if (pointerDownOnObject && pointerDownType === 'prism') {
-        // Dragging a prism
         startDrag(pointerDownOnObject, pointerDownType);
       } else if (selectedObject && selectedType === 'mirror') {
-        // Swipe with a mirror selected — rotate it
-        state = STATE_ROTATE;
-      } else if (pointerDownOnObject && pointerDownOnObject === selectedObject) {
-        // Dragging the selected mirror
-        startDrag(pointerDownOnObject, pointerDownType);
-      } else if (selectedObject && selectedType === 'mirror') {
-        // Swiping on empty space with mirror selected — rotate
+        // Any swipe while a mirror is selected = rotate (including on the mirror itself)
         state = STATE_ROTATE;
       }
     }
@@ -147,11 +139,10 @@ function onPointerMove(e) {
       dropTargetMesh.visible = false;
     }
   } else if (state === STATE_ROTATE && selectedObject && selectedType === 'mirror') {
-    // Rotation: horizontal swipe delta maps to angle change
-    const angleDelta = dx * ROTATION_SENSITIVITY * 0.03;
-    rotateMirror(selectedObject, selectedObject.angle + angleDelta);
-    // Reset start so rotation is incremental
-    pointerStart = world;
+    // Rotation: pointer angle relative to mirror centre = mirror angle
+    const [mx, my] = SOCKET_POSITIONS[selectedObject.socketIndex];
+    const angle = Math.atan2(world.y - my, world.x - mx);
+    rotateMirror(selectedObject, angle);
   }
   updateDebug();
 }

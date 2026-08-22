@@ -45,7 +45,7 @@ export function solve(sourceX, sourceY, mirrors, prisms, worldWidth, foundryColl
     1.0,
     mirrors,
     prisms,
-    foundryColliders || [],
+    [], // foundries are pass-through, not colliders
     worldWidth,
     MAX_BOUNCES,
     null,

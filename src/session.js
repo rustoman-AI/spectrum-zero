@@ -20,7 +20,7 @@ let gameOver = false;
 let gameWon = false;
 let devourerKilled = false;
 
-const MAX_BREACHES = 3;
+const MAX_BREACHES = 999; // TESTING: unlimited lives
 
 // HUD
 let hudCanvas = null;
