@@ -111,6 +111,19 @@ ${gameCode}
 const outPath = path.join(__dirname, 'index.html');
 fs.writeFileSync(outPath, html, 'utf8');
 
+// --- Syntax check: parse the generated script to catch errors before shipping ---
+const scriptMatch = html.match(/<script>\n([\s\S]*?)<\/script>/);
+if (scriptMatch) {
+  try {
+    new Function(scriptMatch[1]);
+  } catch (e) {
+    console.error(`\n❌ BUILD FAILED: Syntax error in generated index.html`);
+    console.error(`  ${e.message}\n`);
+    fs.unlinkSync(outPath);
+    process.exit(1);
+  }
+}
+
 const size = fs.statSync(outPath).size;
 console.log(`Built index.html (${(size / 1024).toFixed(1)} KB)`);
 

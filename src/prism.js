@@ -47,7 +47,8 @@ export function initPrisms() {
 export function placePrism(socketIndex) {
   const scene = getScene();
   const sockets = getSockets();
-  const [sx, sy] = SOCKET_POSITIONS[socketIndex];
+  const [sx, _sy] = SOCKET_POSITIONS[socketIndex];
+  const sy = PRISM_Y; // prism always at PRISM_Y regardless of socket grid
 
   // Diamond shape (rotated square): apex up, vertices at top/bottom/left/right
   // Faceted: 4 triangles from centre, each a different brightness

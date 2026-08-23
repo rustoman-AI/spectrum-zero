@@ -118,9 +118,6 @@ export function updateHud() {
   hudTexture.needsUpdate = true;
 }
 
-  hudTexture.needsUpdate = true;
-}
-
 export function resetSession() {
   elapsed = 0;
   wallIntegrity = WALL_MAX_HP;
