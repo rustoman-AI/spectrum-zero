@@ -100,8 +100,17 @@ export const ROTATION_SENSITIVITY = 1.0;
 export const FREE_PLACEMENT = (PLACEMENT_MODE === 'free');
 
 // --- Resonance ---
-export const RESONANCE_MIN_BOUNCES = 3; // bounces between same pair to trigger
-export const RESONANCE_MULTIPLIER = 1.5; // DPS multiplier when resonance active
+export const RESONANCE_MIN_BOUNCES = 3;
+export const RESONANCE_MULTIPLIER = 1.5;
+
+// --- Heat decay ---
+export const HEAT_DECAY_RATE = 0.15; // fraction of maxHP healed per second when beam leaves
+
+// --- Breach damage scaling ---
+// Wall damage is reduced by the fraction of heat accumulated on the enemy.
+// damage = baseDamage * max(BREACH_DAMAGE_FLOOR, 1 - heatFraction)
+export const BREACH_DAMAGE_FLOOR = 0.2;  // minimum 20% damage even at 99% heat
+export const BREACH_BASE_DAMAGE = { mote: 5, husk: 15, carapace: 25, devourer: 100 };
 
 // --- Sockets (generic grid, holds mirror or prism) ---
 // 3 columns x 4 rows = 12 sockets in the mirror field (y: 22 to -2).

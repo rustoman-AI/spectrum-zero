@@ -1,33 +1,27 @@
 // ============================================================
 // src/beam.js — Iterative raycast beam solver with resonance detection
 // ============================================================
-
 import {
   MAX_BOUNCES, MAX_SEGMENTS, PRISM_SPLIT_ANGLE,
   APERTURE_Y, WORLD_HEIGHT, COLOUR_WHITE,
   COLOUR_AMBER, COLOUR_CYAN, COLOUR_GOLD,
   FOUNDRY_HW, FOUNDRY_HH, RESONANCE_MIN_BOUNCES
 } from './config.js';
-
 // Segment: { start, end, colour, intensity, bounces }
 let segments = [];
 let dirty = true;
-
 // Diagnostics — read by debug overlay
 let maxBouncesUsed = 0;
 let hitBounceCap = false;
-
 export function markDirty() { dirty = true; }
 export function isDirty() { return dirty; }
 export function getSegments() { return segments; }
 export function getBeamDiag() { return { maxBouncesUsed, hitBounceCap }; }
-
 // Resonance: detected when 3+ bounces occur between the same mirror pair
 let resonanceActive = false;
 let resonanceMirrors = null; // [mirrorA, mirrorB] if resonance detected
 export function getResonanceActive() { return resonanceActive; }
 export function getResonanceMirrors() { return resonanceMirrors; }
-
 // Called by main loop when dirty
 export function solve(sourceX, sourceY, mirrors, prisms, worldWidth, foundryColliders) {
   segments = [];
@@ -54,9 +48,7 @@ export function solve(sourceX, sourceY, mirrors, prisms, worldWidth, foundryColl
   // Post-solve: detect resonance (3+ bounces between same mirror pair)
   detectResonance();
 }
-
 let mirrorHitSequence = [];
-
 function detectResonance() {
   if (mirrorHitSequence.length < RESONANCE_MIN_BOUNCES) return;
   for (let i = 0; i <= mirrorHitSequence.length - RESONANCE_MIN_BOUNCES; i++) {
@@ -69,16 +61,13 @@ function detectResonance() {
     if (count >= RESONANCE_MIN_BOUNCES) { resonanceActive = true; resonanceMirrors = [a, b]; return; }
   }
 }
-
 function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft, excludePrism, bouncesUsed) {
   if (segments.length >= MAX_SEGMENTS) return;
   if (bouncesLeft < 0) {
     hitBounceCap = true;
     return;
   }
-
   const hit = castRay(origin, direction, mirrors, prisms, foundryColliders, worldWidth, excludePrism);
-
   segments.push({
     start: { x: origin.x, y: origin.y },
     end: { x: hit.point.x, y: hit.point.y },
@@ -86,7 +75,6 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
     intensity,
     bounces: bouncesUsed
   });
-
   if (hit.type === 'mirror' && bouncesLeft > 0) {
     // Record for resonance detection
     mirrorHitSequence.push(hit.object);
@@ -114,12 +102,9 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
     const len = Math.sqrt(reflected.x * reflected.x + reflected.y * reflected.y);
     reflected.x /= len;
     reflected.y /= len;
-
     const newBounces = bouncesUsed + 1;
     if (newBounces > maxBouncesUsed) maxBouncesUsed = newBounces;
-
     traceBeam(hit.point, reflected, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, null, newBounces);
-
   } else if (hit.type === 'prism') {
     if (colour === COLOUR_WHITE) {
       const bands = [
@@ -147,12 +132,10 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
   }
   // else: beam terminates (edge, foundry, enemy)
 }
-
 // Cast a ray and find the nearest intersection
 function castRay(origin, direction, mirrors, prisms, foundryColliders, worldWidth, excludePrism) {
   let nearest = null;
   let nearestDist = Infinity;
-
   // Test mirrors
   for (const mirror of mirrors) {
     if (mirror.shattered) continue;
@@ -162,7 +145,6 @@ function castRay(origin, direction, mirrors, prisms, foundryColliders, worldWidt
       nearest = { type: 'mirror', point: result.point, normal: mirror.normal, object: mirror };
     }
   }
-
   // Test prisms
   for (const prism of prisms) {
     if (prism === excludePrism) continue;
@@ -172,7 +154,6 @@ function castRay(origin, direction, mirrors, prisms, foundryColliders, worldWidt
       nearest = { type: 'prism', point: result.point, normal: null, object: prism };
     }
   }
-
   // Test foundries (absorbing — beam terminates here)
   for (const fnd of foundryColliders) {
     const result = rayAABBIntersect(origin, direction, fnd.x, fnd.y, FOUNDRY_HW, FOUNDRY_HH);
@@ -181,14 +162,12 @@ function castRay(origin, direction, mirrors, prisms, foundryColliders, worldWidt
       nearest = { type: 'foundry', point: result.point, normal: null, object: fnd };
     }
   }
-
   // Test world bounds
   const edgeHit = rayBoundsIntersect(origin, direction, worldWidth);
   if (edgeHit && edgeHit.dist > 0.1 && edgeHit.dist < nearestDist) {
     nearestDist = edgeHit.dist;
     nearest = { type: 'edge', point: edgeHit.point, normal: null, object: null };
   }
-
   if (!nearest) {
     nearest = {
       type: 'edge',
@@ -197,17 +176,14 @@ function castRay(origin, direction, mirrors, prisms, foundryColliders, worldWidt
       object: null
     };
   }
-
   return nearest;
 }
-
 // Ray vs AABB intersection (for foundries)
 // Returns first intersection point with the box boundary
 function rayAABBIntersect(origin, dir, cx, cy, hw, hh) {
   const xmin = cx - hw, xmax = cx + hw;
   const ymin = cy - hh, ymax = cy + hh;
   let tmin = -Infinity, tmax = Infinity;
-
   if (Math.abs(dir.x) < 1e-8) {
     if (origin.x < xmin || origin.x > xmax) return null;
   } else {
@@ -218,7 +194,6 @@ function rayAABBIntersect(origin, dir, cx, cy, hw, hh) {
     tmax = Math.min(tmax, t2);
     if (tmin > tmax) return null;
   }
-
   if (Math.abs(dir.y) < 1e-8) {
     if (origin.y < ymin || origin.y > ymax) return null;
   } else {
@@ -229,7 +204,6 @@ function rayAABBIntersect(origin, dir, cx, cy, hw, hh) {
     tmax = Math.min(tmax, t2);
     if (tmin > tmax) return null;
   }
-
   // tmin is the entry point
   if (tmin < 0.1) tmin = tmax; // if inside the box, use exit
   if (tmin < 0.1) return null;
@@ -238,7 +212,6 @@ function rayAABBIntersect(origin, dir, cx, cy, hw, hh) {
     point: { x: origin.x + dir.x * tmin, y: origin.y + dir.y * tmin }
   };
 }
-
 // Ray vs line segment intersection (for mirrors)
 // Ray: P = origin + t * direction, t > 0
 // Segment: from A to B
@@ -247,12 +220,10 @@ function raySegmentIntersect(origin, dir, A, B) {
   const dy = B.y - A.y;
   const denom = dir.x * dy - dir.y * dx;
   if (Math.abs(denom) < 1e-8) return null; // parallel
-
   const ox = A.x - origin.x;
   const oy = A.y - origin.y;
   const t = (ox * dy - oy * dx) / denom;
   const u = (ox * dir.y - oy * dir.x) / denom;
-
   if (t > 0 && u >= 0 && u <= 1) {
     return {
       dist: t,
@@ -261,7 +232,6 @@ function raySegmentIntersect(origin, dir, A, B) {
   }
   return null;
 }
-
 // Ray vs circle intersection (for prisms)
 function rayCircleIntersect(origin, dir, centre, radius) {
   const ocx = origin.x - centre.x;
@@ -280,21 +250,18 @@ function rayCircleIntersect(origin, dir, centre, radius) {
     point: { x: origin.x + dir.x * t, y: origin.y + dir.y * t }
   };
 }
-
 // Ray vs world bounds (rectangle from -hw to hw, -hh to hh)
 function rayBoundsIntersect(origin, dir, worldWidth) {
   const hw = worldWidth / 2;
   const hh = WORLD_HEIGHT / 2;
   let tMin = Infinity;
   let hitPoint = null;
-
   const edges = [
     { axis: 'x', val: -hw },
     { axis: 'x', val: hw },
     { axis: 'y', val: -hh },
     { axis: 'y', val: hh },
   ];
-
   for (const edge of edges) {
     let t;
     if (edge.axis === 'x') {
@@ -319,11 +286,9 @@ function rayBoundsIntersect(origin, dir, worldWidth) {
       }
     }
   }
-
   if (hitPoint) return { dist: tMin, point: hitPoint };
   return null;
 }
-
 // Rotate a 2D vector by angle (radians)
 function rotateVec(v, angle) {
   const cos = Math.cos(angle);

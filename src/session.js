@@ -18,13 +18,12 @@ import { resetPrisms } from './prism.js';
 import { MSG_LOSE, MSG_WIN, RES_SLAG_SHORT, RES_INSIGHT_SHORT, RES_RECOMBO_SHORT } from './strings.js';
 
 let elapsed = 0;
-let breaches = 0;
+let wallIntegrity = 100; // wall HP, starts at 100
 let gameOver = false;
 let gameWon = false;
 let devourerKilled = false;
 
-const MAX_BREACHES = 3;
-const WALL_DISPLAY = 3;
+const WALL_MAX = 100;
 
 // HUD
 let hudCanvas = null;
@@ -41,7 +40,7 @@ let dimMesh = null;
 
 export function initSession() {
   elapsed = 0;
-  breaches = 0;
+  wallIntegrity = WALL_MAX;
   gameOver = false;
   gameWon = false;
   devourerKilled = false;
@@ -50,7 +49,8 @@ export function initSession() {
 }
 
 export function getElapsed() { return elapsed; }
-export function getBreaches() { return breaches; }
+export function getBreaches() { return Math.floor(WALL_MAX - wallIntegrity); }
+export function getWallIntegrity() { return wallIntegrity; }
 export function isGameOver() { return gameOver; }
 export function isGameWon() { return gameWon; }
 export function notifyDevourerKilled() { devourerKilled = true; }
@@ -75,11 +75,11 @@ export function updateSession(dt) {
   }
 }
 
-export function addBreaches(count) {
-  if (count <= 0 || gameOver) return;
-  if (DEV.INVINCIBLE) return; // dev mode: wall never breaks
-  breaches += count;
-  if (breaches >= MAX_BREACHES) {
+export function addBreaches(damage) {
+  if (damage <= 0 || gameOver) return;
+  if (DEV.INVINCIBLE) return;
+  wallIntegrity = Math.max(0, wallIntegrity - damage);
+  if (wallIntegrity <= 0) {
     triggerLose();
   }
 }
@@ -89,7 +89,7 @@ export function updateHud() {
   const mins = Math.floor(elapsed / 60);
   const secs = Math.floor(elapsed % 60);
   const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
-  const breachStr = '\u2665'.repeat(Math.max(0, MAX_BREACHES - breaches)) + '\u2661'.repeat(Math.min(breaches, MAX_BREACHES));
+  const breachStr = 'Wall: ' + Math.ceil(wallIntegrity) + '%';
   const recombo = Math.floor(getRecombination());
   const slagVal = Math.floor(getSlag());
   const insightVal = Math.floor(getInsight());
@@ -120,7 +120,7 @@ export function updateHud() {
 
 export function resetSession() {
   elapsed = 0;
-  breaches = 0;
+  wallIntegrity = WALL_MAX;
   gameOver = false;
   gameWon = false;
   devourerKilled = false;

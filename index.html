@@ -158,8 +158,17 @@ const ROTATION_SENSITIVITY = 1.0;
 const FREE_PLACEMENT = (PLACEMENT_MODE === 'free');
 
 // --- Resonance ---
-const RESONANCE_MIN_BOUNCES = 3; // bounces between same pair to trigger
-const RESONANCE_MULTIPLIER = 1.5; // DPS multiplier when resonance active
+const RESONANCE_MIN_BOUNCES = 3;
+const RESONANCE_MULTIPLIER = 1.5;
+
+// --- Heat decay ---
+const HEAT_DECAY_RATE = 0.15; // fraction of maxHP healed per second when beam leaves
+
+// --- Breach damage scaling ---
+// Wall damage is reduced by the fraction of heat accumulated on the enemy.
+// damage = baseDamage * max(BREACH_DAMAGE_FLOOR, 1 - heatFraction)
+const BREACH_DAMAGE_FLOOR = 0.2;  // minimum 20% damage even at 99% heat
+const BREACH_BASE_DAMAGE = { mote: 5, husk: 15, carapace: 25, devourer: 100 };
 
 // --- Sockets (generic grid, holds mirror or prism) ---
 // 3 columns x 4 rows = 12 sockets in the mirror field (y: 22 to -2).
@@ -495,27 +504,21 @@ function drawSeaTexture(ctx, w, h) {
 // src/beam.js — Iterative raycast beam solver with resonance detection
 // ============================================================
 
-
-
 // Segment: { start, end, colour, intensity, bounces }
 let segments = [];
 let dirty = true;
-
 // Diagnostics — read by debug overlay
 let maxBouncesUsed = 0;
 let hitBounceCap = false;
-
 function markDirty() { dirty = true; }
 function isDirty() { return dirty; }
 function getSegments() { return segments; }
 function getBeamDiag() { return { maxBouncesUsed, hitBounceCap }; }
-
 // Resonance: detected when 3+ bounces occur between the same mirror pair
 let resonanceActive = false;
 let resonanceMirrors = null; // [mirrorA, mirrorB] if resonance detected
 function getResonanceActive() { return resonanceActive; }
 function getResonanceMirrors() { return resonanceMirrors; }
-
 // Called by main loop when dirty
 function solve(sourceX, sourceY, mirrors, prisms, worldWidth, foundryColliders) {
   segments = [];
@@ -542,9 +545,7 @@ function solve(sourceX, sourceY, mirrors, prisms, worldWidth, foundryColliders) 
   // Post-solve: detect resonance (3+ bounces between same mirror pair)
   detectResonance();
 }
-
 let mirrorHitSequence = [];
-
 function detectResonance() {
   if (mirrorHitSequence.length < RESONANCE_MIN_BOUNCES) return;
   for (let i = 0; i <= mirrorHitSequence.length - RESONANCE_MIN_BOUNCES; i++) {
@@ -557,16 +558,13 @@ function detectResonance() {
     if (count >= RESONANCE_MIN_BOUNCES) { resonanceActive = true; resonanceMirrors = [a, b]; return; }
   }
 }
-
 function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft, excludePrism, bouncesUsed) {
   if (segments.length >= MAX_SEGMENTS) return;
   if (bouncesLeft < 0) {
     hitBounceCap = true;
     return;
   }
-
   const hit = castRay(origin, direction, mirrors, prisms, foundryColliders, worldWidth, excludePrism);
-
   segments.push({
     start: { x: origin.x, y: origin.y },
     end: { x: hit.point.x, y: hit.point.y },
@@ -574,7 +572,6 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
     intensity,
     bounces: bouncesUsed
   });
-
   if (hit.type === 'mirror' && bouncesLeft > 0) {
     // Record for resonance detection
     mirrorHitSequence.push(hit.object);
@@ -602,12 +599,9 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
     const len = Math.sqrt(reflected.x * reflected.x + reflected.y * reflected.y);
     reflected.x /= len;
     reflected.y /= len;
-
     const newBounces = bouncesUsed + 1;
     if (newBounces > maxBouncesUsed) maxBouncesUsed = newBounces;
-
     traceBeam(hit.point, reflected, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, null, newBounces);
-
   } else if (hit.type === 'prism') {
     if (colour === COLOUR_WHITE) {
       const bands = [
@@ -635,12 +629,10 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
   }
   // else: beam terminates (edge, foundry, enemy)
 }
-
 // Cast a ray and find the nearest intersection
 function castRay(origin, direction, mirrors, prisms, foundryColliders, worldWidth, excludePrism) {
   let nearest = null;
   let nearestDist = Infinity;
-
   // Test mirrors
   for (const mirror of mirrors) {
     if (mirror.shattered) continue;
@@ -650,7 +642,6 @@ function castRay(origin, direction, mirrors, prisms, foundryColliders, worldWidt
       nearest = { type: 'mirror', point: result.point, normal: mirror.normal, object: mirror };
     }
   }
-
   // Test prisms
   for (const prism of prisms) {
     if (prism === excludePrism) continue;
@@ -660,7 +651,6 @@ function castRay(origin, direction, mirrors, prisms, foundryColliders, worldWidt
       nearest = { type: 'prism', point: result.point, normal: null, object: prism };
     }
   }
-
   // Test foundries (absorbing — beam terminates here)
   for (const fnd of foundryColliders) {
     const result = rayAABBIntersect(origin, direction, fnd.x, fnd.y, FOUNDRY_HW, FOUNDRY_HH);
@@ -669,14 +659,12 @@ function castRay(origin, direction, mirrors, prisms, foundryColliders, worldWidt
       nearest = { type: 'foundry', point: result.point, normal: null, object: fnd };
     }
   }
-
   // Test world bounds
   const edgeHit = rayBoundsIntersect(origin, direction, worldWidth);
   if (edgeHit && edgeHit.dist > 0.1 && edgeHit.dist < nearestDist) {
     nearestDist = edgeHit.dist;
     nearest = { type: 'edge', point: edgeHit.point, normal: null, object: null };
   }
-
   if (!nearest) {
     nearest = {
       type: 'edge',
@@ -685,17 +673,14 @@ function castRay(origin, direction, mirrors, prisms, foundryColliders, worldWidt
       object: null
     };
   }
-
   return nearest;
 }
-
 // Ray vs AABB intersection (for foundries)
 // Returns first intersection point with the box boundary
 function rayAABBIntersect(origin, dir, cx, cy, hw, hh) {
   const xmin = cx - hw, xmax = cx + hw;
   const ymin = cy - hh, ymax = cy + hh;
   let tmin = -Infinity, tmax = Infinity;
-
   if (Math.abs(dir.x) < 1e-8) {
     if (origin.x < xmin || origin.x > xmax) return null;
   } else {
@@ -706,7 +691,6 @@ function rayAABBIntersect(origin, dir, cx, cy, hw, hh) {
     tmax = Math.min(tmax, t2);
     if (tmin > tmax) return null;
   }
-
   if (Math.abs(dir.y) < 1e-8) {
     if (origin.y < ymin || origin.y > ymax) return null;
   } else {
@@ -717,7 +701,6 @@ function rayAABBIntersect(origin, dir, cx, cy, hw, hh) {
     tmax = Math.min(tmax, t2);
     if (tmin > tmax) return null;
   }
-
   // tmin is the entry point
   if (tmin < 0.1) tmin = tmax; // if inside the box, use exit
   if (tmin < 0.1) return null;
@@ -726,7 +709,6 @@ function rayAABBIntersect(origin, dir, cx, cy, hw, hh) {
     point: { x: origin.x + dir.x * tmin, y: origin.y + dir.y * tmin }
   };
 }
-
 // Ray vs line segment intersection (for mirrors)
 // Ray: P = origin + t * direction, t > 0
 // Segment: from A to B
@@ -735,12 +717,10 @@ function raySegmentIntersect(origin, dir, A, B) {
   const dy = B.y - A.y;
   const denom = dir.x * dy - dir.y * dx;
   if (Math.abs(denom) < 1e-8) return null; // parallel
-
   const ox = A.x - origin.x;
   const oy = A.y - origin.y;
   const t = (ox * dy - oy * dx) / denom;
   const u = (ox * dir.y - oy * dir.x) / denom;
-
   if (t > 0 && u >= 0 && u <= 1) {
     return {
       dist: t,
@@ -749,7 +729,6 @@ function raySegmentIntersect(origin, dir, A, B) {
   }
   return null;
 }
-
 // Ray vs circle intersection (for prisms)
 function rayCircleIntersect(origin, dir, centre, radius) {
   const ocx = origin.x - centre.x;
@@ -768,21 +747,18 @@ function rayCircleIntersect(origin, dir, centre, radius) {
     point: { x: origin.x + dir.x * t, y: origin.y + dir.y * t }
   };
 }
-
 // Ray vs world bounds (rectangle from -hw to hw, -hh to hh)
 function rayBoundsIntersect(origin, dir, worldWidth) {
   const hw = worldWidth / 2;
   const hh = WORLD_HEIGHT / 2;
   let tMin = Infinity;
   let hitPoint = null;
-
   const edges = [
     { axis: 'x', val: -hw },
     { axis: 'x', val: hw },
     { axis: 'y', val: -hh },
     { axis: 'y', val: hh },
   ];
-
   for (const edge of edges) {
     let t;
     if (edge.axis === 'x') {
@@ -807,11 +783,9 @@ function rayBoundsIntersect(origin, dir, worldWidth) {
       }
     }
   }
-
   if (hitPoint) return { dist: tMin, point: hitPoint };
   return null;
 }
-
 // Rotate a 2D vector by angle (radians)
 function rotateVec(v, angle) {
   const cos = Math.cos(angle);
@@ -1401,7 +1375,7 @@ function initEnemies() {
 
     pool.push({
       active: false, type: 'mote',
-      hp: 0, maxHp: 0, armour: 0,
+      hp: 0, maxHp: 0, armour: 0, heat: 0,
       lane: 0, y: ENEMY_SPAWN_Y,
       speed: 0, baseSpeed: 0,
       burn: 0, slowed: false,
@@ -1445,6 +1419,7 @@ function spawnEnemy(type, lane, hpMultiplier) {
       e.speed = template.speed;
       e.baseSpeed = template.speed;
       e.burn = 0;
+      e.heat = 0;
       e.slowed = false;
       e.bandsHitting = 0;
       e.lastHitColour = 0;
@@ -1459,15 +1434,19 @@ function spawnEnemy(type, lane, hpMultiplier) {
 }
 
 function updateEnemies(dt) {
-  let breaches = 0;
+  let wallDamage = 0;
   for (let i = 0; i < pool.length; i++) {
     const e = pool[i];
     if (!e.active) continue;
     e.slowed = false;
     e.y += e.speed * dt;
     if (e.y >= BREACH_Y) {
+      // Scaled breach damage: reduced by heat fraction
+      const heatFrac = Math.min(1, (e.heat || 0) / e.maxHp);
+      const scale = Math.max(BREACH_DAMAGE_FLOOR, 1 - heatFrac);
+      const baseDmg = BREACH_BASE_DAMAGE[e.type] || 10;
+      wallDamage += baseDmg * scale;
       deactivateEnemy(e);
-      breaches++;
       continue;
     }
     positionEnemy(e);
@@ -1482,7 +1461,7 @@ function updateEnemies(dt) {
       if (p.life <= 0) p.mesh.visible = false;
     }
   }
-  return breaches;
+  return wallDamage;
 }
 
 function applyGoldSlow(enemy) { enemy.slowed = true; }
@@ -1543,7 +1522,8 @@ function positionEnemy(e) {
 }
 
 function updateEnemyVisual(e) {
-  e.burn = Math.max(0, 1 - (e.hp / e.maxHp));
+  // Burn is driven by heat accumulator, not HP
+  e.burn = Math.max(0, (e.heat || 0) / e.maxHp);
   // Burn meter: wide, thick, anchored left
   e.barFill.scale.x = e.burn;
   e.barFill.position.x = -2.5 * (1 - e.burn);
@@ -1560,6 +1540,10 @@ function updateEnemyVisual(e) {
     );
     const barBright = Math.min(1, 0.5 + e.bandsHitting * 0.25);
     e.barFill.material.color.setRGB(barBright, barBright * 0.4, 0);
+  } else if (e.slowed) {
+    // Gold slow visual: blue-gold tint + slight transparency
+    e.mesh.material.color.setRGB(0.4, 0.5, 0.25);
+    e.barFill.material.color.setHex(0xffe9a0);
   } else {
     const brightness = 0.35 + 0.15 * (1 - e.burn);
     e.mesh.material.color.setRGB(brightness, brightness * 0.8, brightness * 0.8);
@@ -1573,35 +1557,44 @@ function updateEnemyVisual(e) {
 
 // === src/enemy-spawner.js ===
 // ============================================================
-// src/enemy-spawner.js — Spawn schedule, escalation curve
+// src/enemy-spawner.js — Spawn schedule with paired spawning
 //
-// Phase 1 (0:00–4:00): Motes only, interval ramps from 3.5s to 2.0s
-// Phase 2 (4:00–10:00): Husks + Carapaces, interval 1.8s
-// Phase 3+ (10:00+): heavier mix, interval 1.5s (M4 will refine)
-//
-// Initial delay: 3.0s (no enemies in the first few seconds)
-// Escalation: hp_multiplier = 1 + (t / 900) * 3
+// Phase 1: Motes only, single spawns, interval ramps 3.5→2.0s
+// Phase 2+: Paired spawns at opposing X (60%+ apart), within 2s.
+//   Fast mote on the OFF-side (away from current beam direction).
 // ============================================================
 
 
 
 
-// Interval bounds
-const PHASE1_INTERVAL_START = 3.5; // seconds, at t=0
-const PHASE1_INTERVAL_END = 2.0;   // seconds, at t=PHASE_1_END
+
+const PHASE1_INTERVAL_START = 3.5;
+const PHASE1_INTERVAL_END = 2.0;
 const PHASE2_INTERVAL = 1.8;
 const PHASE3_INTERVAL = 1.5;
-const INITIAL_DELAY = 3.0;         // no spawns before this
+const INITIAL_DELAY = 3.0;
+const PAIR_DELAY = 1.5; // seconds between members of a pair
+const PAIR_MIN_SEPARATION = 3; // minimum lane gap (60% of 5 = 3 lanes apart)
 
 let spawnTimer = 0;
 let spawnerElapsed = 0;
 let totalSpawns = 0;
+let pendingPair = null; // { type, lane, hpMult, timer }
 
 function getSpawnCount() { return totalSpawns; }
 function getCurrentInterval() { return getInterval(); }
 
 function updateSpawner(dt, sessionTime) {
   spawnerElapsed = sessionTime;
+  // Handle pending pair member
+  if (pendingPair) {
+    pendingPair.timer -= dt;
+    if (pendingPair.timer <= 0) {
+      spawnEnemy(pendingPair.type, pendingPair.lane, pendingPair.hpMult);
+      totalSpawns++;
+      pendingPair = null;
+    }
+  }
   spawnTimer -= dt;
   if (spawnTimer <= 0 && spawnerElapsed >= INITIAL_DELAY) {
     doSpawn();
@@ -1614,11 +1607,11 @@ function resetSpawner() {
   spawnTimer = INITIAL_DELAY;
   spawnerElapsed = 0;
   totalSpawns = 0;
+  pendingPair = null;
 }
 
 function getInterval() {
   if (spawnerElapsed < PHASE_1_END) {
-    // Ramp: linearly interpolate from START to END over Phase 1
     const t = (spawnerElapsed - INITIAL_DELAY) / (PHASE_1_END - INITIAL_DELAY);
     const clamped = Math.max(0, Math.min(1, t));
     return PHASE1_INTERVAL_START + (PHASE1_INTERVAL_END - PHASE1_INTERVAL_START) * clamped;
@@ -1627,34 +1620,59 @@ function getInterval() {
   return PHASE3_INTERVAL;
 }
 
+// Determine which side the beam is currently pointing (left or right of centre)
+function getBeamSide() {
+  const segs = getSegments();
+  let avgX = 0;
+  let count = 0;
+  for (let i = 0; i < segs.length; i++) {
+    avgX += segs[i].end.x;
+    count++;
+  }
+  return count > 0 ? (avgX / count > 0 ? 'right' : 'left') : 'left';
+}
+
 function doSpawn() {
   const hpMult = getEscalationMultiplier(spawnerElapsed);
-  const lane = Math.floor(Math.random() * ENEMY_LANE_COUNT);
 
   if (spawnerElapsed < PHASE_1_END) {
+    // Phase 1: single motes, random lane
+    const lane = Math.floor(Math.random() * ENEMY_LANE_COUNT);
     spawnEnemy('mote', lane, hpMult);
-  } else if (spawnerElapsed < PHASE_2_END) {
-    const roll = Math.random();
-    if (roll < 0.5) {
-      spawnEnemy('husk', lane, hpMult);
-    } else if (roll < 0.85) {
-      spawnEnemy('mote', lane, hpMult);
-    } else {
-      spawnEnemy('carapace', lane, hpMult);
-    }
   } else {
-    const roll = Math.random();
-    if (roll < 0.3) {
-      spawnEnemy('carapace', lane, hpMult);
-    } else if (roll < 0.7) {
-      spawnEnemy('husk', lane, hpMult);
+    // Phase 2+: paired spawns at opposing sides
+    const beamSide = getBeamSide();
+    // Primary spawn: heavy on beam side (player sees it, focuses on it)
+    // Secondary (pair): fast mote on OFF side (pressure where attention isn't)
+    const primaryLane = beamSide === 'right'
+      ? Math.floor(Math.random() * 2) + 3  // lanes 3-4 (right side)
+      : Math.floor(Math.random() * 2);      // lanes 0-1 (left side)
+    const offLane = beamSide === 'right'
+      ? Math.floor(Math.random() * 2)       // lanes 0-1 (left, off-side)
+      : Math.floor(Math.random() * 2) + 3;  // lanes 3-4 (right, off-side)
+
+    // Ensure separation >= PAIR_MIN_SEPARATION
+    const actualSep = Math.abs(primaryLane - offLane);
+    const finalOffLane = actualSep >= PAIR_MIN_SEPARATION ? offLane :
+      (primaryLane < 2 ? ENEMY_LANE_COUNT - 1 : 0);
+
+    // Primary: husk or carapace
+    if (spawnerElapsed < PHASE_2_END) {
+      const roll = Math.random();
+      if (roll < 0.5) spawnEnemy('husk', primaryLane, hpMult);
+      else if (roll < 0.85) spawnEnemy('carapace', primaryLane, hpMult);
+      else spawnEnemy('mote', primaryLane, hpMult);
     } else {
-      spawnEnemy('mote', lane, hpMult);
+      const roll = Math.random();
+      if (roll < 0.4) spawnEnemy('carapace', primaryLane, hpMult);
+      else spawnEnemy('husk', primaryLane, hpMult);
     }
+
+    // Schedule the off-side pair member (fast mote) after PAIR_DELAY
+    pendingPair = { type: 'mote', lane: finalOffLane, hpMult, timer: PAIR_DELAY };
   }
 }
 
-// hp_multiplier = 1 + (t / 900) * 3
 function getEscalationMultiplier(t) {
   return 1 + (t / SESSION_DURATION) * ESCALATION_HP_FACTOR;
 }
@@ -2369,8 +2387,9 @@ function updateDamage(dt) {
       const resMult = getResonanceActive() ? RESONANCE_MULTIPLIER : 1.0;
       const raw = N * D_BASE * (1 + SYNERGY_BONUS * (N - 1)) * focusMult * resMult;
       const dmg = Math.max(0, raw - enemy.armour * N);
-      enemy.hp -= dmg * dt;
-      enemy.burn = 1 - (enemy.hp / enemy.maxHp);
+      // Heat accumulator: damage adds heat, enemy dies when heat >= effectiveHP
+      enemy.heat += dmg * dt;
+      enemy.burn = enemy.heat / enemy.maxHp;
 
       // Contact glow + sparks (throttled: every ~0.1s)
       if (Math.random() < dt * 10) {
@@ -2379,7 +2398,7 @@ function updateDamage(dt) {
         spawnSparks(ex, enemy.y, hitColour || 0xffaa00, 2);
       }
 
-      if (enemy.hp <= 0) {
+      if (enemy.heat >= enemy.maxHp) {
         const rewards = { mote: 5, husk: 10, carapace: 20, devourer: 0 };
         const reward = rewards[enemy.type] || 0;
         addSlagDirect(reward);
@@ -2391,6 +2410,11 @@ function updateDamage(dt) {
       }
     } else {
       enemy.bandsHitting = 0;
+      // Heat decay: accumulated heat cools when beam is not on target
+      if (enemy.heat > 0) {
+        enemy.heat = Math.max(0, enemy.heat - enemy.maxHp * HEAT_DECAY_RATE * dt);
+        enemy.burn = enemy.heat / enemy.maxHp;
+      }
     }
   }
 }
@@ -2463,13 +2487,12 @@ function segmentIntersectsBox(seg, cx, cy, hw, hh) {
 
 
 let elapsed = 0;
-let breaches = 0;
+let wallIntegrity = 100; // wall HP, starts at 100
 let gameOver = false;
 let gameWon = false;
 let devourerKilled = false;
 
-const MAX_BREACHES = 3;
-const WALL_DISPLAY = 3;
+const WALL_MAX = 100;
 
 // HUD
 let hudCanvas = null;
@@ -2486,7 +2509,7 @@ let dimMesh = null;
 
 function initSession() {
   elapsed = 0;
-  breaches = 0;
+  wallIntegrity = WALL_MAX;
   gameOver = false;
   gameWon = false;
   devourerKilled = false;
@@ -2495,7 +2518,8 @@ function initSession() {
 }
 
 function getElapsed() { return elapsed; }
-function getBreaches() { return breaches; }
+function getBreaches() { return Math.floor(WALL_MAX - wallIntegrity); }
+function getWallIntegrity() { return wallIntegrity; }
 function isGameOver() { return gameOver; }
 function isGameWon() { return gameWon; }
 function notifyDevourerKilled() { devourerKilled = true; }
@@ -2520,11 +2544,11 @@ function updateSession(dt) {
   }
 }
 
-function addBreaches(count) {
-  if (count <= 0 || gameOver) return;
-  if (DEV.INVINCIBLE) return; // dev mode: wall never breaks
-  breaches += count;
-  if (breaches >= MAX_BREACHES) {
+function addBreaches(damage) {
+  if (damage <= 0 || gameOver) return;
+  if (DEV.INVINCIBLE) return;
+  wallIntegrity = Math.max(0, wallIntegrity - damage);
+  if (wallIntegrity <= 0) {
     triggerLose();
   }
 }
@@ -2534,7 +2558,7 @@ function updateHud() {
   const mins = Math.floor(elapsed / 60);
   const secs = Math.floor(elapsed % 60);
   const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
-  const breachStr = '\u2665'.repeat(Math.max(0, MAX_BREACHES - breaches)) + '\u2661'.repeat(Math.min(breaches, MAX_BREACHES));
+  const breachStr = 'Wall: ' + Math.ceil(wallIntegrity) + '%';
   const recombo = Math.floor(getRecombination());
   const slagVal = Math.floor(getSlag());
   const insightVal = Math.floor(getInsight());
@@ -2565,7 +2589,7 @@ function updateHud() {
 
 function resetSession() {
   elapsed = 0;
-  breaches = 0;
+  wallIntegrity = WALL_MAX;
   gameOver = false;
   gameWon = false;
   devourerKilled = false;

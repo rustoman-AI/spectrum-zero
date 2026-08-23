@@ -145,14 +145,15 @@ try {
       _results.push(['Escalation t=840', mult, 3.8, 0.001]);
     })();
 
-    // === Test 7: Breach and reset ===
+    // === Test 7: Wall integrity and reset ===
     (function() {
       init();
-      addBreaches(3); // MAX_BREACHES is 3
-      _boolResults.push(['3 breaches = gameOver', isGameOver(), true]);
+      addBreaches(100); // deplete wall from 100 to 0
+      _boolResults.push(['Wall depleted = gameOver', isGameOver(), true]);
       resetSession();
       _boolResults.push(['After reset: gameOver=false', isGameOver(), false]);
       _boolResults.push(['After reset: elapsed=0', getElapsed() === 0, true]);
+      _boolResults.push(['After reset: wall=100', getWallIntegrity() === 100, true]);
     })();
 
     // === Test 8: Pool reuse ===

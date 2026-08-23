@@ -10,7 +10,7 @@
 
 import {
   ENEMY_POOL_SIZE, ENEMY_TYPES, ENEMY_SPAWN_Y, BREACH_Y,
-  ENEMY_LANE_COUNT, WORLD_HEIGHT
+  ENEMY_LANE_COUNT, WORLD_HEIGHT, BREACH_DAMAGE_FLOOR, BREACH_BASE_DAMAGE
 } from './config.js';
 import { getScene, getWorldWidth } from './renderer.js';
 
@@ -58,7 +58,7 @@ export function initEnemies() {
 
     pool.push({
       active: false, type: 'mote',
-      hp: 0, maxHp: 0, armour: 0,
+      hp: 0, maxHp: 0, armour: 0, heat: 0,
       lane: 0, y: ENEMY_SPAWN_Y,
       speed: 0, baseSpeed: 0,
       burn: 0, slowed: false,
@@ -102,6 +102,7 @@ export function spawnEnemy(type, lane, hpMultiplier) {
       e.speed = template.speed;
       e.baseSpeed = template.speed;
       e.burn = 0;
+      e.heat = 0;
       e.slowed = false;
       e.bandsHitting = 0;
       e.lastHitColour = 0;
@@ -116,15 +117,19 @@ export function spawnEnemy(type, lane, hpMultiplier) {
 }
 
 export function updateEnemies(dt) {
-  let breaches = 0;
+  let wallDamage = 0;
   for (let i = 0; i < pool.length; i++) {
     const e = pool[i];
     if (!e.active) continue;
     e.slowed = false;
     e.y += e.speed * dt;
     if (e.y >= BREACH_Y) {
+      // Scaled breach damage: reduced by heat fraction
+      const heatFrac = Math.min(1, (e.heat || 0) / e.maxHp);
+      const scale = Math.max(BREACH_DAMAGE_FLOOR, 1 - heatFrac);
+      const baseDmg = BREACH_BASE_DAMAGE[e.type] || 10;
+      wallDamage += baseDmg * scale;
       deactivateEnemy(e);
-      breaches++;
       continue;
     }
     positionEnemy(e);
@@ -139,7 +144,7 @@ export function updateEnemies(dt) {
       if (p.life <= 0) p.mesh.visible = false;
     }
   }
-  return breaches;
+  return wallDamage;
 }
 
 export function applyGoldSlow(enemy) { enemy.slowed = true; }
@@ -200,7 +205,8 @@ function positionEnemy(e) {
 }
 
 function updateEnemyVisual(e) {
-  e.burn = Math.max(0, 1 - (e.hp / e.maxHp));
+  // Burn is driven by heat accumulator, not HP
+  e.burn = Math.max(0, (e.heat || 0) / e.maxHp);
   // Burn meter: wide, thick, anchored left
   e.barFill.scale.x = e.burn;
   e.barFill.position.x = -2.5 * (1 - e.burn);
@@ -217,6 +223,10 @@ function updateEnemyVisual(e) {
     );
     const barBright = Math.min(1, 0.5 + e.bandsHitting * 0.25);
     e.barFill.material.color.setRGB(barBright, barBright * 0.4, 0);
+  } else if (e.slowed) {
+    // Gold slow visual: blue-gold tint + slight transparency
+    e.mesh.material.color.setRGB(0.4, 0.5, 0.25);
+    e.barFill.material.color.setHex(0xffe9a0);
   } else {
     const brightness = 0.35 + 0.15 * (1 - e.burn);
     e.mesh.material.color.setRGB(brightness, brightness * 0.8, brightness * 0.8);

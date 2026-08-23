@@ -14,7 +14,7 @@
 
 import {
   D_BASE, SYNERGY_BONUS, COLOUR_GOLD, ENEMY_LANE_COUNT,
-  CHORUS_SLOW_FACTOR
+  CHORUS_SLOW_FACTOR, HEAT_DECAY_RATE
 } from './config.js';
 import { getSegments } from './beam.js';
 import { getEnemyPool, deactivateEnemy, applyGoldSlow, triggerKillEffect } from './enemy.js';
@@ -81,8 +81,9 @@ export function updateDamage(dt) {
       const resMult = getResonanceActive() ? RESONANCE_MULTIPLIER : 1.0;
       const raw = N * D_BASE * (1 + SYNERGY_BONUS * (N - 1)) * focusMult * resMult;
       const dmg = Math.max(0, raw - enemy.armour * N);
-      enemy.hp -= dmg * dt;
-      enemy.burn = 1 - (enemy.hp / enemy.maxHp);
+      // Heat accumulator: damage adds heat, enemy dies when heat >= effectiveHP
+      enemy.heat += dmg * dt;
+      enemy.burn = enemy.heat / enemy.maxHp;
 
       // Contact glow + sparks (throttled: every ~0.1s)
       if (Math.random() < dt * 10) {
@@ -91,7 +92,7 @@ export function updateDamage(dt) {
         spawnSparks(ex, enemy.y, hitColour || 0xffaa00, 2);
       }
 
-      if (enemy.hp <= 0) {
+      if (enemy.heat >= enemy.maxHp) {
         const rewards = { mote: 5, husk: 10, carapace: 20, devourer: 0 };
         const reward = rewards[enemy.type] || 0;
         addSlagDirect(reward);
@@ -103,6 +104,11 @@ export function updateDamage(dt) {
       }
     } else {
       enemy.bandsHitting = 0;
+      // Heat decay: accumulated heat cools when beam is not on target
+      if (enemy.heat > 0) {
+        enemy.heat = Math.max(0, enemy.heat - enemy.maxHp * HEAT_DECAY_RATE * dt);
+        enemy.burn = enemy.heat / enemy.maxHp;
+      }
     }
   }
 }
