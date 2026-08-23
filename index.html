@@ -335,28 +335,22 @@ function screenToWorld(sx, sy) {
 
 // === src/background.js ===
 // ============================================================
-// src/background.js — Environment bands (sea, shore, battlement)
-//
-// Pure rendering, no gameplay effect. All Y boundaries derived
-// from config.js layout constants. Meshes at z=-10, behind everything.
-//
-// Respects prefers-reduced-motion: freezes wave scroll.
+// src/background.js — Environment bands for reversed layout
+// Sky strip at top, sea from spawn to wall, city ground at bottom.
+// All boundaries derived from gameplay constants.
 // ============================================================
 
 
 
 
-// Colours (all below 22% relative luminance)
+// Colours (all below 22% luminance)
+const COL_SKY = 0x0a1520;
 const COL_DEEP_SEA = 0x12303F;
 const COL_SHALLOW_SEA = 0x1A4257;
-const COL_SURF = 0x3E7A93;
-const COL_SHORE = 0x2E2419;
-const COL_BATTLEMENT = 0x3A2E20;
-const COL_WALL_EDGE = 0x1F1811;
+const COL_GROUND = 0x2E2419;
 
 let seaMesh = null;
 let seaTexture = null;
-let surfMesh = null;
 let reduceMotion = false;
 
 function initBackground() {
@@ -364,85 +358,88 @@ function initBackground() {
   const ww = getWorldWidth();
   const hh = WORLD_HEIGHT / 2;
 
-  // Check prefers-reduced-motion
   if (typeof window.matchMedia === 'function') {
     reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   }
 
-  // --- Band boundaries (reversed: sea at top, city at bottom) ---
-  const seaTop = hh;                    // top of world
-  const seaBot = SHIP_SPAWN_Y - 5;     // sea extends to just above spawn area
-  const skyBot = seaBot;
-  const cityTop = MIRROR_FIELD_TOP + 5; // city above mirror field
-  const cityBot = -hh;                  // bottom of world
+  // Band boundaries derived from layout constants:
+  // Sky: top of world to SHIP_SPAWN_Y (thin strip above ships)
+  // Sea: SHIP_SPAWN_Y down to WALL_Y (where ships travel)
+  // Ground: WALL_Y down to bottom of world (city, mirrors, player area)
+  const skyTop = hh;
+  const skyBot = SHIP_SPAWN_Y + 2;
+  const seaTop = skyBot;
+  const seaBot = WALL_Y;
+  const groundTop = WALL_Y;
+  const groundBot = -hh;
 
-  // --- 1. Sea band (top of screen where ships come from) ---
+  // --- 1. Sky strip (very top, above ships) ---
+  const skyH = skyTop - skyBot;
+  if (skyH > 0) {
+    const skyGeo = new THREE.PlaneGeometry(ww + 2, skyH);
+    const skyMat = new THREE.MeshBasicMaterial({ color: COL_SKY, depthWrite: false });
+    const skyMeshObj = new THREE.Mesh(skyGeo, skyMat);
+    skyMeshObj.position.set(0, skyBot + skyH / 2, -10);
+    scene.add(skyMeshObj);
+  }
+
+  // --- 2. Sea (from ship spawn down to wall — where ships sail) ---
   const seaH = seaTop - seaBot;
-  const cityGeo = new THREE.PlaneGeometry(ww + 2, seaH);
-  const cityMat = new THREE.MeshBasicMaterial({ color: COL_DEEP_SEA, depthWrite: false });
-  const cityMeshObj = new THREE.Mesh(cityGeo, cityMat);
-  cityMeshObj.position.set(0, seaBot + seaH / 2, -10);
-  scene.add(cityMeshObj);
+  const seaGeo = new THREE.PlaneGeometry(ww + 2, seaH);
+  const seaMat = new THREE.MeshBasicMaterial({ color: COL_DEEP_SEA, depthWrite: false });
+  const seaBgMesh = new THREE.Mesh(seaGeo, seaMat);
+  seaBgMesh.position.set(0, seaBot + seaH / 2, -10);
+  scene.add(seaBgMesh);
 
-  // --- 2. City/wall band (bottom, where player defends) ---
-  const cityH = cityTop - cityBot;
-  const battleGeo = new THREE.PlaneGeometry(ww + 2, cityH);
-  const battleMat = new THREE.MeshBasicMaterial({ color: COL_BATTLEMENT, depthWrite: false });
-  const battleMeshObj = new THREE.Mesh(battleGeo, battleMat);
-  battleMeshObj.position.set(0, cityBot + cityH / 2, -10);
-  scene.add(battleMeshObj);
-
-  // Wall line
-  const edgeGeo = new THREE.PlaneGeometry(ww + 2, 0.6);
-  const edgeMat = new THREE.MeshBasicMaterial({ color: 0xff3333, transparent: true, opacity: 0.5, depthWrite: false });
-  const edgeMesh = new THREE.Mesh(edgeGeo, edgeMat);
-  edgeMesh.position.set(0, WALL_Y, -9.8);
-  scene.add(edgeMesh);
-
-  // --- 3. Sea texture with waves (covers the sea band) ---
+  // Sea wave texture overlay
   const seaCanvas = document.createElement('canvas');
   seaCanvas.width = 32;
   seaCanvas.height = 256;
   const ctx = seaCanvas.getContext('2d');
   drawSeaTexture(ctx, 32, 256);
-
   seaTexture = new THREE.CanvasTexture(seaCanvas);
   seaTexture.wrapS = THREE.RepeatWrapping;
   seaTexture.wrapT = THREE.RepeatWrapping;
   seaTexture.minFilter = THREE.LinearFilter;
-
-  // Overlay on sea band
   const seaOverGeo = new THREE.PlaneGeometry(ww + 2, seaH);
-  const seaOverMat = new THREE.MeshBasicMaterial({ map: seaTexture, transparent: true, opacity: 0.5, depthWrite: false });
+  const seaOverMat = new THREE.MeshBasicMaterial({ map: seaTexture, transparent: true, opacity: 0.4, depthWrite: false });
   seaMesh = new THREE.Mesh(seaOverGeo, seaOverMat);
   seaMesh.position.set(0, seaBot + seaH / 2, -9.5);
   scene.add(seaMesh);
 
-  // Surf/wave line not needed at top — the sea band IS the top
+  // --- 3. City ground (bottom — wall, mirrors, player area) ---
+  const groundH = groundTop - groundBot;
+  const groundGeo = new THREE.PlaneGeometry(ww + 2, groundH);
+  const groundMat = new THREE.MeshBasicMaterial({ color: COL_GROUND, depthWrite: false });
+  const groundMeshObj = new THREE.Mesh(groundGeo, groundMat);
+  groundMeshObj.position.set(0, groundBot + groundH / 2, -10);
+  scene.add(groundMeshObj);
+
+  // Wall line (visible breach boundary)
+  const wallGeo = new THREE.PlaneGeometry(ww + 2, 0.8);
+  const wallMat = new THREE.MeshBasicMaterial({ color: 0xcc3333, transparent: true, opacity: 0.6, depthWrite: false });
+  const wallMesh = new THREE.Mesh(wallGeo, wallMat);
+  wallMesh.position.set(0, WALL_Y, -9.2);
+  scene.add(wallMesh);
 }
 
 function updateBackground(dt) {
-  // Scroll sea texture for wave motion
   if (seaTexture && !reduceMotion) {
-    seaTexture.offset.y += dt * 0.02;
+    seaTexture.offset.y += dt * 0.015;
   }
 }
 
 function drawSeaTexture(ctx, w, h) {
-  // Vertical gradient: shallow (top) to deep (bottom)
   const gradient = ctx.createLinearGradient(0, 0, 0, h);
-  gradient.addColorStop(0, '#1A4257');   // shallow near shore
-  gradient.addColorStop(1, '#12303F');   // deep at bottom
+  gradient.addColorStop(0, '#1A4257');
+  gradient.addColorStop(1, '#12303F');
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, w, h);
-
-  // Wave lines (3-4 horizontal lines at intervals)
-  ctx.strokeStyle = 'rgba(30, 60, 80, 0.25)';
+  ctx.strokeStyle = 'rgba(30, 60, 80, 0.2)';
   ctx.lineWidth = 1;
   for (let i = 0; i < 4; i++) {
     const y = 40 + i * 55;
     ctx.beginPath();
-    ctx.moveTo(0, y);
     for (let x = 0; x < w; x++) {
       ctx.lineTo(x, y + Math.sin(x * 0.5 + i * 2) * 2);
     }
@@ -952,7 +949,7 @@ function initMirrors() {
 
 function createMirror(socketIndex) {
   const [sx, sy] = SOCKET_POSITIONS[socketIndex];
-  const angle = Math.PI / 4;
+  const angle = 0; // horizontal reflects downward beam straight up
 
   const geo = new THREE.PlaneGeometry(MIRROR_LENGTH, MIRROR_THICKNESS);
   const mat = new THREE.MeshBasicMaterial({ color: 0x8888cc });
@@ -1153,7 +1150,7 @@ function resetMirrors() {
     mirror.socketIndex = socketIdx;
     mirror.freeX = sx;
     mirror.freeY = sy;
-    mirror.angle = Math.PI / 4;
+    mirror.angle = 0;
     mirror.hits = 0;
     mirror.shattered = false;
     mirror.reinforced = false;
@@ -1366,11 +1363,47 @@ function initEnemies() {
   scene.add(enemyGroup);
 
   for (let i = 0; i < ENEMY_POOL_SIZE; i++) {
-    const geo = new THREE.PlaneGeometry(3, 3);
-    const mat = new THREE.MeshBasicMaterial({ color: 0x666666 });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.visible = false;
+    // Ship silhouette: hull (warm wood) + mast line + sail triangle
+    const mesh = new THREE.Group();
     mesh.position.z = 0.3;
+
+    // Hull (wide rectangle, warm wood tone)
+    const hull = new THREE.Mesh(
+      new THREE.PlaneGeometry(4, 1.5),
+      new THREE.MeshBasicMaterial({ color: 0x8B5E3C })
+    );
+    hull.position.y = -0.3;
+    mesh.add(hull);
+
+    // Deck line (lighter stripe)
+    const deck = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.5, 0.3),
+      new THREE.MeshBasicMaterial({ color: 0xC4956A })
+    );
+    deck.position.y = 0;
+    deck.position.z = 0.05;
+    mesh.add(deck);
+
+    // Mast (thin vertical line)
+    const mast = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.2, 3),
+      new THREE.MeshBasicMaterial({ color: 0x5C3D2E })
+    );
+    mast.position.y = 1.2;
+    mast.position.z = 0.02;
+    mesh.add(mast);
+
+    // Sail (triangle-ish rectangle)
+    const sail = new THREE.Mesh(
+      new THREE.PlaneGeometry(2, 1.8),
+      new THREE.MeshBasicMaterial({ color: 0xEEDDCC, transparent: true, opacity: 0.8 })
+    );
+    sail.position.y = 1.5;
+    sail.position.z = 0.03;
+    mesh.add(sail);
+
+    mesh.visible = false;
+    const mat = hull.material; // reference for colour changes
 
     // Burn meter bar
     const barBg = new THREE.Mesh(
@@ -1397,7 +1430,7 @@ function initEnemies() {
       speed: 0, baseSpeed: 0,
       burn: 0, slowed: false,
       bandsHitting: 0, lastHitColour: 0,
-      mesh, barFill
+      mesh, barFill, hullMat: mat
     });
   }
 }
@@ -1473,7 +1506,7 @@ function deactivateEnemy(enemy) {
 
 function triggerKillEffect(enemy, reward) {
   addKillReward(reward);
-  enemy.mesh.material.color.setHex(0xffffff);
+  if (enemy.hullMat) enemy.hullMat.color.setHex(0xffffff);
 }
 
 function getActiveEnemies() { return pool.filter(e => e.active); }
@@ -1502,12 +1535,12 @@ function updateEnemyVisual(e) {
     const g = ((e.lastHitColour >> 8) & 0xff) / 255;
     const b = (e.lastHitColour & 0xff) / 255;
     const t = Math.min(0.3 + e.burn * 1.0, 1.0);
-    e.mesh.material.color.setRGB(0.25*(1-t)+r*t, 0.2*(1-t)+g*t, 0.2*(1-t)+b*t);
+    e.hullMat.color.setRGB(0.25*(1-t)+r*t, 0.2*(1-t)+g*t, 0.2*(1-t)+b*t);
   } else if (e.slowed) {
-    e.mesh.material.color.setRGB(0.4, 0.5, 0.25);
+    e.hullMat.color.setRGB(0.4, 0.5, 0.25);
   } else {
     const brightness = 0.35 + 0.15 * (1 - e.burn);
-    e.mesh.material.color.setRGB(brightness, brightness*0.8, brightness*0.8);
+    e.hullMat.color.setRGB(brightness, brightness*0.8, brightness*0.8);
   }
   const sizes = { skiff: 2.5, trireme: 3.5, quadrireme: 4.5, flagship: 8 };
   const s = sizes[e.type] || 3;

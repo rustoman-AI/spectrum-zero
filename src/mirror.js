@@ -61,7 +61,7 @@ export function initMirrors() {
 
 function createMirror(socketIndex) {
   const [sx, sy] = SOCKET_POSITIONS[socketIndex];
-  const angle = Math.PI / 4;
+  const angle = 0; // horizontal reflects downward beam straight up
 
   const geo = new THREE.PlaneGeometry(MIRROR_LENGTH, MIRROR_THICKNESS);
   const mat = new THREE.MeshBasicMaterial({ color: 0x8888cc });
@@ -262,7 +262,7 @@ export function resetMirrors() {
     mirror.socketIndex = socketIdx;
     mirror.freeX = sx;
     mirror.freeY = sy;
-    mirror.angle = Math.PI / 4;
+    mirror.angle = 0;
     mirror.hits = 0;
     mirror.shattered = false;
     mirror.reinforced = false;

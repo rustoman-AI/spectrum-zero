@@ -18,11 +18,47 @@ export function initEnemies() {
   scene.add(enemyGroup);
 
   for (let i = 0; i < ENEMY_POOL_SIZE; i++) {
-    const geo = new THREE.PlaneGeometry(3, 3);
-    const mat = new THREE.MeshBasicMaterial({ color: 0x666666 });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.visible = false;
+    // Ship silhouette: hull (warm wood) + mast line + sail triangle
+    const mesh = new THREE.Group();
     mesh.position.z = 0.3;
+
+    // Hull (wide rectangle, warm wood tone)
+    const hull = new THREE.Mesh(
+      new THREE.PlaneGeometry(4, 1.5),
+      new THREE.MeshBasicMaterial({ color: 0x8B5E3C })
+    );
+    hull.position.y = -0.3;
+    mesh.add(hull);
+
+    // Deck line (lighter stripe)
+    const deck = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.5, 0.3),
+      new THREE.MeshBasicMaterial({ color: 0xC4956A })
+    );
+    deck.position.y = 0;
+    deck.position.z = 0.05;
+    mesh.add(deck);
+
+    // Mast (thin vertical line)
+    const mast = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.2, 3),
+      new THREE.MeshBasicMaterial({ color: 0x5C3D2E })
+    );
+    mast.position.y = 1.2;
+    mast.position.z = 0.02;
+    mesh.add(mast);
+
+    // Sail (triangle-ish rectangle)
+    const sail = new THREE.Mesh(
+      new THREE.PlaneGeometry(2, 1.8),
+      new THREE.MeshBasicMaterial({ color: 0xEEDDCC, transparent: true, opacity: 0.8 })
+    );
+    sail.position.y = 1.5;
+    sail.position.z = 0.03;
+    mesh.add(sail);
+
+    mesh.visible = false;
+    const mat = hull.material; // reference for colour changes
 
     // Burn meter bar
     const barBg = new THREE.Mesh(
@@ -49,7 +85,7 @@ export function initEnemies() {
       speed: 0, baseSpeed: 0,
       burn: 0, slowed: false,
       bandsHitting: 0, lastHitColour: 0,
-      mesh, barFill
+      mesh, barFill, hullMat: mat
     });
   }
 }
@@ -125,7 +161,7 @@ export function deactivateEnemy(enemy) {
 
 export function triggerKillEffect(enemy, reward) {
   addKillReward(reward);
-  enemy.mesh.material.color.setHex(0xffffff);
+  if (enemy.hullMat) enemy.hullMat.color.setHex(0xffffff);
 }
 
 export function getActiveEnemies() { return pool.filter(e => e.active); }
@@ -154,12 +190,12 @@ function updateEnemyVisual(e) {
     const g = ((e.lastHitColour >> 8) & 0xff) / 255;
     const b = (e.lastHitColour & 0xff) / 255;
     const t = Math.min(0.3 + e.burn * 1.0, 1.0);
-    e.mesh.material.color.setRGB(0.25*(1-t)+r*t, 0.2*(1-t)+g*t, 0.2*(1-t)+b*t);
+    e.hullMat.color.setRGB(0.25*(1-t)+r*t, 0.2*(1-t)+g*t, 0.2*(1-t)+b*t);
   } else if (e.slowed) {
-    e.mesh.material.color.setRGB(0.4, 0.5, 0.25);
+    e.hullMat.color.setRGB(0.4, 0.5, 0.25);
   } else {
     const brightness = 0.35 + 0.15 * (1 - e.burn);
-    e.mesh.material.color.setRGB(brightness, brightness*0.8, brightness*0.8);
+    e.hullMat.color.setRGB(brightness, brightness*0.8, brightness*0.8);
   }
   const sizes = { skiff: 2.5, trireme: 3.5, quadrireme: 4.5, flagship: 8 };
   const s = sizes[e.type] || 3;
