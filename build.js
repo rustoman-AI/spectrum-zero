@@ -24,6 +24,7 @@ const SOURCE_FILES = [
   'src/foundry.js',
   'src/crafting.js',
   'src/effects.js',
+  'src/audio.js',
   'src/damage.js',
   'src/session.js',
   'src/input.js',

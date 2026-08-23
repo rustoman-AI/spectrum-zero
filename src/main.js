@@ -9,7 +9,7 @@ import { solve, isDirty, getSegments, markDirty } from './beam.js';
 import { initSockets, initMirrors, updateAllMirrorGeometries, getMirrors, updateMirrorTweens } from './mirror.js';
 import { initPrisms, getPrisms, updatePrismGlow } from './prism.js';
 import { initInput, tickDebug } from './input.js';
-import { initEnemies, updateEnemies, applySlowStates } from './enemy.js';
+import { initEnemies, updateEnemies, applySlowStates, getEnemyPool } from './enemy.js';
 import { updateSpawner, resetSpawner } from './enemy-spawner.js';
 import { updateDamage } from './damage.js';
 import { initSession, updateSession, addBreaches, isGameOver, getElapsed, updateHud, handleRestartTap, decayWallFlash, getWallHitFlash } from './session.js';
@@ -17,6 +17,7 @@ import { initFoundries, updateFoundries, getFoundryColliders } from './foundry.j
 import { initCrafting, updateCraftingTray } from './crafting.js';
 import { initBackground, updateBackground } from './background.js';
 import { initEffects, updateEffects } from './effects.js';
+import { initAudio, updateHum, updateBurnHiss, updateAltarTone, playWallHit, resetAudio } from './audio.js';
 
 // --- Source state ---
 let sourceX = 0;
@@ -39,6 +40,7 @@ export function init() {
   initFoundries();
   initCrafting();
   initEffects();
+  initAudio();
   initSession();
   resetSpawner();
 
@@ -100,6 +102,7 @@ function loop(now) {
   const newBreaches = updateEnemies(dt);
   if (newBreaches > 0) {
     addBreaches(newBreaches);
+    playWallHit();
   }
 
   // Damage
@@ -108,6 +111,11 @@ function loop(now) {
   // Effects (glows, sparks, debris)
   updateEffects(dt);
   decayWallFlash(dt);
+
+  // Audio updates
+  const activeEnemyCount = getEnemyPool().filter(e => e.active && e.bandsHitting > 0).length;
+  updateBurnHiss(activeEnemyCount / 10);
+  updateHum(getSegments().length * 3);
 
   // Foundries (resource accumulation)
   updateFoundries(dt);

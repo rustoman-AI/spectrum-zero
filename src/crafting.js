@@ -18,6 +18,8 @@ let trayWidth = 0;
 const trayHeight = 5;
 let mirrorsBought = 0;
 let focusCount = 0;
+const prevAffordable = [];  // track per-button affordability for pulse
+const pulseTimes = [];      // countdown for 300ms pulse animation
 
 // Shop items displayed in the tray
 const SHOP_ITEMS = [
@@ -72,8 +74,25 @@ export function updateCraftingTray() {
     const affordable = canAffordCombined(cost, res, faith);
     const x = i * btnW;
 
-    trayCtx.fillStyle = affordable ? 'rgba(80,80,120,0.9)' : 'rgba(30,30,30,0.7)';
+    // Detect affordability crossing → trigger 300ms pulse
+    if (prevAffordable[i] === false && affordable) {
+      pulseTimes[i] = 0.3;
+    }
+    prevAffordable[i] = affordable;
+    if (pulseTimes[i] > 0) pulseTimes[i] -= 0.016; // approx 1 frame
+
+    const pulsing = pulseTimes[i] > 0;
+    const bgColour = affordable ? (pulsing ? 'rgba(120,120,180,1)' : 'rgba(80,80,120,0.9)') : 'rgba(30,30,30,0.7)';
+    const borderCol = affordable ? (pulsing ? '#ffffff' : '#8888aa') : 'transparent';
+
+    trayCtx.fillStyle = bgColour;
     trayCtx.fillRect(x + 1, 1, btnW - 2, 38);
+    // Border for affordable buttons
+    if (affordable) {
+      trayCtx.strokeStyle = borderCol;
+      trayCtx.lineWidth = pulsing ? 2 : 1;
+      trayCtx.strokeRect(x + 1, 1, btnW - 2, 38);
+    }
 
     trayCtx.fillStyle = affordable ? '#ffffff' : '#555555';
     trayCtx.font = 'bold 9px monospace';

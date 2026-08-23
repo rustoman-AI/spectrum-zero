@@ -82,10 +82,25 @@ export function initFoundries() {
     labelMesh.position.set(def.x, def.y + ALTAR_HH + 1.5, 0.2);
     scene.add(labelMesh);
 
+    // Overheat gauge (bar above altar)
+    const ohBg = new THREE.Mesh(
+      new THREE.PlaneGeometry(ALTAR_HW * 2, 0.5),
+      new THREE.MeshBasicMaterial({ color: 0x222222 })
+    );
+    ohBg.position.set(def.x, def.y - ALTAR_HH - 1, 0.1);
+    scene.add(ohBg);
+    const ohFill = new THREE.Mesh(
+      new THREE.PlaneGeometry(ALTAR_HW * 2, 0.5),
+      new THREE.MeshBasicMaterial({ color: 0x44cc44 })
+    );
+    ohFill.position.set(def.x, def.y - ALTAR_HH - 1, 0.15);
+    ohFill.scale.x = 0;
+    scene.add(ohFill);
+
     altars.push({
       type: def.type, colour: def.colour,
       x: def.x, y: def.y,
-      mesh, lit: false,
+      mesh, ohFill, lit: false,
       litTime: 0, overheated: false, cooldown: 0
     });
   }
@@ -137,6 +152,16 @@ export function updateFoundries(dt) {
     altar.mesh.material.opacity = altar.lit ? 0.7 : 0.3;
     if (altar.overheated) {
       altar.mesh.material.opacity = altar.lit ? 0.4 : 0.2;
+    }
+    // Overheat gauge
+    if (altar.ohFill) {
+      const heatFrac = Math.min(1, altar.litTime / ALTAR_OVERHEAT_TIME);
+      altar.ohFill.scale.x = altar.lit ? heatFrac : (altar.overheated ? 1 - altar.cooldown / ALTAR_RECOVER_TIME : 0);
+      // Colour: green → yellow → red
+      if (heatFrac < 0.5) altar.ohFill.material.color.setHex(0x44cc44);
+      else if (heatFrac < 0.8) altar.ohFill.material.color.setHex(0xcccc44);
+      else altar.ohFill.material.color.setHex(0xcc4444);
+      if (altar.overheated) altar.ohFill.material.color.setHex(0xcc4444);
     }
   }
 
