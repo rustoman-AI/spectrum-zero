@@ -14,7 +14,7 @@ import { markDirty } from './beam.js';
 import { getRecombination, resetFoundries, getSlag, getInsight } from './foundry.js';
 import { resetCrafting } from './crafting.js';
 import { resetMirrors } from './mirror.js';
-import { resetPrisms } from './prism.js';
+import { resetPrisms, resetTier } from './prism.js';
 import { MSG_LOSE, MSG_WIN, RES_SLAG_SHORT, RES_INSIGHT_SHORT, RES_RECOMBO_SHORT } from './strings.js';
 
 let elapsed = 0;
@@ -131,6 +131,7 @@ export function resetSession() {
   resetCrafting();
   resetMirrors();
   resetPrisms();
+  resetTier();
   markDirty();
   hideOverlay();
   // Restore visibility hidden on end state

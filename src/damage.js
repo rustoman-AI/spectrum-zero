@@ -14,16 +14,15 @@
 
 import {
   D_BASE, SYNERGY_BONUS, COLOUR_GOLD, ENEMY_LANE_COUNT,
-  CHORUS_SLOW_FACTOR, HEAT_DECAY_RATE
+  CHORUS_SLOW_FACTOR, HEAT_DECAY_RATE, RESONANCE_MULTIPLIER, PRISM_TIERS
 } from './config.js';
-import { getSegments } from './beam.js';
+import { getSegments, getResonanceActive } from './beam.js';
 import { getEnemyPool, deactivateEnemy, applyGoldSlow, triggerKillEffect } from './enemy.js';
 import { getWorldWidth } from './renderer.js';
 import { getFocusMultiplier } from './crafting.js';
 import { addSlagDirect } from './foundry.js';
 import { spawnContactGlow, spawnSparks, spawnDestruction } from './effects.js';
-import { RESONANCE_MULTIPLIER } from './config.js';
-import { getResonanceActive } from './beam.js';
+import { getActiveTier } from './prism.js';
 
 const ENEMY_HIT_HALF_W = 3;
 const ENEMY_HIT_HALF_H = 3;
@@ -46,22 +45,31 @@ export function updateDamage(dt) {
     const ex = -worldWidth / 2 + laneWidth * (enemy.lane + 0.5);
     const ey = enemy.y;
 
-    // Count how many beam segments hit this enemy
-    let bandsHitting = 0;
+    // Count full bands (intensity=1) and sub-rays (intensity<1) hitting this enemy
+    let fullBands = 0;
+    let subRays = 0;
+    let subRayIntensity = 0;
     let goldHitting = false;
     let hitColour = 0;
+    let totalBeamsHitting = 0;
 
     for (let s = 0; s < segments.length; s++) {
       const seg = segments[s];
       if (segmentIntersectsBox(seg, ex, ey, ENEMY_HIT_HALF_W, ENEMY_HIT_HALF_H)) {
-        bandsHitting++;
+        totalBeamsHitting++;
         hitColour = seg.colour;
         if (seg.colour === COLOUR_GOLD) goldHitting = true;
+        if (seg.intensity >= 1.0) {
+          fullBands++;
+        } else {
+          subRays++;
+          subRayIntensity = seg.intensity;
+        }
       }
     }
 
     // Update visual state for burn feedback
-    enemy.bandsHitting = bandsHitting;
+    enemy.bandsHitting = totalBeamsHitting;
     if (hitColour) enemy.lastHitColour = hitColour;
 
     // Apply gold slow
@@ -70,17 +78,25 @@ export function updateDamage(dt) {
     }
 
     // Apply damage
-    if (bandsHitting > 0) {
+    if (totalBeamsHitting > 0) {
       // -------------------------------------------------------
-      // Damage formula (from GDD §8.1):
-      //   DPS = N * D_BASE * (1 + SYNERGY_BONUS * (N - 1)) * focusMult
-      //   final = max(0, DPS - armour * N)
+      // Damage formula (tier-aware, sub-rays excluded from synergy):
+      //   tier = active prism tier → dBase, synergy from PRISM_TIERS
+      //   synergyDPS = fullBands * dBase * (1 + synergy * (fullBands-1))
+      //   flatDPS = subRays * dBase * subRayIntensity
+      //   totalRaw = (synergyDPS + flatDPS) * focusMult * resonanceMult
+      //   final = max(0, totalRaw - armour * totalBeams)
       // -------------------------------------------------------
-      const N = bandsHitting;
+      const tier = (typeof getActiveTier === 'function') ? getActiveTier() : 3;
+      const tierData = PRISM_TIERS[tier] || PRISM_TIERS[3];
+      const dBase = tierData.dBase;
+      const synBonus = tierData.synergy;
       const focusMult = getFocusMultiplier();
       const resMult = getResonanceActive() ? RESONANCE_MULTIPLIER : 1.0;
-      const raw = N * D_BASE * (1 + SYNERGY_BONUS * (N - 1)) * focusMult * resMult;
-      const dmg = Math.max(0, raw - enemy.armour * N);
+      const synergyDPS = fullBands > 0 ? fullBands * dBase * (1 + synBonus * (fullBands - 1)) : 0;
+      const flatDPS = subRays * dBase * (subRayIntensity || 0.5);
+      const raw = (synergyDPS + flatDPS) * focusMult * resMult;
+      const dmg = Math.max(0, raw - enemy.armour * totalBeamsHitting);
       // Heat accumulator: damage adds heat, enemy dies when heat >= effectiveHP
       enemy.heat += dmg * dt;
       enemy.burn = enemy.heat / enemy.maxHp;

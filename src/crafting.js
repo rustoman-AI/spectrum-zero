@@ -7,20 +7,20 @@
 
 import {
   CRAFT_PRISM, CRAFT_REPAIR, CRAFT_REINFORCED, CRAFT_IGNITION,
-  CRAFT_FOCUS, CRAFT_ANCHOR, FOCUS_DAMAGE_MULT, WORLD_HEIGHT
+  CRAFT_FOCUS, CRAFT_ANCHOR, FOCUS_DAMAGE_MULT, WORLD_HEIGHT, PRISM_TIERS
 } from './config.js';
 import { CRAFT_LABELS, HUD_COST_SLAG, HUD_COST_INSIGHT } from './strings.js';
 import { getScene, getWorldWidth, screenToWorld, getOverlayScene } from './renderer.js';
 import { getSlag, getInsight, spendSlag, spendInsight } from './foundry.js';
-import { placePrism } from './prism.js';
+import { placePrism, setTier, getActiveTier } from './prism.js';
 import { getMirrors, repairMirror, getSockets } from './mirror.js';
 import { markDirty } from './beam.js';
 
 const CRAFTS = [
-  { id: 'prism',      label: CRAFT_LABELS.prism,      slag: CRAFT_PRISM.slag,      insight: CRAFT_PRISM.insight },
+  { id: 'tier4', label: '4 bands', hint: 'wider, weaker', slag: 40,  insight: 15 },
+  { id: 'tier5', label: '5 bands', hint: 'wider, weaker', slag: 80,  insight: 30 },
+  { id: 'tier6', label: '6 bands', hint: 'widest, weakest', slag: 150, insight: 50 },
   { id: 'repair',     label: CRAFT_LABELS.repair,     slag: CRAFT_REPAIR.slag,     insight: CRAFT_REPAIR.insight },
-  { id: 'reinforced', label: CRAFT_LABELS.reinforced, slag: CRAFT_REINFORCED.slag, insight: CRAFT_REINFORCED.insight },
-  { id: 'ignition',   label: CRAFT_LABELS.ignition,   slag: CRAFT_IGNITION.slag,   insight: CRAFT_IGNITION.insight },
   { id: 'focus',      label: CRAFT_LABELS.focus,      slag: CRAFT_FOCUS.slag,      insight: CRAFT_FOCUS.insight },
   { id: 'anchor',     label: CRAFT_LABELS.anchor,     slag: CRAFT_ANCHOR.slag,     insight: CRAFT_ANCHOR.insight },
 ];
@@ -82,7 +82,13 @@ export function updateCraftingTray() {
     trayCtx.fillStyle = affordable ? '#ffffff' : '#555555';
     trayCtx.font = 'bold 10px monospace';
     trayCtx.textAlign = 'center';
-    trayCtx.fillText(c.label, x + btnW / 2, 15);
+    trayCtx.fillText(c.label, x + btnW / 2, c.hint ? 12 : 15);
+
+    if (c.hint) {
+      trayCtx.font = '7px monospace';
+      trayCtx.fillStyle = affordable ? '#aaccaa' : '#444444';
+      trayCtx.fillText(c.hint, x + btnW / 2, 22);
+    }
 
     trayCtx.font = '8px monospace';
     trayCtx.fillStyle = affordable ? '#aaaaaa' : '#333333';
@@ -126,16 +132,11 @@ function attemptPurchase(craft) {
   spendInsight(craft.insight);
 
   switch (craft.id) {
-    case 'prism':
-      autoPlacePrism();
-      break;
+    case 'tier4': setTier(4); break;
+    case 'tier5': setTier(5); break;
+    case 'tier6': setTier(6); break;
     case 'repair':
       repairCrackedMirror();
-      break;
-    case 'reinforced':
-      reinforceMirror();
-      break;
-    case 'ignition':
       break;
     case 'focus':
       focusCount++;

@@ -77,7 +77,7 @@ var THREE = {
   CanvasTexture: class { constructor() { this.minFilter = 0; this.needsUpdate = false; this.wrapS = 0; this.wrapT = 0; this.offset = { x:0, y:0 }; } },
   LinearFilter: 1,
   RepeatWrapping: 1000,
-  Group: class { add() {} },
+  Group: class { constructor() { this.position = { x:0, y:0, z:0, set(x,y,z) { this.x=x; this.y=y; this.z=z; } }; this.visible = true; } add() {} },
   AdditiveBlending: 1,
 };
 window.THREE = THREE;

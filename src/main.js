@@ -7,7 +7,7 @@ import { initRenderer, render, getWorldWidth, getRenderer } from './renderer.js'
 import { initBeamRenderer, rebuildBeams, updateBeamPulse } from './beam-render.js';
 import { solve, isDirty, getSegments, markDirty } from './beam.js';
 import { initSockets, initMirrors, updateAllMirrorGeometries, getMirrors, updateMirrorTweens } from './mirror.js';
-import { initPrisms, getPrisms } from './prism.js';
+import { initPrisms, getPrisms, updatePrismGlow } from './prism.js';
 import { initInput, tickDebug } from './input.js';
 import { initEnemies, updateEnemies, applySlowStates } from './enemy.js';
 import { updateSpawner, resetSpawner } from './enemy-spawner.js';
@@ -92,6 +92,7 @@ function loop(now) {
   } else {
     rebuildBeams(getSegments());
   }
+  updatePrismGlow(getSegments());
 
   // Spawner + enemies
   updateSpawner(dt, sessionTime);

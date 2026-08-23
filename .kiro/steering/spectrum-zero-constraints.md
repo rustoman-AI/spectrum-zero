@@ -45,3 +45,8 @@ M6: Build script, vendor folder, offline validation, zip packaging.
 
 - Maintain `BUILD_LOG.md` from the first session. Append a dated entry per session recording decisions locked and what was built.
 - The GDD (`spectrum-zero-gdd.md`) is the source of truth for gameplay, math, and balance. Follow its numbers exactly. Do not invent new mechanics.
+
+
+## Process Rules
+
+- When the user asks for numbers, an assessment, or arithmetic BEFORE implementation, produce them and STOP. Do not implement in the same pass, even when confident the numbers will hold. Wait for explicit approval to proceed.

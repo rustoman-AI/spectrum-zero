@@ -65,16 +65,68 @@ canvas { display: block; width: 100%; height: 100%; }
 const WORLD_HEIGHT = 100;
 // Width is derived from aspect ratio at runtime; portrait ~56 at 9:16
 
-// --- Layout (Y positions, origin at centre, Y-up) ---
-// Zone order top-to-bottom: Aperture -> Mirror Field -> Foundry Band -> Breach Line -> Enemy Zone
-const APERTURE_Y = 45;          // beam source (top)
-const MIRROR_FIELD_TOP = 25;    // top of mirror sockets
-const MIRROR_FIELD_BOT = -5;    // bottom of mirror sockets
-const FOUNDRY_Y = -15;          // foundry band centre (between mirrors and enemies)
-const BREACH_Y = -24;           // enemies breach here = lose a heart
-const ENEMY_SPAWN_Y = -48;      // where enemies appear (bottom)
+// --- Layout mode toggle ---
+// 'classic' = mirrors high (y=22 to -2), foundries below, current behaviour
+// 'low' = mirrors near water (y=-10 to -20), foundries above, thumb-friendly
+const LAYOUT_MODE = 'low';
+
+// --- Layout (derived from LAYOUT_MODE) ---
+const LAYOUTS = {
+  classic: {
+    MIRROR_FIELD_TOP: 25,
+    MIRROR_FIELD_BOT: -5,
+    FOUNDRY_Y: -15,
+    BREACH_Y: -24,
+    SOCKETS: [
+      [-15, 22], [0, 22], [15, 22],
+      [-15, 12], [0, 12], [15, 12],
+      [-15, 2],  [0, 2],  [15, 2],
+      [-15, -2], [0, -2], [15, -2],
+    ],
+    DEFAULT_PRISM_SOCKET: 1,
+    DEFAULT_MIRROR_SOCKETS: [3, 5, 9, 11],
+    FOUNDRY_POSITIONS: [
+      { x: -15, type: 'forge', colour: 0xff8c1a },
+      { x: 14, type: 'lensworks', colour: 0x00ddff },
+      { x: 22, type: 'chorus', colour: 0xffe9a0 },
+    ],
+  },
+  low: {
+    MIRROR_FIELD_TOP: -8,
+    MIRROR_FIELD_BOT: -20,
+    FOUNDRY_Y: 5,
+    BREACH_Y: -24,
+    SOCKETS: [
+      // Prism row (stays high, at y=22, same as classic)
+      [-15, 22], [0, 22], [15, 22],
+      // Mirror field (low, y=-8 to -20)
+      [-15, -8],  [0, -8],  [15, -8],
+      [-15, -12], [0, -12], [15, -12],
+      [-15, -18], [0, -18], [15, -18],
+    ],
+    DEFAULT_PRISM_SOCKET: 1,
+    DEFAULT_MIRROR_SOCKETS: [3, 5, 7, 8],
+    FOUNDRY_POSITIONS: [
+      { x: -18, type: 'forge', colour: 0xff8c1a },
+      { x: 8, type: 'lensworks', colour: 0x00ddff },
+      { x: 22, type: 'chorus', colour: 0xffe9a0 },
+    ],
+  },
+};
+
+const L = LAYOUTS[LAYOUT_MODE];
+const APERTURE_Y = 45;
+const MIRROR_FIELD_TOP = L.MIRROR_FIELD_TOP;
+const MIRROR_FIELD_BOT = L.MIRROR_FIELD_BOT;
+const FOUNDRY_Y = L.FOUNDRY_Y;
+const BREACH_Y = L.BREACH_Y;
+const ENEMY_SPAWN_Y = -48;
 const ENEMY_LANE_COUNT = 5;
-const LENS_Y = BREACH_Y;        // alias for breach threshold
+const LENS_Y = BREACH_Y;
+const SOCKET_POSITIONS = L.SOCKETS;
+const DEFAULT_PRISM_SOCKET = L.DEFAULT_PRISM_SOCKET;
+const DEFAULT_MIRROR_SOCKETS = L.DEFAULT_MIRROR_SOCKETS;
+const FOUNDRY_POSITIONS = L.FOUNDRY_POSITIONS;
 
 // --- Enemy travel time ---
 // Mote crosses spawn-to-breach in this many seconds during Phase 1.
@@ -85,7 +137,7 @@ const ENEMY_TRAVEL_DIST = BREACH_Y - ENEMY_SPAWN_Y; // positive (24 units)
 
 // --- Beam ---
 const MAX_BOUNCES = 8;
-const MAX_SEGMENTS = 12;
+const MAX_SEGMENTS = 24; // supports 6-band tier with bounces without silent truncation
 const BEAM_WIDTH = 1.2;        // world units, visual width of quad
 const BEAM_GLOW_WIDTH = 2.4;   // wider glow layer behind
 // Total spread between outer bands in degrees. Each outer band deviates by half this.
@@ -93,10 +145,19 @@ const PRISM_SPREAD_DEG = 20;
 const PRISM_SPLIT_ANGLE = (PRISM_SPREAD_DEG / 2) * (Math.PI / 180); // radians per outer band
 
 // --- Damage ---
+// Prism tier system: more bands = weaker each, synergy scaled so peak = 48 at all tiers
+// D_BASE(N) = 30/N, SYNERGY(N) = 0.6/(N-1)
+// Focused DPS = N * (30/N) * (1 + 0.6/(N-1) * (N-1)) = 30 * 1.6 = 48 at every tier
+const PRISM_TIERS = {
+  3: { bands: 3, dBase: 10.0, synergy: 0.30, shape: 'triangle', cost: null },
+  4: { bands: 4, dBase: 7.5,  synergy: 0.20, shape: 'diamond',  cost: { slag: 40, insight: 15 } },
+  5: { bands: 5, dBase: 6.0,  synergy: 0.15, shape: 'pentagon', cost: { slag: 80, insight: 30 } },
+  6: { bands: 6, dBase: 5.0,  synergy: 0.12, shape: 'hexagon',  cost: { slag: 150, insight: 50 } },
+};
+const DEFAULT_PRISM_TIER = 3;
+// Legacy constants (used by code that doesn't yet read from active tier)
 const D_BASE = 10;
 const SYNERGY_BONUS = 0.3;
-// DPS = N * D_BASE * (1 + SYNERGY_BONUS * (N - 1))
-// final = max(0, DPS - armour * N)
 
 // --- Enemy base stats (at t=0) ---
 // Speeds derived from MOTE_TRAVEL_TIME_S so travel time is tunable.
@@ -119,16 +180,6 @@ const LENS_INSIGHT_PER_SEC = 3;
 const CHORUS_RECOMBO_PER_SEC = 1.5; // percent per second
 const CHORUS_SLOW_FACTOR = 0.5;
 
-// --- Foundry positions (Option 2: off default band paths, absorption) ---
-// Forge=-15, Lens=+14, Chorus=+22, hw=5
-// Gold band at 10deg hits x=7 at y=-15.2. Lens left edge must be > 7 at that y.
-// Lens at x=14: left edge x=9. Gold reaches x=9 at y=-26.5 (below foundry). MISS.
-// All bands miss all foundries on load. Each reachable with one mirror.
-const FOUNDRY_POSITIONS = [
-  { x: -15, type: 'forge',     colour: 0xff8c1a },  // Amber
-  { x:  14, type: 'lensworks', colour: 0x00ddff },  // Cyan
-  { x:  22, type: 'chorus',    colour: 0xffe9a0 },  // Gold
-];
 const FOUNDRY_HW = 5;
 const FOUNDRY_HH = 3;
 
@@ -170,37 +221,8 @@ const HEAT_DECAY_RATE = 0.15; // fraction of maxHP healed per second when beam l
 const BREACH_DAMAGE_FLOOR = 0.2;  // minimum 20% damage even at 99% heat
 const BREACH_BASE_DAMAGE = { mote: 5, husk: 15, carapace: 25, devourer: 100 };
 
-// --- Sockets (generic grid, holds mirror or prism) ---
-// 3 columns x 4 rows = 12 sockets in the mirror field (y: 22 to -2).
-//
-// DEFAULT PATH (zero player input):
-//   Beam falls from aperture (0, 45) straight down.
-//   Hits PRISM at socket 1 (0, 22) near the top.
-//   Splits into 3 bands diverging ~10deg each, all traveling downward
-//   through the mirror field, through the foundry band, into enemy zone.
-//
-//   Canonical segments after init + 1 frame:
-//     WHT: (0, 45) -> (0, ~24.5)      source to prism edge
-//     AMB: (0, ~24.5) -> (~-13, -50)   diverges left to bottom
-//     CYN: (0, ~24.5) -> (0, -50)      straight down through centre
-//     GLD: (0, ~24.5) -> (~13, -50)    diverges right to bottom
-//
-const SOCKET_POSITIONS = [
-  // Row 1 (top of mirror field, y=22)
-  [-15, 22], [0, 22], [15, 22],
-  // Row 2 (y=12)
-  [-15, 12], [0, 12], [15, 12],
-  // Row 3 (y=2)
-  [-15, 2],  [0, 2],  [15, 2],
-  // Row 4 (bottom of mirror field, y=-2, above foundry band)
-  [-15, -2], [0, -2], [15, -2],
-];
-
-// Default object placement:
-// Prism goes in socket 1 (0, 22) — directly below aperture.
-// Mirrors go in sockets 3, 5, 9, 11 — sides, out of the beam path.
-const DEFAULT_PRISM_SOCKET = 1;
-const DEFAULT_MIRROR_SOCKETS = [3, 5, 9, 11];
+// (Socket positions, prism socket, mirror sockets, and foundry positions
+//  are derived from LAYOUT_MODE above and exported there.)
 
 // --- Phase timings (seconds) ---
 const PHASE_1_END = 240;   // 4:00
@@ -217,7 +239,7 @@ const SOURCE_DIM_WIDTH = 0.6;   // 60% beam width in phase 4
 
 // --- Pool sizes ---
 const ENEMY_POOL_SIZE = 64;
-const BEAM_SEGMENT_POOL_SIZE = 16;  // slightly above MAX_SEGMENTS for glow layers
+const BEAM_SEGMENT_POOL_SIZE = 28;  // above MAX_SEGMENTS (24) with margin
 const PARTICLE_POOL_SIZE = 32;
 
 // --- Colours ---
@@ -604,11 +626,9 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
     traceBeam(hit.point, reflected, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, null, newBounces);
   } else if (hit.type === 'prism') {
     if (colour === COLOUR_WHITE) {
-      const bands = [
-        { colour: COLOUR_AMBER, angleOffset: -PRISM_SPLIT_ANGLE },
-        { colour: COLOUR_CYAN,  angleOffset: 0 },
-        { colour: COLOUR_GOLD,  angleOffset: PRISM_SPLIT_ANGLE },
-      ];
+      // Generate N bands based on active prism tier
+      const tier = (typeof getActiveTier === 'function') ? getActiveTier() : 3;
+      const bands = generateBandAngles(tier);
       for (const band of bands) {
         if (segments.length >= MAX_SEGMENTS) break;
         const newDir = rotateVec(direction, band.angleOffset);
@@ -786,6 +806,17 @@ function rayBoundsIntersect(origin, dir, worldWidth) {
   if (hitPoint) return { dist: tMin, point: hitPoint };
   return null;
 }
+// Generate N band angles evenly distributed across the split spread
+function generateBandAngles(n) {
+  const colours = [COLOUR_AMBER, COLOUR_CYAN, COLOUR_GOLD, COLOUR_AMBER, COLOUR_CYAN, COLOUR_GOLD];
+  const bands = [];
+  for (let i = 0; i < n; i++) {
+    // Distribute from -PRISM_SPLIT_ANGLE to +PRISM_SPLIT_ANGLE
+    const t = n === 1 ? 0 : (i / (n - 1)) * 2 - 1; // -1 to +1
+    bands.push({ colour: colours[i % colours.length], angleOffset: t * PRISM_SPLIT_ANGLE });
+  }
+  return bands;
+}
 // Rotate a 2D vector by angle (radians)
 function rotateVec(v, angle) {
   const cos = Math.cos(angle);
@@ -861,10 +892,20 @@ function rebuildBeams(segments) {
       const coreW = BEAM_WIDTH * widthMult;
       const glowW = BEAM_GLOW_WIDTH * widthMult;
 
+      // Edge fade: reduce opacity if segment ends near world boundary
+      const hh = WORLD_HEIGHT / 2;
+      const edgeMargin = 4; // fade starts this many units from edge
+      const endDistFromEdge = Math.min(
+        Math.abs(seg.end.x) < 28 ? 99 : 28 - Math.abs(seg.end.x) + edgeMargin,
+        hh - Math.abs(seg.end.y) + edgeMargin
+      );
+      const edgeFade = Math.min(1, Math.max(0.1, endDistFromEdge / edgeMargin));
+      const finalOpacity = opacityMult * edgeFade;
+
       positionQuad(entry.core, seg.start, seg.end, coreW);
       positionQuad(entry.glow, seg.start, seg.end, glowW);
-      setQuadColour(entry.core, seg.colour, seg.intensity * opacityMult);
-      setQuadColour(entry.glow, seg.colour, seg.intensity * 0.35 * opacityMult);
+      setQuadColour(entry.core, seg.colour, seg.intensity * finalOpacity);
+      setQuadColour(entry.glow, seg.colour, seg.intensity * 0.35 * finalOpacity);
       entry.core.visible = true;
       entry.glow.visible = true;
     } else {
@@ -1210,9 +1251,19 @@ function resetMirrors() {
 
 
 const prisms = [];
-const PRISM_RADIUS = 2.5; // hit radius for beam intersection
+const PRISM_RADIUS = 2.5;
+let activeTier = DEFAULT_PRISM_TIER;
 
 function getPrisms() { return prisms; }
+function getActiveTier() { return activeTier; }
+function getActiveTierData() { return PRISM_TIERS[activeTier]; }
+
+function setTier(newTier) {
+  activeTier = newTier;
+  markDirty(); // beam re-solves with new band count
+}
+
+function resetTier() { activeTier = DEFAULT_PRISM_TIER; }
 
 // Reset prisms to initial state (remove craft-purchased ones, keep default)
 function resetPrisms() {
@@ -1241,30 +1292,61 @@ function placePrism(socketIndex) {
   const sockets = getSockets();
   const [sx, sy] = SOCKET_POSITIONS[socketIndex];
 
-  // Visible equilateral triangle, point-up
-  const shape = new THREE.Shape();
+  // Diamond shape (rotated square): apex up, vertices at top/bottom/left/right
+  // Faceted: 4 triangles from centre, each a different brightness
   const r = PRISM_RADIUS;
-  shape.moveTo(0, r);
-  shape.lineTo(-r * 0.866, -r * 0.5);
-  shape.lineTo(r * 0.866, -r * 0.5);
-  shape.closePath();
+  const group = new THREE.Group();
+  group.position.set(sx, sy, 0.2);
 
-  const geo = new THREE.ShapeGeometry(shape);
-  const mat = new THREE.MeshBasicMaterial({
-    color: 0xeeeeff,
-    transparent: true,
-    opacity: 0.85,
+  // Four facet triangles: top, right, bottom, left
+  const verts = [
+    { x: 0, y: r },     // top apex
+    { x: r, y: 0 },     // right
+    { x: 0, y: -r },    // bottom
+    { x: -r, y: 0 },    // left
+  ];
+  // Cool glass tones, slightly different per facet
+  const facetColours = [0xddeeff, 0xbbddee, 0xaaccdd, 0xccddee];
+  // Bottom facets get a faint band-colour tint
+  const bottomTints = [null, null, 0xffe9a0, 0xff8c1a]; // top, right = glass; bottom = gold hint; left = amber hint
+  for (let i = 0; i < 4; i++) {
+    const a = verts[i];
+    const b = verts[(i + 1) % 4];
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0);
+    shape.lineTo(a.x, a.y);
+    shape.lineTo(b.x, b.y);
+    shape.closePath();
+    const geo = new THREE.ShapeGeometry(shape);
+    const col = bottomTints[i] || facetColours[i];
+    const mat = new THREE.MeshBasicMaterial({
+      color: col, transparent: true,
+      opacity: i >= 2 ? 0.7 : 0.85, // bottom half slightly more translucent
+    });
+    const facetMesh = new THREE.Mesh(geo, mat);
+    facetMesh.position.z = 0.01 * i; // tiny offset to avoid z-fight
+    group.add(facetMesh);
+  }
+
+  // Internal glow (additive, brightens with beam)
+  const glowGeo = new THREE.PlaneGeometry(r * 1.4, r * 1.4);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0xddeeff, transparent: true, opacity: 0.25,
+    blending: THREE.AdditiveBlending, depthWrite: false,
   });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(sx, sy, 0.2);
-  scene.add(mesh);
+  const glowMesh = new THREE.Mesh(glowGeo, glowMat);
+  glowMesh.position.z = -0.05;
+  group.add(glowMesh);
+
+  scene.add(group);
 
   const prism = {
     id: prisms.length,
     socketIndex,
     position: { x: sx, y: sy },
     radius: PRISM_RADIUS,
-    mesh,
+    mesh: group,
+    glowMat, // reference to update glow intensity
   };
 
   prisms.push(prism);
@@ -1314,6 +1396,25 @@ function movePrismToSocket(prism, newSocketIndex) {
   prism.mesh.position.set(sx, sy, 0);
 
   markDirty();
+}
+
+// Update prism glow based on beam activity (call from main loop)
+function updatePrismGlow(segments) {
+  for (const prism of prisms) {
+    if (!prism.glowMat) continue;
+    // Check if any segment terminates at this prism (beam passing through)
+    let lit = false;
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      const dx = seg.end.x - prism.position.x;
+      const dy = seg.end.y - prism.position.y;
+      if (dx * dx + dy * dy < prism.radius * prism.radius * 2) {
+        lit = true;
+        break;
+      }
+    }
+    prism.glowMat.opacity = lit ? 0.5 + 0.2 * Math.sin(performance.now() * 0.005) : 0.15;
+  }
 }
 
 
@@ -1931,10 +2032,10 @@ function segCrossesBox(seg, cx, cy, hw, hh) {
 
 
 const CRAFTS = [
-  { id: 'prism',      label: CRAFT_LABELS.prism,      slag: CRAFT_PRISM.slag,      insight: CRAFT_PRISM.insight },
+  { id: 'tier4', label: '4 bands', hint: 'wider, weaker', slag: 40,  insight: 15 },
+  { id: 'tier5', label: '5 bands', hint: 'wider, weaker', slag: 80,  insight: 30 },
+  { id: 'tier6', label: '6 bands', hint: 'widest, weakest', slag: 150, insight: 50 },
   { id: 'repair',     label: CRAFT_LABELS.repair,     slag: CRAFT_REPAIR.slag,     insight: CRAFT_REPAIR.insight },
-  { id: 'reinforced', label: CRAFT_LABELS.reinforced, slag: CRAFT_REINFORCED.slag, insight: CRAFT_REINFORCED.insight },
-  { id: 'ignition',   label: CRAFT_LABELS.ignition,   slag: CRAFT_IGNITION.slag,   insight: CRAFT_IGNITION.insight },
   { id: 'focus',      label: CRAFT_LABELS.focus,      slag: CRAFT_FOCUS.slag,      insight: CRAFT_FOCUS.insight },
   { id: 'anchor',     label: CRAFT_LABELS.anchor,     slag: CRAFT_ANCHOR.slag,     insight: CRAFT_ANCHOR.insight },
 ];
@@ -1996,7 +2097,13 @@ function updateCraftingTray() {
     trayCtx.fillStyle = affordable ? '#ffffff' : '#555555';
     trayCtx.font = 'bold 10px monospace';
     trayCtx.textAlign = 'center';
-    trayCtx.fillText(c.label, x + btnW / 2, 15);
+    trayCtx.fillText(c.label, x + btnW / 2, c.hint ? 12 : 15);
+
+    if (c.hint) {
+      trayCtx.font = '7px monospace';
+      trayCtx.fillStyle = affordable ? '#aaccaa' : '#444444';
+      trayCtx.fillText(c.hint, x + btnW / 2, 22);
+    }
 
     trayCtx.font = '8px monospace';
     trayCtx.fillStyle = affordable ? '#aaaaaa' : '#333333';
@@ -2040,16 +2147,11 @@ function attemptPurchase(craft) {
   spendInsight(craft.insight);
 
   switch (craft.id) {
-    case 'prism':
-      autoPlacePrism();
-      break;
+    case 'tier4': setTier(4); break;
+    case 'tier5': setTier(5); break;
+    case 'tier6': setTier(6); break;
     case 'repair':
       repairCrackedMirror();
-      break;
-    case 'reinforced':
-      reinforceMirror();
-      break;
-    case 'ignition':
       break;
     case 'focus':
       focusCount++;
@@ -2330,7 +2432,6 @@ function resetEffects() {
 
 
 
-
 const ENEMY_HIT_HALF_W = 3;
 const ENEMY_HIT_HALF_H = 3;
 let totalKills = 0;
@@ -2352,22 +2453,31 @@ function updateDamage(dt) {
     const ex = -worldWidth / 2 + laneWidth * (enemy.lane + 0.5);
     const ey = enemy.y;
 
-    // Count how many beam segments hit this enemy
-    let bandsHitting = 0;
+    // Count full bands (intensity=1) and sub-rays (intensity<1) hitting this enemy
+    let fullBands = 0;
+    let subRays = 0;
+    let subRayIntensity = 0;
     let goldHitting = false;
     let hitColour = 0;
+    let totalBeamsHitting = 0;
 
     for (let s = 0; s < segments.length; s++) {
       const seg = segments[s];
       if (segmentIntersectsBox(seg, ex, ey, ENEMY_HIT_HALF_W, ENEMY_HIT_HALF_H)) {
-        bandsHitting++;
+        totalBeamsHitting++;
         hitColour = seg.colour;
         if (seg.colour === COLOUR_GOLD) goldHitting = true;
+        if (seg.intensity >= 1.0) {
+          fullBands++;
+        } else {
+          subRays++;
+          subRayIntensity = seg.intensity;
+        }
       }
     }
 
     // Update visual state for burn feedback
-    enemy.bandsHitting = bandsHitting;
+    enemy.bandsHitting = totalBeamsHitting;
     if (hitColour) enemy.lastHitColour = hitColour;
 
     // Apply gold slow
@@ -2376,17 +2486,25 @@ function updateDamage(dt) {
     }
 
     // Apply damage
-    if (bandsHitting > 0) {
+    if (totalBeamsHitting > 0) {
       // -------------------------------------------------------
-      // Damage formula (from GDD §8.1):
-      //   DPS = N * D_BASE * (1 + SYNERGY_BONUS * (N - 1)) * focusMult
-      //   final = max(0, DPS - armour * N)
+      // Damage formula (tier-aware, sub-rays excluded from synergy):
+      //   tier = active prism tier → dBase, synergy from PRISM_TIERS
+      //   synergyDPS = fullBands * dBase * (1 + synergy * (fullBands-1))
+      //   flatDPS = subRays * dBase * subRayIntensity
+      //   totalRaw = (synergyDPS + flatDPS) * focusMult * resonanceMult
+      //   final = max(0, totalRaw - armour * totalBeams)
       // -------------------------------------------------------
-      const N = bandsHitting;
+      const tier = (typeof getActiveTier === 'function') ? getActiveTier() : 3;
+      const tierData = PRISM_TIERS[tier] || PRISM_TIERS[3];
+      const dBase = tierData.dBase;
+      const synBonus = tierData.synergy;
       const focusMult = getFocusMultiplier();
       const resMult = getResonanceActive() ? RESONANCE_MULTIPLIER : 1.0;
-      const raw = N * D_BASE * (1 + SYNERGY_BONUS * (N - 1)) * focusMult * resMult;
-      const dmg = Math.max(0, raw - enemy.armour * N);
+      const synergyDPS = fullBands > 0 ? fullBands * dBase * (1 + synBonus * (fullBands - 1)) : 0;
+      const flatDPS = subRays * dBase * (subRayIntensity || 0.5);
+      const raw = (synergyDPS + flatDPS) * focusMult * resMult;
+      const dmg = Math.max(0, raw - enemy.armour * totalBeamsHitting);
       // Heat accumulator: damage adds heat, enemy dies when heat >= effectiveHP
       enemy.heat += dmg * dt;
       enemy.burn = enemy.heat / enemy.maxHp;
@@ -2600,6 +2718,7 @@ function resetSession() {
   resetCrafting();
   resetMirrors();
   resetPrisms();
+  resetTier();
   markDirty();
   hideOverlay();
   // Restore visibility hidden on end state
@@ -3110,6 +3229,7 @@ function loop(now) {
   } else {
     rebuildBeams(getSegments());
   }
+  updatePrismGlow(getSegments());
 
   // Spawner + enemies
   updateSpawner(dt, sessionTime);

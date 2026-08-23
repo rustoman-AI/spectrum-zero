@@ -1,174 +1,174 @@
-# Spectrum Zero - Build Log
+# Solar Siege — Build Log
 
-Maintained from the first session. One entry per session recording decisions locked and what was built.
-
----
-
-## 2026-08-20 — Session 1: Spec Phase
-
-**What was built:**
-- `requirements.md` — 10 functional requirement groups + non-functional requirements, all numbers from the GDD
-- `design.md` — full technical architecture: 15-file module structure, game loop order, dirty-flag beam caching, component designs for beam solver, mirrors, prisms, enemies (instanced pool), damage, foundries, crafting, session controller, drift, audio, feedback
-- `tasks.md` — 48 tasks across 6 vertical-slice milestones (M1–M6)
-- `.kiro/steering/spectrum-zero-constraints.md` — persistent steering file with all hard constraints
-
-**Decisions locked:**
-- Orthographic camera, world height = 100 units, Y-up, origin at centre
-- Beam solver: iterative raycast, max 8 bounces, 12 segments, event-driven recompute only
-- Beam rendering: quad mesh pool with additive blending (not THREE.Line)
-- Enemy pool size: 64 instanced planes
-- Build system: plain Node concat script (`build.js`), no bundler
-- Three.js in `vendor/three.module.js`, imported via relative path in the HTML template
-- All balance numbers in `src/config.js`, no magic numbers elsewhere
-- File size cap: 300 lines per source file
-
-**Open from GDD (not yet resolved):**
-1. Recombination win condition legibility — keeping both paths (kill Devourer OR 100% Recombination) for now, will test in M4
-2. Three bands on 5-inch portrait — will validate in M1 greybox
-3. Drift fairness — will tune in M4
-
-**Next session:** Begin M1 implementation (beam solve, mirrors, prism, grey-box visuals, build.js).
+AI-assisted development log. Each session records what was requested, what was built, what broke, and what was corrected.
 
 ---
 
-## 2026-08-20 — Session 2: M1 Implementation Start
+## Session 1 — Spec Phase
 
-**Decision locked:**
-- Sockets are GENERIC. A socket holds exactly one object (mirror or prism). Dragging onto an occupied socket swaps the two objects. Prisms share the mirror socket grid — no dedicated prism slots. Rationale: one interaction vocabulary, socket scarcity is the strategy, saves portrait screen space.
+**Asked:** Read the game design document and produce requirements.md, design.md, tasks.md, a steering file, and BUILD_LOG.md. Do not implement.
 
-**Building:**
-- M1: beam solve, 4 mirrors, 1 prism, grey-box visuals, build.js
+**Generated:** Full spec across three documents. requirements.md with 10 functional requirement groups and NFRs. design.md with 15-file architecture, game loop order, dirty-flag beam caching, coordinate system. tasks.md with 48 tasks in 6 vertical slices. Steering file with hard constraints.
 
-**Built:**
-- `src/config.js` — all balance numbers, socket grid (3x4 = 12 sockets), phase timings
-- `src/renderer.js` — Three.js ortho camera, resize, screenToWorld
-- `src/beam.js` — iterative raycast solver with reflection math (commented) and prism split
-- `src/beam-render.js` — quad mesh pool with additive blending glow
-- `src/mirror.js` — generic socket system, 4 mirrors, drag/rotate/damage/repair
-- `src/prism.js` — prism placement sharing socket grid, swap logic
-- `src/input.js` — pointer events, IDLE→DRAG→ROTATE state machine
-- `src/main.js` — game loop with dirty-flag beam caching
-- `vendor/three.module.js` — Three.js r160
-- `build.js` — Node concat script, strips imports/exports, produces index.html
-- `test-headless.js` — Node smoke test (mock THREE, verify init + beam solve)
-
-**Verified:**
-- `node build.js` → 29.2 KB index.html, syntax valid
-- `node test-headless.js` → PASS (2 segments, 4 mirrors, 1 prism)
-- Zero external URLs in output
-- No naming collisions in flat scope
-
+**Decisions locked:** Orthographic camera, world height 100 units, iterative raycast capped at 8 bounces and 12 segments, quad mesh pool for beams, enemy pool of 64, Node concat build script, all balance in config.js.
 
 ---
 
-## 2026-08-20 — Session 3: M1 Fixes + M2 Implementation
+## Session 2 — M1: Beam + Mirrors
 
-**Fixes applied:**
-- Portrait lock: fixed 9:16 canvas with letterboxing
-- Duplicate bands: excludePrism prevents sub-beam re-hitting same prism
-- Divergence angle: PRISM_SPREAD_DEG=20 (10deg per outer band, tunable)
-- Colours: Amber=#FF8C1A (warm orange), Gold=#FFE9A0 (pale white-gold, 60% width, pulses)
-- Band width encodes power: thickness proportional to intensity
-- Double-sided mirrors: beams cannot pass through from any direction
-- Z-order: beams behind objects (z=-0.3/-0.5), mirrors z=0, prism z=0.2
-- Input redesigned: tap-select (highlight ring), swipe-rotate, drag-move, no timing dependency
-- Vendor renamed to three.min.js (UMD build, plain script tag)
+**Asked:** Implement beam solve, 4 mirrors, 1 prism, grey-box visuals, build script.
 
-**M2 built:**
-- src/enemy.js: 64-enemy pool, per-enemy mesh, lane movement, breach detection
-- src/enemy-spawner.js: Phase 1 motes every 2.5s, Phase 2 husks+carapaces every 1.8s, escalation hp_multiplier = 1 + (t/900)*3
-- src/damage.js: DPS = N * D_BASE * (1 + SYNERGY_BONUS * (N-1)), armour subtraction, gold slow, kill awards Slag
-- src/session.js: timer, breach counter (3 = lose), game-over overlay, tap-to-restart, HUD
-- main.js: full game loop with all M2 systems integrated
+**Generated:** 8 source files (config, renderer, beam, beam-render, mirror, prism, input, main), build.js, vendor/three.min.js.
 
-**Decisions locked:**
-- Mirrors are double-sided (deliberate — beams never pass through)
-- Enemy pool uses individual meshes (not InstancedMesh) for now — optimise in M5 if needed
-- Slag earned from kills tracked globally, will connect to crafting in M3
+**Broke:** ES module import in `<script type="module">` fails on file:// due to CORS. Game showed a black screen.
 
-**Headless test caveat:**
-- Mock extended with addEventListener/textContent on DOM elements and Shape/ShapeGeometry on THREE. These are standard APIs in real browsers; mock additions are for test coverage, not code correctness.
+**Fixed:** Switched to UMD Three.js build loaded via plain `<script src>` tag. All game code in a regular `<script>` block. Works from file://.
 
+**Broke:** Input completely dead. Pointer events were binding correctly but coordinate conversion and hit detection were untested in browser.
+
+**Fixed:** Verified binding path, increased hit radius, added touch-action:none on canvas, added D-key debug overlay showing pointer state and world coordinates.
 
 ---
 
-## 2026-08-20 — Session 4: Feel Fixes + M3 Implementation
+## Session 3 — M1 Fixes
 
-**Feel fixes:**
-- Mirror tween: 120ms ease-out snap with beam sweeping during interpolation
-- Drop-target highlight: yellow ring shows nearest socket during drag
-- Spawn ramp: 3s initial delay, interval ramps from 3.5s→2.0s over Phase 1
-- Game-over: full dim quad + frozen enemies + text overlay in-scene
+**Asked:** Fix band count (6 rays instead of 3), beam termination at edges, divergence angle too wide, mirror defaults, z-order.
 
-**M3 built:**
-- src/foundry.js: 3 foundries (Forge/LensWorks/Chorus), segment-hit detection, resource accumulation at GDD rates
-- src/crafting.js: 6-button canvas-texture tray, purchase logic, effects (prism/repair/reinforce/focus/anchor)
-- src/session.js: win state (Recombination >= 100% OR Devourer killed), HUD with timer+hearts+recombination%, timer red at 12:00
-- Damage now routes kill Slag through foundry.js, uses Focus multiplier
+**Broke:** Prism re-entry — sub-beams after split re-intersected the same prism, causing a second split. Root cause: rayCircleIntersect hit the far side of the prism circle.
 
-**Decisions locked:**
-- Slag from kills goes to the same pool as foundry production (single resource, not separate)
-- Focus multiplier stacks: each purchase is +15% of D_BASE
-- Crafting tray positioned above foundries (y = FOUNDRY_Y + 8)
-- BREACH_Y derived from FOUNDRY_Y + 5 (single source of truth)
+**Fixed:** Added excludePrism parameter to traceBeam so sub-beams skip the prism they just exited.
 
-**Test suite: 23 assertions, all pass.**
-
+**Fixed:** PRISM_SPREAD_DEG from 30 to 20 (10 degrees per outer band). Mirrors defaulted to 45 degrees. Prism rendered as visible triangle. Z-order stack established.
 
 ---
 
-## 2026-08-20 — Session 5: Absorption & Layout Fix
+## Session 4 — M2: Enemies + Damage
 
-**Critical fix: Beam absorption at foundries**
-- Foundries are now absorbing surfaces in the beam solver. A band that hits a foundry TERMINATES there — it does not continue to the enemy zone.
-- This creates the core GDD tradeoff: a band is either burning enemies OR banking resources, never both.
-- Foundries added to `castRay` via `rayAABBIntersect`.
+**Asked:** Enemy spawner, damage math, escalation curve, lose state.
 
-**Foundry positions (iterated through several failures):**
-- Final: Forge x=-15, Lens Works x=+14, Chorus x=+22 (hw=5, hh=3)
-- On load: zero foundries fed, all three bands reach y=-50 (enemy zone)
-- Gold band at 10° reaches x=7 at y=-15.2 — misses Lens left edge at x=9
-- Each foundry reachable with one mirror redirect
+**Generated:** enemy.js (pool), enemy-spawner.js (phase schedule), damage.js (DPS formula with armour), session.js (timer, breach counter, game over).
 
-**Other fixes this round:**
-- Craft tray: DOM element below canvas in letterbox bar, falls back to overlapping if no room
-- Overlay z-order: depthTest=false + renderOrder 998/999, always draws on top
-- Zone order corrected: Mirror field → Foundry band (y=-15) → Breach line (y=-24) → Enemy zone
+**Verified:** 13 headless assertions including GDD math (Mote dies in 3.0s with 1 band, synergy gives 26/48 DPS at N=2/3, escalation 1.2 at t=60 and 3.8 at t=840).
 
-**Test suite: 27 assertions, all pass.**
-New assertions: zero foundries fed on load, absorbed band has no segment below foundry, absorbed band stops damaging enemies below.
+**Misstep:** Wrote inline node -e tests in PowerShell that died on quote escaping. Twice. Rule established: always write test scripts to .js files.
 
-**Decisions locked:**
-- Foundry absorption is permanent game rule (band terminates, does not pass through)
-- Foundry positions are asymmetric (-15/+14/+22) — visual asymmetry accepted for gameplay symmetry
-
+**Misstep:** Reported M2 as built on the strength of "init OK" without verifying damage, spawning, or breaches. Gap acknowledged. Integration tests added afterward.
 
 ---
 
-## 2026-08-22 — Lore Reskin: Solar Siege
+## Session 5 — M3: Foundries + Crafting + Win State
 
-**Naming change only. No mechanical effect.**
+**Generated:** foundry.js (3 altars, resource accumulation), crafting.js (6-button tray, purchase logic), win condition (Recombination or Devourer kill).
 
-Reskinned from abstract "Spectrum Zero" to "Solar Siege" (Archimedes defending Syracuse from the Roman fleet). All player-facing text moved to `src/strings.js` as single source of truth.
+**Broke:** Zone order was inverted vs GDD. Foundries sat below the breach line inside enemy territory.
 
-Rename map:
-- Spectrum Zero → Solar Siege
-- Aperture → Helios
-- White beam → Sunlight
-- Prism → Archimedes Lens
-- Forge → Altar of Hephaestus
-- Lens Works → Altar of Athena
-- Chorus → Altar of Apollo
-- Slag → Bronze (B:)
-- Insight → Tactics (T:)
-- Recombination → Convergence (C:)
-- Enemies → Roman fleet (Skiff/Trireme/Quadrireme/Flagship)
-- Breach line → The Sea Wall
-- Craft labels: Lens, Greek Fire, Br.Shield, Oil Slick, Focus, Ballast
+**Fixed:** Restructured zones top-to-bottom: mirrors → foundries → breach → enemies. Enemy speed derived from MOTE_TRAVEL_TIME_S = 8 for tuning.
 
-**Verification:**
-- config.js: MD5 identical before and after (45313529BF596A4D7A5C5752B1B8B106)
-- test-sim.js: all assertions pass
-- Zero new binary/image files
-- Zero external URLs in index.html
-- No changes to: beam solver, damage math, colours, input model, geometry, timing
+**Broke:** Craft tray overlaid the socket grid, blocking mirrors.
+
+**Fixed:** Moved tray to DOM element below canvas, then later to an in-scene canvas texture at screen bottom.
+
+---
+
+## Session 6 — Absorption + Layout
+
+**Asked:** Foundries must absorb beams (band terminates, does not pass through to enemies). Critical for the defence-vs-economy tradeoff.
+
+**Iterated through three foundry position failures:** Gold band kept hitting Lens Works due to ray-AABB geometry at shallow angles. Each time, ran a debug script to trace exact segment endpoints before adjusting positions.
+
+**Final positions:** Forge -15, Lens +14, Chorus +22. Verified by assertion: zero foundries fed on load.
+
+**Broke (later reverted):** Absorption was removed at user request. Foundries became pass-through. Beams now feed altars AND hit enemies on the same path. Tradeoff becomes positioning: route through an altar on the way to the sea.
+
+---
+
+## Session 7 — Lore Reskin
+
+**Changed:** Spectrum Zero → Solar Siege. All player-facing text moved to src/strings.js. Archimedes defending Syracuse theme. No mechanical changes.
+
+**Verified:** config.js hash identical before and after. Zero binary assets added. All tests pass.
+
+---
+
+## Session 8 — DEV Flags + End Screens
+
+**Problem:** MAX_BREACHES was set to 999 for testing, causing 40+ hearts to render in HUD and making it impossible to verify game-over flow.
+
+**Fixed:** Created DEV flag system. DEV.INVINCIBLE replaces hardcoded 999. Build script hard-errors on --submission if any flag is true. Red "DEV" label visible on screen when active.
+
+**Verified:** Defeat path (3 breaches → game over), victory path (Devourer killed), restart (all state resets cleanly, no leaks). Mirror/prism positions now reset on restart.
+
+---
+
+## Session 9 — Free Placement
+
+**Promoted:** FREE_PLACEMENT from a DEV override to a shipped mechanic (PLACEMENT_MODE = 'free'). Mirrors drop anywhere in the mirror field, clamped to bounds.
+
+**Initially over-engineered:** Added validation rules (min distance, altar overlap, valid/invalid tint). User rejected: "Do not add placement restrictions." Stripped back to simple clamp-to-bounds.
+
+---
+
+## Session 10 — Heat Decay + Paired Spawning
+
+**Problem:** Single-mirror behaviour persisted across three playtests. Diagnosis: one mirror at y=12 covers 93% of spawn range by rotation alone.
+
+**Root cause identified:** No heat decay. Switching targets cost nothing because damage was permanent. A player could sweep one beam back and forth with no penalty.
+
+**First implementation (WRONG):** Heat decay as HP healing at 15%/s. This made enemies unkillable: one beam dealt 10 DPS but the target healed 27 HP/s. Net damage negative.
+
+**Corrected:** Heat is a separate accumulator. Beams add heat; heat decays when contact is lost; enemy dies when heat reaches maxHP. Damage already dealt is never undone. Only PENDING progress cools.
+
+**Verified:** Mote still dies in 3.0s with continuous contact. Husk under Gold slow + 1 beam: killed with 6.0s margin.
+
+**Added:** Paired spawning from phase 2. Heavy on beam side, fast mote on off-side 1.5s later. Creates two-sided pressure.
+
+---
+
+## Session 11 — Wall Integrity + Breach Scaling
+
+**Replaced:** Hearts (3 discrete breaches) with wall integrity (100 HP pool). Ships do variable damage based on type. Damage scaled by heat fraction: a nearly-dead ship that breaches does only 20% of base damage.
+
+---
+
+## Session 12 — Coverage Analysis + Layout Toggle
+
+**Asked:** Would moving mirrors lower fix single-mirror behaviour?
+
+**First analysis (WRONG):** Assumed 30-degree sweep, computed 26% coverage. Concluded moving mirrors lower would help.
+
+**Corrected analysis:** Swept all angles with proper ray-segment intersection. Finding: a single mirror at ANY height reaches 100% of the playfield. The reflected beam goes nearly horizontal at shallow angles and crosses the full width. Height does not reduce coverage.
+
+**Conclusion:** Heat decay and paired spawning ARE the fix. Layout change is ergonomics only.
+
+**Implemented anyway as a toggle:** LAYOUT_MODE = 'classic' or 'low'. Both paths coexist. Comparison: classic = 70% wall after 60s, low = 55% (21% harder due to wider beam divergence before reaching enemies).
+
+---
+
+## Session 13 — Sub-ray Synergy Rule
+
+**Asked:** Second prism creates sub-rays. Do they synergise?
+
+**Analysis showed:** With synergy, 6 sub-rays = 75 DPS. Makes the game easier not deeper.
+
+**Decision:** Sub-rays excluded from synergy. Two sub-rays on one target = 5+5 = 10 DPS flat. Full bands still synergise normally. Armour subtracts per beam, making sub-rays nearly useless against armoured targets. This creates a real choice: spread (sub-rays) for coverage vs focus (full bands) for armour.
+
+---
+
+## Session 14 — Polish + Effects
+
+**Added:** Beam contact glow (pooled additive sprites scaled by DPS), destruction sequence (flash + 8 debris particles + WebAudio crack/thump), game-over overlay cleanup (beams hidden, 82% dim, text only), resonance mechanic (3+ bounces between same mirror pair = 1.5x DPS multiplier), diamond prism shape (faceted, internal glow, colour-tinted lower half).
+
+---
+
+## Session 15 — Documents + Freeze
+
+Mechanics frozen. DESIGN_INTENT.md written from the actual build. This log produced. Submission zip packaged.
+
+---
+
+## Known Issues (not fixed, shipping as-is)
+
+- Insight mutation log never conclusively identified the intermittent Insight-reset bug. Instrumentation is live; the bug was not reproduced in headless tests.
+- Phase 1 zero-input survival is tight. Game over at ~2:42 without player action. Deliberate: the game requires engagement from the first seconds.
+- Single-mirror behaviour may persist for players who do not notice heat decay visually. The burn meter fading IS the feedback, but it may need strengthening in a future pass.
+- Source drift (phase 3) and Devourer boss (phase 4) are defined in config but not spawned. The 15-minute session arc is incomplete; the prototype demonstrates the core loop, not the full session.

@@ -107,11 +107,9 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
     traceBeam(hit.point, reflected, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, null, newBounces);
   } else if (hit.type === 'prism') {
     if (colour === COLOUR_WHITE) {
-      const bands = [
-        { colour: COLOUR_AMBER, angleOffset: -PRISM_SPLIT_ANGLE },
-        { colour: COLOUR_CYAN,  angleOffset: 0 },
-        { colour: COLOUR_GOLD,  angleOffset: PRISM_SPLIT_ANGLE },
-      ];
+      // Generate N bands based on active prism tier
+      const tier = (typeof getActiveTier === 'function') ? getActiveTier() : 3;
+      const bands = generateBandAngles(tier);
       for (const band of bands) {
         if (segments.length >= MAX_SEGMENTS) break;
         const newDir = rotateVec(direction, band.angleOffset);
@@ -288,6 +286,17 @@ function rayBoundsIntersect(origin, dir, worldWidth) {
   }
   if (hitPoint) return { dist: tMin, point: hitPoint };
   return null;
+}
+// Generate N band angles evenly distributed across the split spread
+function generateBandAngles(n) {
+  const colours = [COLOUR_AMBER, COLOUR_CYAN, COLOUR_GOLD, COLOUR_AMBER, COLOUR_CYAN, COLOUR_GOLD];
+  const bands = [];
+  for (let i = 0; i < n; i++) {
+    // Distribute from -PRISM_SPLIT_ANGLE to +PRISM_SPLIT_ANGLE
+    const t = n === 1 ? 0 : (i / (n - 1)) * 2 - 1; // -1 to +1
+    bands.push({ colour: colours[i % colours.length], angleOffset: t * PRISM_SPLIT_ANGLE });
+  }
+  return bands;
 }
 // Rotate a 2D vector by angle (radians)
 function rotateVec(v, angle) {

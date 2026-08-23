@@ -1,0 +1,15 @@
+Solar Siege is a single-player survival game about splitting and routing a beam of sunlight through mirrors to burn an advancing fleet while simultaneously feeding three altars that produce the resources needed to survive.
+
+The player is Archimedes defending Syracuse. One beam of sunlight falls from the top of the screen. A crystal lens splits it into three coloured bands. Four mirrors, freely placeable anywhere on the battlement, redirect those bands toward Roman ships rising from the sea below. The ships advance steadily toward a wall at the bottom of the defended zone. If they reach it, the wall takes damage proportional to how much heat the player failed to deliver. Wall integrity starts at one hundred and the run ends when it reaches zero.
+
+The central tension is that the same light that burns ships also powers the economy. Three altars sit above the mirror field. Directing a band into an altar produces Bronze, Tactics, or Convergence, but that band no longer reaches the sea. Every second spent banking resources is a second a ship advances unburned. Every second spent burning is a second the player cannot afford the next lens or mirror. The game never gives enough light for both.
+
+Heat accumulates on a ship while a beam contacts it, and decays when contact is lost. Switching targets costs real progress because accumulated heat fades at fifteen percent per second. This makes sustained focus the only viable kill strategy and forces the player to commit a mirror to each threat rather than sweeping one beam across the field.
+
+Full-intensity bands stack with a synergy bonus that makes focusing two beams on one target far more effective than splitting attention. Sub-rays from a second lens split do not synergise; they add flat damage only. Against armoured ships, sub-rays are nearly useless because armour subtracts per beam. This creates a genuine choice: buy a second lens for lane coverage against light ships, or save resources and focus full bands against armoured ones.
+
+The prototype contains the complete fifteen-minute session arc with escalating spawn pressure, four ship types with distinct stats, paired spawning that forces two-sided attention from phase two onward, three craft items purchasable mid-run, a resonance bonus for advanced multi-mirror configurations, WebAudio destruction sounds, heat-proportional visual feedback on every ship, and a full win and lose path with instant restart.
+
+The intended audience is mobile players with five to fifteen minutes and one free hand. The game requires no tutorial because the beam is always visible and every interaction produces immediate visual response. A judge playing for ninety seconds will see light split, ships burn, and resources tick within the first ten seconds.
+
+Future development would add source drift in phase three, a boss ship in phase four, ignition pools as area denial, mirror damage from enemy emitters, and synthesized audio that escalates with session tempo. The visual language of additive neon geometry on dark water scales without assets, keeping the package under thirty-five megabytes indefinitely.

@@ -11,7 +11,7 @@
 
 import {
   BEAM_WIDTH, BEAM_GLOW_WIDTH, BEAM_SEGMENT_POOL_SIZE,
-  COLOUR_GOLD
+  COLOUR_GOLD, WORLD_HEIGHT
 } from './config.js';
 import { getScene } from './renderer.js';
 
@@ -64,10 +64,20 @@ export function rebuildBeams(segments) {
       const coreW = BEAM_WIDTH * widthMult;
       const glowW = BEAM_GLOW_WIDTH * widthMult;
 
+      // Edge fade: reduce opacity if segment ends near world boundary
+      const hh = WORLD_HEIGHT / 2;
+      const edgeMargin = 4; // fade starts this many units from edge
+      const endDistFromEdge = Math.min(
+        Math.abs(seg.end.x) < 28 ? 99 : 28 - Math.abs(seg.end.x) + edgeMargin,
+        hh - Math.abs(seg.end.y) + edgeMargin
+      );
+      const edgeFade = Math.min(1, Math.max(0.1, endDistFromEdge / edgeMargin));
+      const finalOpacity = opacityMult * edgeFade;
+
       positionQuad(entry.core, seg.start, seg.end, coreW);
       positionQuad(entry.glow, seg.start, seg.end, glowW);
-      setQuadColour(entry.core, seg.colour, seg.intensity * opacityMult);
-      setQuadColour(entry.glow, seg.colour, seg.intensity * 0.35 * opacityMult);
+      setQuadColour(entry.core, seg.colour, seg.intensity * finalOpacity);
+      setQuadColour(entry.glow, seg.colour, seg.intensity * 0.35 * finalOpacity);
       entry.core.visible = true;
       entry.glow.visible = true;
     } else {
