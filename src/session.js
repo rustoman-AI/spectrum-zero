@@ -5,7 +5,7 @@
 // Lose: 3 breaches, OR 15:00 with Devourer alive + Recombination < 100%.
 // ============================================================
 
-import { SESSION_DURATION, WORLD_HEIGHT, BREACH_Y } from './config.js';
+import { SESSION_DURATION, WORLD_HEIGHT, BREACH_Y, DEV } from './config.js';
 import { getScene, getWorldWidth, getOverlayScene } from './renderer.js';
 import { resetEnemies } from './enemy.js';
 import { resetSpawner } from './enemy-spawner.js';
@@ -13,6 +13,8 @@ import { resetDamage } from './damage.js';
 import { markDirty } from './beam.js';
 import { getRecombination, resetFoundries, getSlag, getInsight } from './foundry.js';
 import { resetCrafting } from './crafting.js';
+import { resetMirrors } from './mirror.js';
+import { resetPrisms } from './prism.js';
 import { MSG_LOSE, MSG_WIN, RES_SLAG_SHORT, RES_INSIGHT_SHORT, RES_RECOMBO_SHORT } from './strings.js';
 
 let elapsed = 0;
@@ -21,8 +23,8 @@ let gameOver = false;
 let gameWon = false;
 let devourerKilled = false;
 
-const MAX_BREACHES = 999; // TESTING: unlimited lives
-const WALL_DISPLAY = 3;  // hearts shown in HUD (visual integrity)
+const MAX_BREACHES = 3;
+const WALL_DISPLAY = 3;
 
 // HUD
 let hudCanvas = null;
@@ -75,6 +77,7 @@ export function updateSession(dt) {
 
 export function addBreaches(count) {
   if (count <= 0 || gameOver) return;
+  if (DEV.INVINCIBLE) return; // dev mode: wall never breaks
   breaches += count;
   if (breaches >= MAX_BREACHES) {
     triggerLose();
@@ -86,7 +89,7 @@ export function updateHud() {
   const mins = Math.floor(elapsed / 60);
   const secs = Math.floor(elapsed % 60);
   const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
-  const breachStr = '\u2665'.repeat(Math.max(0, WALL_DISPLAY - breaches)) + '\u2661'.repeat(Math.min(breaches, WALL_DISPLAY));
+  const breachStr = '\u2665'.repeat(Math.max(0, MAX_BREACHES - breaches)) + '\u2661'.repeat(Math.min(breaches, MAX_BREACHES));
   const recombo = Math.floor(getRecombination());
   const slagVal = Math.floor(getSlag());
   const insightVal = Math.floor(getInsight());
@@ -126,20 +129,35 @@ export function resetSession() {
   resetDamage();
   resetFoundries();
   resetCrafting();
+  resetMirrors();
+  resetPrisms();
   markDirty();
   hideOverlay();
+  // Restore visibility hidden on end state
+  if (typeof setBeamsVisible === 'function') setBeamsVisible(true);
+  if (trayMesh) trayMesh.visible = true;
+  if (hudMesh) hudMesh.visible = true;
 }
 
 function triggerWin() {
   gameOver = true;
   gameWon = true;
+  onEndState();
   showOverlay(MSG_WIN);
 }
 
 function triggerLose() {
   gameOver = true;
   gameWon = false;
+  onEndState();
   showOverlay(MSG_LOSE);
+}
+
+// Called when game ends — hide beams, craft tray
+function onEndState() {
+  if (typeof setBeamsVisible === 'function') setBeamsVisible(false);
+  if (trayMesh) trayMesh.visible = false;
+  if (hudMesh) hudMesh.visible = false;
 }
 
 // --- HUD ---
@@ -179,7 +197,7 @@ function createOverlay() {
   const dimMat = new THREE.MeshBasicMaterial({
     color: 0x000000,
     transparent: true,
-    opacity: 0.7,
+    opacity: 0.82,
     depthWrite: false
   });
   dimMesh = new THREE.Mesh(dimGeo, dimMat);

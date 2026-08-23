@@ -27,14 +27,6 @@ export function initEnemies() {
   enemyGroup = new THREE.Group();
   scene.add(enemyGroup);
 
-  // Breach line
-  const worldWidth = getWorldWidth();
-  const lineGeo = new THREE.PlaneGeometry(worldWidth, 0.4);
-  const lineMat = new THREE.MeshBasicMaterial({ color: 0xff2222, transparent: true, opacity: 0.4 });
-  breachLineMesh = new THREE.Mesh(lineGeo, lineMat);
-  breachLineMesh.position.set(0, BREACH_Y, -0.8);
-  scene.add(breachLineMesh);
-
   // Enemy pool
   for (let i = 0; i < ENEMY_POOL_SIZE; i++) {
     // Body mesh

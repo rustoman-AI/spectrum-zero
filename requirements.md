@@ -21,7 +21,7 @@ Reference: `spectrum-zero-gdd.md` (source of truth for all numbers)
 | ID | Requirement |
 |----|-------------|
 | FR-2.1 | 4 mirrors available at game start, placed in fixed sockets on the mirror field. |
-| FR-2.2 | Drag a mirror to move it between sockets. |
+| FR-2.2 | Mirrors may be placed freely anywhere inside the city band (between the shore line at MIRROR_FIELD_TOP and the altar row at FOUNDRY_Y). Minimum centre-to-centre distance between mirrors is MIRROR_MIN_DISTANCE. A mirror dropped within MIRROR_SOCKET_SNAP of a socket centre snaps to it for tidiness; otherwise drops exactly where released. Invalid placements (out of bounds, too close, overlapping altar) snap back to previous position. |
 | FR-2.3 | Circular swipe on a selected mirror to rotate it continuously. |
 | FR-2.4 | Mirrors take damage from enemy emitter fire and shatter after 3 hits. |
 | FR-2.5 | A cracked mirror can be repaired by tapping it (costs 15 Slag). |

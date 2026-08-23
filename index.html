@@ -11,9 +11,49 @@ canvas { display: block; width: 100%; height: 100%; }
 </style>
 </head>
 <body>
+<div id="intro-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:99999;background:#000;display:flex;align-items:center;justify-content:center;">
+  <video id="intro-video" src="./assets/syracuse_intro.mp4" poster="./assets/intro_poster.jpg"
+         playsinline webkit-playsinline preload="auto"
+         style="max-width:100%;max-height:100%;object-fit:contain;"></video>
+  <div id="intro-tap" style="position:absolute;bottom:15%;color:#fff;font:bold 16px monospace;opacity:0.8;pointer-events:none;">Tap to begin</div>
+</div>
 <script src="./vendor/three.min.js"></script>
 <script>
 // THREE is available as a global from the vendor script above
+
+// --- Intro video layer ---
+(function() {
+  var layer = document.getElementById('intro-layer');
+  var video = document.getElementById('intro-video');
+  var tapMsg = document.getElementById('intro-tap');
+  var started = false;
+
+  // Tap anywhere to play video (required for mobile autoplay policy)
+  layer.addEventListener('pointerdown', function() {
+    if (!started) {
+      started = true;
+      tapMsg.style.display = 'none';
+      video.play();
+    }
+  });
+
+  // When video ends, hide the layer and start the game
+  video.addEventListener('ended', startGame);
+
+  // Also allow skipping by tapping during playback
+  video.addEventListener('pointerdown', function(e) {
+    if (started && !video.ended) {
+      e.stopPropagation();
+      video.pause();
+      startGame();
+    }
+  });
+
+  function startGame() {
+    layer.style.display = 'none';
+    if (typeof init === 'function') init();
+  }
+})();
 
 // === src/config.js ===
 // ============================================================
@@ -103,12 +143,23 @@ const CRAFT_ANCHOR     = { slag: 0,  insight: 25 };
 // --- Focus buff ---
 const FOCUS_DAMAGE_MULT = 0.15; // +15% per Focus purchased
 
-// --- Mirror ---
-const MIRROR_MAX_HITS = 3;      // shatters after 3 hits
+// --- DEV flags (must ALL be false for submission build) ---
+// Build script will hard-error if any are true.
+const DEV = {
+  INVINCIBLE: false,      // true = wall never breaks, no game-over from breaches
+};
+
+// --- Mirror placement ---
+const PLACEMENT_MODE = 'free';  // 'free' = drop anywhere in mirror field, 'socket' = snap to grid
+const MIRROR_MAX_HITS = 3;
 const MIRROR_COUNT_START = 4;
-const MIRROR_TWEEN_MS = 120;    // ease-out snap duration when landing in a socket
-const ROTATION_SENSITIVITY = 1.0; // multiplier on swipe-to-angle conversion
-const FREE_PLACEMENT = true;    // true: mirrors drop anywhere, false: snap to sockets
+const MIRROR_TWEEN_MS = 120;
+const ROTATION_SENSITIVITY = 1.0;
+const FREE_PLACEMENT = (PLACEMENT_MODE === 'free');
+
+// --- Resonance ---
+const RESONANCE_MIN_BOUNCES = 3; // bounces between same pair to trigger
+const RESONANCE_MULTIPLIER = 1.5; // DPS multiplier when resonance active
 
 // --- Sockets (generic grid, holds mirror or prism) ---
 // 3 columns x 4 rows = 12 sockets in the mirror field (y: 22 to -2).
@@ -243,7 +294,7 @@ let overlayScene, overlayCamera;
 
 function initRenderer() {
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0a0a0a);
+  scene.background = new THREE.Color(0x080808);
 
   worldWidth = WORLD_HEIGHT * TARGET_ASPECT;
   const hw = worldWidth / 2;
@@ -312,19 +363,136 @@ function screenToWorld(sx, sy) {
 }
 
 
+// === src/background.js ===
+// ============================================================
+// src/background.js — Environment bands (sea, shore, battlement)
+//
+// Pure rendering, no gameplay effect. All Y boundaries derived
+// from config.js layout constants. Meshes at z=-10, behind everything.
+//
+// Respects prefers-reduced-motion: freezes wave scroll.
+// ============================================================
+
+
+
+
+// Colours (all below 22% relative luminance)
+const COL_DEEP_SEA = 0x12303F;
+const COL_SHALLOW_SEA = 0x1A4257;
+const COL_SURF = 0x3E7A93;
+const COL_SHORE = 0x2E2419;
+const COL_BATTLEMENT = 0x3A2E20;
+const COL_WALL_EDGE = 0x1F1811;
+
+let seaMesh = null;
+let seaTexture = null;
+let surfMesh = null;
+let reduceMotion = false;
+
+function initBackground() {
+  const scene = getScene();
+  const ww = getWorldWidth();
+  const hh = WORLD_HEIGHT / 2;
+
+  // Check prefers-reduced-motion
+  if (typeof window.matchMedia === 'function') {
+    reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+
+  // --- Band boundaries (derived from layout constants) ---
+  const cityTop = hh;                    // top of world
+  const cityBot = MIRROR_FIELD_TOP;      // where mirrors start
+  const battleTop = MIRROR_FIELD_TOP;    // mirror row
+  const battleBot = BREACH_Y;           // landing line
+  const seaTop = BREACH_Y;              // sea wall
+  const seaBot = -hh;                   // bottom of world
+
+  // --- 1. City/shore ground (above mirror row) ---
+  const cityH = cityTop - cityBot;
+  const cityGeo = new THREE.PlaneGeometry(ww + 2, cityH);
+  const cityMat = new THREE.MeshBasicMaterial({ color: COL_SHORE, depthWrite: false });
+  const cityMeshObj = new THREE.Mesh(cityGeo, cityMat);
+  cityMeshObj.position.set(0, cityBot + cityH / 2, -10);
+  scene.add(cityMeshObj);
+
+  // --- 2. Battlement band (mirror row to landing line) ---
+  const battleH = battleTop - battleBot;
+  const battleGeo = new THREE.PlaneGeometry(ww + 2, battleH);
+  const battleMat = new THREE.MeshBasicMaterial({ color: COL_BATTLEMENT, depthWrite: false });
+  const battleMeshObj = new THREE.Mesh(battleGeo, battleMat);
+  battleMeshObj.position.set(0, battleBot + battleH / 2, -10);
+  scene.add(battleMeshObj);
+
+  // Wall base edge line (dark seam at shore/battlement boundary)
+  const edgeGeo = new THREE.PlaneGeometry(ww + 2, 0.6);
+  const edgeMat = new THREE.MeshBasicMaterial({ color: COL_WALL_EDGE, depthWrite: false });
+  const edgeMesh = new THREE.Mesh(edgeGeo, edgeMat);
+  edgeMesh.position.set(0, MIRROR_FIELD_TOP - 0.3, -9.8);
+  scene.add(edgeMesh);
+
+  // --- 3. Sea (landing line to bottom) ---
+  // Procedural gradient canvas texture with wave lines
+  const seaCanvas = document.createElement('canvas');
+  seaCanvas.width = 32;
+  seaCanvas.height = 256;
+  const ctx = seaCanvas.getContext('2d');
+  drawSeaTexture(ctx, 32, 256);
+
+  seaTexture = new THREE.CanvasTexture(seaCanvas);
+  seaTexture.wrapS = THREE.RepeatWrapping;
+  seaTexture.wrapT = THREE.RepeatWrapping;
+  seaTexture.minFilter = THREE.LinearFilter;
+
+  const seaH = seaTop - seaBot;
+  const seaGeo = new THREE.PlaneGeometry(ww + 2, seaH);
+  const seaMat = new THREE.MeshBasicMaterial({ map: seaTexture, depthWrite: false });
+  seaMesh = new THREE.Mesh(seaGeo, seaMat);
+  seaMesh.position.set(0, seaBot + seaH / 2, -10);
+  scene.add(seaMesh);
+
+  // --- Surf line (thin band at the landing line) ---
+  const surfGeo = new THREE.PlaneGeometry(ww + 2, 1.2);
+  const surfMat = new THREE.MeshBasicMaterial({
+    color: COL_SURF, transparent: true, opacity: 0.4, depthWrite: false
+  });
+  surfMesh = new THREE.Mesh(surfGeo, surfMat);
+  surfMesh.position.set(0, BREACH_Y + 0.5, -9.5);
+  scene.add(surfMesh);
+}
+
+function updateBackground(dt) {
+  // Scroll sea texture for wave motion
+  if (seaTexture && !reduceMotion) {
+    seaTexture.offset.y += dt * 0.02;
+  }
+}
+
+function drawSeaTexture(ctx, w, h) {
+  // Vertical gradient: shallow (top) to deep (bottom)
+  const gradient = ctx.createLinearGradient(0, 0, 0, h);
+  gradient.addColorStop(0, '#1A4257');   // shallow near shore
+  gradient.addColorStop(1, '#12303F');   // deep at bottom
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, w, h);
+
+  // Wave lines (3-4 horizontal lines at intervals)
+  ctx.strokeStyle = 'rgba(30, 60, 80, 0.25)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 4; i++) {
+    const y = 40 + i * 55;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    for (let x = 0; x < w; x++) {
+      ctx.lineTo(x, y + Math.sin(x * 0.5 + i * 2) * 2);
+    }
+    ctx.stroke();
+  }
+}
+
+
 // === src/beam.js ===
 // ============================================================
-// src/beam.js — Iterative raycast beam solver
-//
-// Solves the beam path from the aperture through mirrors and
-// prisms. Produces a flat segment list consumed by beam-render.
-//
-// Recomputed ONLY when dirty flag is true (event-driven).
-//
-// Mirrors are DOUBLE-SIDED: if a beam hits from behind, the
-// normal is flipped so reflection always works regardless of
-// approach direction. This is a deliberate design decision —
-// beams cannot pass through a mirror from any side.
+// src/beam.js — Iterative raycast beam solver with resonance detection
 // ============================================================
 
 
@@ -342,11 +510,20 @@ function isDirty() { return dirty; }
 function getSegments() { return segments; }
 function getBeamDiag() { return { maxBouncesUsed, hitBounceCap }; }
 
+// Resonance: detected when 3+ bounces occur between the same mirror pair
+let resonanceActive = false;
+let resonanceMirrors = null; // [mirrorA, mirrorB] if resonance detected
+function getResonanceActive() { return resonanceActive; }
+function getResonanceMirrors() { return resonanceMirrors; }
+
 // Called by main loop when dirty
 function solve(sourceX, sourceY, mirrors, prisms, worldWidth, foundryColliders) {
   segments = [];
   maxBouncesUsed = 0;
   hitBounceCap = false;
+  resonanceActive = false;
+  resonanceMirrors = null;
+  mirrorHitSequence = [];
   const dir = { x: 0, y: -1 };
   traceBeam(
     { x: sourceX, y: sourceY },
@@ -362,6 +539,23 @@ function solve(sourceX, sourceY, mirrors, prisms, worldWidth, foundryColliders) 
     0
   );
   dirty = false;
+  // Post-solve: detect resonance (3+ bounces between same mirror pair)
+  detectResonance();
+}
+
+let mirrorHitSequence = [];
+
+function detectResonance() {
+  if (mirrorHitSequence.length < RESONANCE_MIN_BOUNCES) return;
+  for (let i = 0; i <= mirrorHitSequence.length - RESONANCE_MIN_BOUNCES; i++) {
+    const a = mirrorHitSequence[i], b = mirrorHitSequence[i + 1];
+    if (!a || !b || a === b) continue;
+    let count = 2;
+    for (let j = i + 2; j < mirrorHitSequence.length; j++) {
+      if (mirrorHitSequence[j] === ((j - i) % 2 === 0 ? a : b)) count++; else break;
+    }
+    if (count >= RESONANCE_MIN_BOUNCES) { resonanceActive = true; resonanceMirrors = [a, b]; return; }
+  }
 }
 
 function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft, excludePrism, bouncesUsed) {
@@ -382,6 +576,8 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
   });
 
   if (hit.type === 'mirror' && bouncesLeft > 0) {
+    // Record for resonance detection
+    mirrorHitSequence.push(hit.object);
     // -------------------------------------------------------
     // Reflection math (double-sided):
     // Given incident direction d and surface normal n,
@@ -736,6 +932,20 @@ function setQuadColour(mesh, colour, intensity) {
   mesh.material.opacity = Math.min(1.0, intensity);
 }
 
+// Hide/show all beam geometry (for game-over screen)
+function setBeamsVisible(visible) {
+  for (let i = 0; i < meshes.length; i++) {
+    meshes[i].core.visible = visible && meshes[i].core.visible;
+    meshes[i].glow.visible = visible && meshes[i].glow.visible;
+  }
+  if (!visible) {
+    for (let i = 0; i < meshes.length; i++) {
+      meshes[i].core.visible = false;
+      meshes[i].glow.visible = false;
+    }
+  }
+}
+
 
 // === src/mirror.js ===
 // ============================================================
@@ -845,7 +1055,7 @@ function updateMirrorGeometry(mirror) {
   mirror.mesh.rotation.z = mirror.angle;
 }
 
-// Free placement: move mirror to arbitrary position, clamped to mirror field
+// Free placement: move mirror to position, clamped to mirror field
 function moveMirrorFree(mirror, x, y) {
   const ww = getWorldWidth();
   const hw = ww / 2;
@@ -986,6 +1196,34 @@ function updateAllMirrorGeometries() {
   }
 }
 
+// Reset all mirrors to default positions, angles, and states
+function resetMirrors() {
+  for (let i = 0; i < mirrors.length; i++) {
+    const mirror = mirrors[i];
+    const socketIdx = DEFAULT_MIRROR_SOCKETS[i];
+    const [sx, sy] = SOCKET_POSITIONS[socketIdx];
+    // Reset socket occupancy
+    sockets[mirror.socketIndex].type = null;
+    sockets[mirror.socketIndex].objectRef = null;
+    // Restore to default socket
+    mirror.socketIndex = socketIdx;
+    mirror.freeX = sx;
+    mirror.freeY = sy;
+    mirror.angle = Math.PI / 4;
+    mirror.hits = 0;
+    mirror.shattered = false;
+    mirror.reinforced = false;
+    mirror.anchored = false;
+    mirror.mesh.material.color.setHex(0x8888cc);
+    mirror.mesh.material.opacity = 1.0;
+    mirror.mesh.material.transparent = false;
+    mirror.mesh.visible = true;
+    sockets[socketIdx].type = 'mirror';
+    sockets[socketIdx].objectRef = mirror;
+    updateMirrorGeometry(mirror);
+  }
+}
+
 
 // === src/prism.js ===
 // ============================================================
@@ -1001,6 +1239,22 @@ const prisms = [];
 const PRISM_RADIUS = 2.5; // hit radius for beam intersection
 
 function getPrisms() { return prisms; }
+
+// Reset prisms to initial state (remove craft-purchased ones, keep default)
+function resetPrisms() {
+  const sockets = getSockets();
+  // Remove all prisms from sockets
+  for (const prism of prisms) {
+    if (sockets[prism.socketIndex]) {
+      sockets[prism.socketIndex].type = null;
+      sockets[prism.socketIndex].objectRef = null;
+    }
+    if (prism.mesh) prism.mesh.visible = false;
+  }
+  prisms.length = 0;
+  // Re-place the default prism
+  placePrism(DEFAULT_PRISM_SOCKET);
+}
 
 function initPrisms() {
   prisms.length = 0;
@@ -1115,14 +1369,6 @@ function initEnemies() {
   const scene = getScene();
   enemyGroup = new THREE.Group();
   scene.add(enemyGroup);
-
-  // Breach line
-  const worldWidth = getWorldWidth();
-  const lineGeo = new THREE.PlaneGeometry(worldWidth, 0.4);
-  const lineMat = new THREE.MeshBasicMaterial({ color: 0xff2222, transparent: true, opacity: 0.4 });
-  breachLineMesh = new THREE.Mesh(lineGeo, lineMat);
-  breachLineMesh.position.set(0, BREACH_Y, -0.8);
-  scene.add(breachLineMesh);
 
   // Enemy pool
   for (let i = 0; i < ENEMY_POOL_SIZE; i++) {
@@ -1837,6 +2083,211 @@ function anchorMirror() {
 }
 
 
+// === src/effects.js ===
+// ============================================================
+// src/effects.js — Contact glow, sparks, destruction sequence, audio
+// Pooled sprites, no per-frame allocation.
+// ============================================================
+
+
+
+// --- Contact glow pool (beam hitting enemy) ---
+const GLOW_POOL_SIZE = 8;
+const glowPool = [];
+
+// --- Spark pool (short-lived particles on damage) ---
+const SPARK_POOL_SIZE = 24;
+const sparkPool = [];
+
+// --- Debris pool (destruction particles) ---
+const DEBRIS_POOL_SIZE = 16;
+const debrisPool = [];
+
+// --- WebAudio context (created on first user interaction) ---
+let audioCtx = null;
+
+function initEffects() {
+  const scene = getScene();
+  // Contact glows
+  for (let i = 0; i < GLOW_POOL_SIZE; i++) {
+    const geo = new THREE.PlaneGeometry(3, 3);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.visible = false;
+    mesh.position.z = 0.4;
+    scene.add(mesh);
+    glowPool.push({ mesh, life: 0, colour: 0xffffff, scale: 1 });
+  }
+  // Sparks
+  for (let i = 0; i < SPARK_POOL_SIZE; i++) {
+    const geo = new THREE.PlaneGeometry(0.6, 0.6);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xffcc00, transparent: true, opacity: 0,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.visible = false;
+    mesh.position.z = 0.5;
+    scene.add(mesh);
+    sparkPool.push({ mesh, life: 0, vx: 0, vy: 0 });
+  }
+  // Debris
+  for (let i = 0; i < DEBRIS_POOL_SIZE; i++) {
+    const geo = new THREE.PlaneGeometry(1.2, 1.2);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x886644, transparent: true, opacity: 0, depthWrite: false
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.visible = false;
+    mesh.position.z = 0.3;
+    scene.add(mesh);
+    debrisPool.push({ mesh, life: 0, vx: 0, vy: 0, gravity: 0 });
+  }
+}
+
+function updateEffects(dt) {
+  // Glows: fade out
+  for (const g of glowPool) {
+    if (g.life > 0) {
+      g.life -= dt;
+      g.mesh.material.opacity = Math.max(0, g.life * 2);
+      g.mesh.scale.set(g.scale * (1 + (1 - g.life) * 0.5), g.scale * (1 + (1 - g.life) * 0.5), 1);
+      if (g.life <= 0) g.mesh.visible = false;
+    }
+  }
+  // Sparks: move + fade
+  for (const s of sparkPool) {
+    if (s.life > 0) {
+      s.life -= dt;
+      s.mesh.position.x += s.vx * dt;
+      s.mesh.position.y += s.vy * dt;
+      s.vy -= 30 * dt; // gravity
+      s.mesh.material.opacity = Math.max(0, s.life * 3);
+      if (s.life <= 0) s.mesh.visible = false;
+    }
+  }
+  // Debris: move + gravity + fade
+  for (const d of debrisPool) {
+    if (d.life > 0) {
+      d.life -= dt;
+      d.mesh.position.x += d.vx * dt;
+      d.mesh.position.y += d.vy * dt;
+      d.vy -= d.gravity * dt;
+      d.mesh.material.opacity = Math.max(0, d.life / 1.5);
+      d.mesh.rotation.z += 3 * dt;
+      if (d.life <= 0) d.mesh.visible = false;
+    }
+  }
+}
+
+// Spawn a contact glow at position, scaled by DPS
+function spawnContactGlow(x, y, colour, dps) {
+  for (const g of glowPool) {
+    if (g.life <= 0) {
+      g.mesh.position.x = x;
+      g.mesh.position.y = y;
+      g.mesh.material.color.setHex(colour);
+      g.mesh.material.opacity = 0.6;
+      g.mesh.visible = true;
+      g.life = 0.15;
+      g.scale = 0.5 + Math.min(dps / 50, 2);
+      g.colour = colour;
+      return;
+    }
+  }
+}
+
+// Spawn sparks at position
+function spawnSparks(x, y, colour, count) {
+  for (let n = 0; n < count; n++) {
+    for (const s of sparkPool) {
+      if (s.life <= 0) {
+        s.mesh.position.x = x;
+        s.mesh.position.y = y;
+        s.mesh.material.color.setHex(colour);
+        s.mesh.material.opacity = 1;
+        s.mesh.visible = true;
+        s.life = 0.2 + Math.random() * 0.2;
+        s.vx = (Math.random() - 0.5) * 30;
+        s.vy = Math.random() * 20;
+        break;
+      }
+    }
+  }
+}
+
+// Destruction sequence: flash + debris + audio
+function spawnDestruction(x, y) {
+  // Flash (large bright glow)
+  spawnContactGlow(x, y, 0xffffff, 100);
+  // Debris particles
+  for (let i = 0; i < 8; i++) {
+    for (const d of debrisPool) {
+      if (d.life <= 0) {
+        d.mesh.position.x = x;
+        d.mesh.position.y = y;
+        d.mesh.material.opacity = 1;
+        d.mesh.visible = true;
+        d.life = 0.8 + Math.random() * 0.7; // 0.8-1.5s
+        d.vx = (Math.random() - 0.5) * 25;
+        d.vy = Math.random() * 15 + 5;
+        d.gravity = 20 + Math.random() * 10;
+        d.mesh.rotation.z = Math.random() * 6.28;
+        break;
+      }
+    }
+  }
+  // Audio: wood crack + thump
+  playDestructionSound();
+}
+
+// --- WebAudio synthesis ---
+function ensureAudio() {
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+    catch (e) { return null; }
+  }
+  return audioCtx;
+}
+
+function playDestructionSound() {
+  const ctx = ensureAudio();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  // Wood crack: short noise burst
+  const noiseLen = 0.08;
+  const noiseBuf = ctx.createBuffer(1, ctx.sampleRate * noiseLen, ctx.sampleRate);
+  const data = noiseBuf.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+  const noise = ctx.createBufferSource();
+  noise.buffer = noiseBuf;
+  const noiseGain = ctx.createGain();
+  noiseGain.gain.setValueAtTime(0.3, now);
+  noiseGain.gain.exponentialRampToValueAtTime(0.01, now + noiseLen);
+  noise.connect(noiseGain).connect(ctx.destination);
+  noise.start(now);
+  // Low thump: sine at 60Hz
+  const osc = ctx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(60, now);
+  const oscGain = ctx.createGain();
+  oscGain.gain.setValueAtTime(0.4, now);
+  oscGain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+  osc.connect(oscGain).connect(ctx.destination);
+  osc.start(now);
+  osc.stop(now + 0.2);
+}
+
+function resetEffects() {
+  for (const g of glowPool) { g.life = 0; g.mesh.visible = false; }
+  for (const s of sparkPool) { s.life = 0; s.mesh.visible = false; }
+  for (const d of debrisPool) { d.life = 0; d.mesh.visible = false; }
+}
+
+
 // === src/damage.js ===
 // ============================================================
 // src/damage.js — DPS formula, armour, kill handling
@@ -1851,6 +2302,9 @@ function anchorMirror() {
 // Gold band also applies slow via enemy.js.
 // On kill: deactivate enemy, award Slag.
 // ============================================================
+
+
+
 
 
 
@@ -1912,16 +2366,26 @@ function updateDamage(dt) {
       // -------------------------------------------------------
       const N = bandsHitting;
       const focusMult = getFocusMultiplier();
-      const raw = N * D_BASE * (1 + SYNERGY_BONUS * (N - 1)) * focusMult;
+      const resMult = getResonanceActive() ? RESONANCE_MULTIPLIER : 1.0;
+      const raw = N * D_BASE * (1 + SYNERGY_BONUS * (N - 1)) * focusMult * resMult;
       const dmg = Math.max(0, raw - enemy.armour * N);
       enemy.hp -= dmg * dt;
       enemy.burn = 1 - (enemy.hp / enemy.maxHp);
+
+      // Contact glow + sparks (throttled: every ~0.1s)
+      if (Math.random() < dt * 10) {
+        const ex = -worldWidth / 2 + laneWidth * (enemy.lane + 0.5);
+        spawnContactGlow(ex, enemy.y, hitColour || 0xffaa00, raw);
+        spawnSparks(ex, enemy.y, hitColour || 0xffaa00, 2);
+      }
 
       if (enemy.hp <= 0) {
         const rewards = { mote: 5, husk: 10, carapace: 20, devourer: 0 };
         const reward = rewards[enemy.type] || 0;
         addSlagDirect(reward);
         totalKills++;
+        const ex = -worldWidth / 2 + laneWidth * (enemy.lane + 0.5);
+        spawnDestruction(ex, enemy.y);
         triggerKillEffect(enemy, reward);
         deactivateEnemy(enemy);
       }
@@ -1996,14 +2460,16 @@ function segmentIntersectsBox(seg, cx, cy, hw, hh) {
 
 
 
+
+
 let elapsed = 0;
 let breaches = 0;
 let gameOver = false;
 let gameWon = false;
 let devourerKilled = false;
 
-const MAX_BREACHES = 999; // TESTING: unlimited lives
-const WALL_DISPLAY = 3;  // hearts shown in HUD (visual integrity)
+const MAX_BREACHES = 3;
+const WALL_DISPLAY = 3;
 
 // HUD
 let hudCanvas = null;
@@ -2056,6 +2522,7 @@ function updateSession(dt) {
 
 function addBreaches(count) {
   if (count <= 0 || gameOver) return;
+  if (DEV.INVINCIBLE) return; // dev mode: wall never breaks
   breaches += count;
   if (breaches >= MAX_BREACHES) {
     triggerLose();
@@ -2067,7 +2534,7 @@ function updateHud() {
   const mins = Math.floor(elapsed / 60);
   const secs = Math.floor(elapsed % 60);
   const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
-  const breachStr = '\u2665'.repeat(Math.max(0, WALL_DISPLAY - breaches)) + '\u2661'.repeat(Math.min(breaches, WALL_DISPLAY));
+  const breachStr = '\u2665'.repeat(Math.max(0, MAX_BREACHES - breaches)) + '\u2661'.repeat(Math.min(breaches, MAX_BREACHES));
   const recombo = Math.floor(getRecombination());
   const slagVal = Math.floor(getSlag());
   const insightVal = Math.floor(getInsight());
@@ -2107,20 +2574,35 @@ function resetSession() {
   resetDamage();
   resetFoundries();
   resetCrafting();
+  resetMirrors();
+  resetPrisms();
   markDirty();
   hideOverlay();
+  // Restore visibility hidden on end state
+  if (typeof setBeamsVisible === 'function') setBeamsVisible(true);
+  if (trayMesh) trayMesh.visible = true;
+  if (hudMesh) hudMesh.visible = true;
 }
 
 function triggerWin() {
   gameOver = true;
   gameWon = true;
+  onEndState();
   showOverlay(MSG_WIN);
 }
 
 function triggerLose() {
   gameOver = true;
   gameWon = false;
+  onEndState();
   showOverlay(MSG_LOSE);
+}
+
+// Called when game ends — hide beams, craft tray
+function onEndState() {
+  if (typeof setBeamsVisible === 'function') setBeamsVisible(false);
+  if (trayMesh) trayMesh.visible = false;
+  if (hudMesh) hudMesh.visible = false;
 }
 
 // --- HUD ---
@@ -2160,7 +2642,7 @@ function createOverlay() {
   const dimMat = new THREE.MeshBasicMaterial({
     color: 0x000000,
     transparent: true,
-    opacity: 0.7,
+    opacity: 0.82,
     depthWrite: false
   });
   dimMesh = new THREE.Mesh(dimGeo, dimMat);
@@ -2346,7 +2828,7 @@ function onPointerMove(e) {
   if (state === STATE_DRAG && dragObject) {
     dragObject.mesh.position.x = world.x;
     dragObject.mesh.position.y = world.y;
-    // Show drop target at nearest socket
+    // Show drop target at nearest socket (visual guide)
     const nearest = findNearestSocket(world.x, world.y);
     if (nearest !== null) {
       const [sx, sy] = SOCKET_POSITIONS[nearest];
@@ -2373,7 +2855,6 @@ function onPointerUp(e) {
   if (state === STATE_DRAG && dragObject) {
     // Drop
     if (FREE_PLACEMENT && dragType === 'mirror') {
-      // Free placement: drop wherever pointer is, clamped to mirror field
       moveMirrorFree(dragObject, world.x, world.y);
     } else {
       const nearest = findNearestSocket(world.x, world.y);
@@ -2529,6 +3010,8 @@ function tickDebug() {
 
 
 
+
+
 // --- Source state ---
 let sourceX = 0;
 let sourceY = APERTURE_Y;
@@ -2540,6 +3023,7 @@ const MAX_DT = 1 / 30;
 function init() {
   console.log('[Solar Siege] init starting');
   initRenderer();
+  initBackground();
   initSockets();
   initMirrors();
   updateAllMirrorGeometries();
@@ -2548,6 +3032,7 @@ function init() {
   initEnemies();
   initFoundries();
   initCrafting();
+  initEffects();
   initSession();
   resetSpawner();
 
@@ -2559,6 +3044,14 @@ function init() {
   lastTime = performance.now();
   requestAnimationFrame(loop);
   console.log('[Solar Siege] init complete, loop running');
+
+  // DEV marker: visible red label if any dev flag is on
+  if (Object.values(DEV).some(v => v)) {
+    const devLabel = document.createElement('div');
+    devLabel.textContent = 'DEV';
+    devLabel.style.cssText = 'position:fixed;top:4px;left:50%;transform:translateX(-50%);color:#ff0000;font:bold 14px monospace;z-index:99999;pointer-events:none;background:rgba(0,0,0,0.7);padding:2px 8px;border-radius:3px;';
+    document.body.appendChild(devLabel);
+  }
 }
 
 function loop(now) {
@@ -2569,6 +3062,7 @@ function loop(now) {
   if (dt > MAX_DT) dt = MAX_DT;
 
   if (isGameOver()) {
+    updateHud(); // keep HUD visible on end screen
     render();
     return;
   }
@@ -2577,6 +3071,7 @@ function loop(now) {
   updateSession(dt);
   const sessionTime = getElapsed();
 
+  updateBackground(dt);
   updateBeamPulse(dt);
   updateMirrorTweens(dt);
 
@@ -2603,6 +3098,9 @@ function loop(now) {
   // Damage
   updateDamage(dt);
 
+  // Effects (glows, sparks, debris)
+  updateEffects(dt);
+
   // Foundries (resource accumulation)
   updateFoundries(dt);
 
@@ -2615,8 +3113,8 @@ function loop(now) {
   render();
 }
 
-// Boot
-init();
+// Boot — called by intro layer after video ends (or skip)
+// init();
 
 
 

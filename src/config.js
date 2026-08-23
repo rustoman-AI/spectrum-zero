@@ -85,12 +85,23 @@ export const CRAFT_ANCHOR     = { slag: 0,  insight: 25 };
 // --- Focus buff ---
 export const FOCUS_DAMAGE_MULT = 0.15; // +15% per Focus purchased
 
-// --- Mirror ---
-export const MIRROR_MAX_HITS = 3;      // shatters after 3 hits
+// --- DEV flags (must ALL be false for submission build) ---
+// Build script will hard-error if any are true.
+export const DEV = {
+  INVINCIBLE: false,      // true = wall never breaks, no game-over from breaches
+};
+
+// --- Mirror placement ---
+export const PLACEMENT_MODE = 'free';  // 'free' = drop anywhere in mirror field, 'socket' = snap to grid
+export const MIRROR_MAX_HITS = 3;
 export const MIRROR_COUNT_START = 4;
-export const MIRROR_TWEEN_MS = 120;    // ease-out snap duration when landing in a socket
-export const ROTATION_SENSITIVITY = 1.0; // multiplier on swipe-to-angle conversion
-export const FREE_PLACEMENT = true;    // true: mirrors drop anywhere, false: snap to sockets
+export const MIRROR_TWEEN_MS = 120;
+export const ROTATION_SENSITIVITY = 1.0;
+export const FREE_PLACEMENT = (PLACEMENT_MODE === 'free');
+
+// --- Resonance ---
+export const RESONANCE_MIN_BOUNCES = 3; // bounces between same pair to trigger
+export const RESONANCE_MULTIPLIER = 1.5; // DPS multiplier when resonance active
 
 // --- Sockets (generic grid, holds mirror or prism) ---
 // 3 columns x 4 rows = 12 sockets in the mirror field (y: 22 to -2).

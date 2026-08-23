@@ -108,3 +108,17 @@ function setQuadColour(mesh, colour, intensity) {
   mesh.material.color.setHex(colour);
   mesh.material.opacity = Math.min(1.0, intensity);
 }
+
+// Hide/show all beam geometry (for game-over screen)
+export function setBeamsVisible(visible) {
+  for (let i = 0; i < meshes.length; i++) {
+    meshes[i].core.visible = visible && meshes[i].core.visible;
+    meshes[i].glow.visible = visible && meshes[i].glow.visible;
+  }
+  if (!visible) {
+    for (let i = 0; i < meshes.length; i++) {
+      meshes[i].core.visible = false;
+      meshes[i].glow.visible = false;
+    }
+  }
+}

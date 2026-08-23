@@ -129,7 +129,7 @@ function onPointerMove(e) {
   if (state === STATE_DRAG && dragObject) {
     dragObject.mesh.position.x = world.x;
     dragObject.mesh.position.y = world.y;
-    // Show drop target at nearest socket
+    // Show drop target at nearest socket (visual guide)
     const nearest = findNearestSocket(world.x, world.y);
     if (nearest !== null) {
       const [sx, sy] = SOCKET_POSITIONS[nearest];
@@ -156,7 +156,6 @@ function onPointerUp(e) {
   if (state === STATE_DRAG && dragObject) {
     // Drop
     if (FREE_PLACEMENT && dragType === 'mirror') {
-      // Free placement: drop wherever pointer is, clamped to mirror field
       moveMirrorFree(dragObject, world.x, world.y);
     } else {
       const nearest = findNearestSocket(world.x, world.y);

@@ -1,22 +1,12 @@
 // ============================================================
-// src/beam.js — Iterative raycast beam solver
-//
-// Solves the beam path from the aperture through mirrors and
-// prisms. Produces a flat segment list consumed by beam-render.
-//
-// Recomputed ONLY when dirty flag is true (event-driven).
-//
-// Mirrors are DOUBLE-SIDED: if a beam hits from behind, the
-// normal is flipped so reflection always works regardless of
-// approach direction. This is a deliberate design decision —
-// beams cannot pass through a mirror from any side.
+// src/beam.js — Iterative raycast beam solver with resonance detection
 // ============================================================
 
 import {
   MAX_BOUNCES, MAX_SEGMENTS, PRISM_SPLIT_ANGLE,
   APERTURE_Y, WORLD_HEIGHT, COLOUR_WHITE,
   COLOUR_AMBER, COLOUR_CYAN, COLOUR_GOLD,
-  FOUNDRY_HW, FOUNDRY_HH
+  FOUNDRY_HW, FOUNDRY_HH, RESONANCE_MIN_BOUNCES
 } from './config.js';
 
 // Segment: { start, end, colour, intensity, bounces }
@@ -32,11 +22,20 @@ export function isDirty() { return dirty; }
 export function getSegments() { return segments; }
 export function getBeamDiag() { return { maxBouncesUsed, hitBounceCap }; }
 
+// Resonance: detected when 3+ bounces occur between the same mirror pair
+let resonanceActive = false;
+let resonanceMirrors = null; // [mirrorA, mirrorB] if resonance detected
+export function getResonanceActive() { return resonanceActive; }
+export function getResonanceMirrors() { return resonanceMirrors; }
+
 // Called by main loop when dirty
 export function solve(sourceX, sourceY, mirrors, prisms, worldWidth, foundryColliders) {
   segments = [];
   maxBouncesUsed = 0;
   hitBounceCap = false;
+  resonanceActive = false;
+  resonanceMirrors = null;
+  mirrorHitSequence = [];
   const dir = { x: 0, y: -1 };
   traceBeam(
     { x: sourceX, y: sourceY },
@@ -52,6 +51,23 @@ export function solve(sourceX, sourceY, mirrors, prisms, worldWidth, foundryColl
     0
   );
   dirty = false;
+  // Post-solve: detect resonance (3+ bounces between same mirror pair)
+  detectResonance();
+}
+
+let mirrorHitSequence = [];
+
+function detectResonance() {
+  if (mirrorHitSequence.length < RESONANCE_MIN_BOUNCES) return;
+  for (let i = 0; i <= mirrorHitSequence.length - RESONANCE_MIN_BOUNCES; i++) {
+    const a = mirrorHitSequence[i], b = mirrorHitSequence[i + 1];
+    if (!a || !b || a === b) continue;
+    let count = 2;
+    for (let j = i + 2; j < mirrorHitSequence.length; j++) {
+      if (mirrorHitSequence[j] === ((j - i) % 2 === 0 ? a : b)) count++; else break;
+    }
+    if (count >= RESONANCE_MIN_BOUNCES) { resonanceActive = true; resonanceMirrors = [a, b]; return; }
+  }
 }
 
 function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft, excludePrism, bouncesUsed) {
@@ -72,6 +88,8 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
   });
 
   if (hit.type === 'mirror' && bouncesLeft > 0) {
+    // Record for resonance detection
+    mirrorHitSequence.push(hit.object);
     // -------------------------------------------------------
     // Reflection math (double-sided):
     // Given incident direction d and surface normal n,

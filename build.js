@@ -14,6 +14,7 @@ const SOURCE_FILES = [
   'src/config.js',
   'src/strings.js',
   'src/renderer.js',
+  'src/background.js',
   'src/beam.js',
   'src/beam-render.js',
   'src/mirror.js',
@@ -22,6 +23,7 @@ const SOURCE_FILES = [
   'src/enemy-spawner.js',
   'src/foundry.js',
   'src/crafting.js',
+  'src/effects.js',
   'src/damage.js',
   'src/session.js',
   'src/input.js',
@@ -56,9 +58,49 @@ canvas { display: block; width: 100%; height: 100%; }
 </style>
 </head>
 <body>
+<div id="intro-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:99999;background:#000;display:flex;align-items:center;justify-content:center;">
+  <video id="intro-video" src="./assets/syracuse_intro.mp4" poster="./assets/intro_poster.jpg"
+         playsinline webkit-playsinline preload="auto"
+         style="max-width:100%;max-height:100%;object-fit:contain;"></video>
+  <div id="intro-tap" style="position:absolute;bottom:15%;color:#fff;font:bold 16px monospace;opacity:0.8;pointer-events:none;">Tap to begin</div>
+</div>
 <script src="./vendor/three.min.js"></script>
 <script>
 // THREE is available as a global from the vendor script above
+
+// --- Intro video layer ---
+(function() {
+  var layer = document.getElementById('intro-layer');
+  var video = document.getElementById('intro-video');
+  var tapMsg = document.getElementById('intro-tap');
+  var started = false;
+
+  // Tap anywhere to play video (required for mobile autoplay policy)
+  layer.addEventListener('pointerdown', function() {
+    if (!started) {
+      started = true;
+      tapMsg.style.display = 'none';
+      video.play();
+    }
+  });
+
+  // When video ends, hide the layer and start the game
+  video.addEventListener('ended', startGame);
+
+  // Also allow skipping by tapping during playback
+  video.addEventListener('pointerdown', function(e) {
+    if (started && !video.ended) {
+      e.stopPropagation();
+      video.pause();
+      startGame();
+    }
+  });
+
+  function startGame() {
+    layer.style.display = 'none';
+    if (typeof init === 'function') init();
+  }
+})();
 
 ${gameCode}
 </script>
@@ -71,6 +113,28 @@ fs.writeFileSync(outPath, html, 'utf8');
 
 const size = fs.statSync(outPath).size;
 console.log(`Built index.html (${(size / 1024).toFixed(1)} KB)`);
+
+// --- DEV flag validation ---
+// Hard-error if any DEV flag is true (prevents shipping test overrides)
+const configSrc = fs.readFileSync(path.join(__dirname, 'src/config.js'), 'utf8');
+const devBlockMatch = configSrc.match(/export const DEV = \{([^}]+)\}/);
+if (devBlockMatch) {
+  const flagLines = devBlockMatch[1].split('\n');
+  const activeFlags = [];
+  for (const line of flagLines) {
+    const m = line.match(/(\w+)\s*:\s*true/);
+    if (m) activeFlags.push(m[1]);
+  }
+  if (activeFlags.length > 0) {
+    if (process.argv.includes('--submission')) {
+      console.error(`\n❌ BUILD FAILED: DEV flags active: ${activeFlags.join(', ')}`);
+      console.error('  Cannot build submission with DEV overrides. Set all to false in config.js.\n');
+      process.exit(1);
+    }
+    console.warn(`\n⚠ DEV FLAGS ACTIVE: ${activeFlags.join(', ')}`);
+    console.warn('  Build is NOT submission-safe. Set all DEV flags to false before packaging.\n');
+  }
+}
 
 // --- Helpers ---
 

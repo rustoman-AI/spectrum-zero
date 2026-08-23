@@ -18,7 +18,7 @@ code = code.replace(/^\/\/ THREE is available.*$/m, '');
 code = code.replace(/\ninit\(\);\s*$/, '');
 
 const envCode = `
-var window = { innerWidth: 360, innerHeight: 640, addEventListener() {}, devicePixelRatio: 2 };
+var window = { innerWidth: 360, innerHeight: 640, addEventListener() {}, devicePixelRatio: 2, matchMedia() { return { matches: false }; } };
 var document = {
   body: { appendChild() {} },
   createElement() {
@@ -30,10 +30,19 @@ var document = {
       appendChild() {},
       remove() {},
       getContext() {
-        return { scale(){}, clearRect(){}, fillRect(){}, fillText(){}, fillStyle:'', font:'', textAlign:'' };
+        return {
+          scale(){}, clearRect(){}, fillRect(){}, fillText(){},
+          fillStyle:'', font:'', textAlign:'',
+          createLinearGradient() { return { addColorStop(){} }; },
+          strokeStyle:'', lineWidth:0,
+          beginPath(){}, moveTo(){}, lineTo(){}, stroke(){}
+        };
       },
       width: 0, height: 0
     };
+  },
+  getElementById() {
+    return { addEventListener() {}, play() {}, pause() {}, style: { display: '' }, ended: false };
   },
   addEventListener() {}
 };
@@ -65,8 +74,9 @@ var THREE = {
   ShapeGeometry: class {},
   Shape: class { moveTo() { return this; } lineTo() { return this; } closePath() { return this; } },
   MeshBasicMaterial: class { constructor() { this.color = { setHex() {}, setRGB() {} }; this.opacity = 1; this.transparent = false; } },
-  CanvasTexture: class { constructor() { this.minFilter = 0; this.needsUpdate = false; } },
+  CanvasTexture: class { constructor() { this.minFilter = 0; this.needsUpdate = false; this.wrapS = 0; this.wrapT = 0; this.offset = { x:0, y:0 }; } },
   LinearFilter: 1,
+  RepeatWrapping: 1000,
   Group: class { add() {} },
   AdditiveBlending: 1,
 };
@@ -138,8 +148,8 @@ try {
     // === Test 7: Breach and reset ===
     (function() {
       init();
-      addBreaches(999); // MAX_BREACHES is 999 in testing mode
-      _boolResults.push(['Max breaches = gameOver', isGameOver(), true]);
+      addBreaches(3); // MAX_BREACHES is 3
+      _boolResults.push(['3 breaches = gameOver', isGameOver(), true]);
       resetSession();
       _boolResults.push(['After reset: gameOver=false', isGameOver(), false]);
       _boolResults.push(['After reset: elapsed=0', getElapsed() === 0, true]);

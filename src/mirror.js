@@ -109,7 +109,7 @@ export function updateMirrorGeometry(mirror) {
   mirror.mesh.rotation.z = mirror.angle;
 }
 
-// Free placement: move mirror to arbitrary position, clamped to mirror field
+// Free placement: move mirror to position, clamped to mirror field
 export function moveMirrorFree(mirror, x, y) {
   const ww = getWorldWidth();
   const hw = ww / 2;
@@ -246,6 +246,34 @@ export function repairMirror(mirror) {
 
 export function updateAllMirrorGeometries() {
   for (const mirror of mirrors) {
+    updateMirrorGeometry(mirror);
+  }
+}
+
+// Reset all mirrors to default positions, angles, and states
+export function resetMirrors() {
+  for (let i = 0; i < mirrors.length; i++) {
+    const mirror = mirrors[i];
+    const socketIdx = DEFAULT_MIRROR_SOCKETS[i];
+    const [sx, sy] = SOCKET_POSITIONS[socketIdx];
+    // Reset socket occupancy
+    sockets[mirror.socketIndex].type = null;
+    sockets[mirror.socketIndex].objectRef = null;
+    // Restore to default socket
+    mirror.socketIndex = socketIdx;
+    mirror.freeX = sx;
+    mirror.freeY = sy;
+    mirror.angle = Math.PI / 4;
+    mirror.hits = 0;
+    mirror.shattered = false;
+    mirror.reinforced = false;
+    mirror.anchored = false;
+    mirror.mesh.material.color.setHex(0x8888cc);
+    mirror.mesh.material.opacity = 1.0;
+    mirror.mesh.material.transparent = false;
+    mirror.mesh.visible = true;
+    sockets[socketIdx].type = 'mirror';
+    sockets[socketIdx].objectRef = mirror;
     updateMirrorGeometry(mirror);
   }
 }

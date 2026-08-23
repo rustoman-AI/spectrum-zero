@@ -12,6 +12,22 @@ const PRISM_RADIUS = 2.5; // hit radius for beam intersection
 
 export function getPrisms() { return prisms; }
 
+// Reset prisms to initial state (remove craft-purchased ones, keep default)
+export function resetPrisms() {
+  const sockets = getSockets();
+  // Remove all prisms from sockets
+  for (const prism of prisms) {
+    if (sockets[prism.socketIndex]) {
+      sockets[prism.socketIndex].type = null;
+      sockets[prism.socketIndex].objectRef = null;
+    }
+    if (prism.mesh) prism.mesh.visible = false;
+  }
+  prisms.length = 0;
+  // Re-place the default prism
+  placePrism(DEFAULT_PRISM_SOCKET);
+}
+
 export function initPrisms() {
   prisms.length = 0;
   // Place prism in default socket — directly below aperture

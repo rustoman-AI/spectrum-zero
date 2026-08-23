@@ -14,7 +14,7 @@ let overlayScene, overlayCamera;
 
 export function initRenderer() {
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0a0a0a);
+  scene.background = new THREE.Color(0x080808);
 
   worldWidth = WORLD_HEIGHT * TARGET_ASPECT;
   const hw = worldWidth / 2;

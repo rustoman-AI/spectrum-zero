@@ -21,6 +21,9 @@ import { getEnemyPool, deactivateEnemy, applyGoldSlow, triggerKillEffect } from 
 import { getWorldWidth } from './renderer.js';
 import { getFocusMultiplier } from './crafting.js';
 import { addSlagDirect } from './foundry.js';
+import { spawnContactGlow, spawnSparks, spawnDestruction } from './effects.js';
+import { RESONANCE_MULTIPLIER } from './config.js';
+import { getResonanceActive } from './beam.js';
 
 const ENEMY_HIT_HALF_W = 3;
 const ENEMY_HIT_HALF_H = 3;
@@ -75,16 +78,26 @@ export function updateDamage(dt) {
       // -------------------------------------------------------
       const N = bandsHitting;
       const focusMult = getFocusMultiplier();
-      const raw = N * D_BASE * (1 + SYNERGY_BONUS * (N - 1)) * focusMult;
+      const resMult = getResonanceActive() ? RESONANCE_MULTIPLIER : 1.0;
+      const raw = N * D_BASE * (1 + SYNERGY_BONUS * (N - 1)) * focusMult * resMult;
       const dmg = Math.max(0, raw - enemy.armour * N);
       enemy.hp -= dmg * dt;
       enemy.burn = 1 - (enemy.hp / enemy.maxHp);
+
+      // Contact glow + sparks (throttled: every ~0.1s)
+      if (Math.random() < dt * 10) {
+        const ex = -worldWidth / 2 + laneWidth * (enemy.lane + 0.5);
+        spawnContactGlow(ex, enemy.y, hitColour || 0xffaa00, raw);
+        spawnSparks(ex, enemy.y, hitColour || 0xffaa00, 2);
+      }
 
       if (enemy.hp <= 0) {
         const rewards = { mote: 5, husk: 10, carapace: 20, devourer: 0 };
         const reward = rewards[enemy.type] || 0;
         addSlagDirect(reward);
         totalKills++;
+        const ex = -worldWidth / 2 + laneWidth * (enemy.lane + 0.5);
+        spawnDestruction(ex, enemy.y);
         triggerKillEffect(enemy, reward);
         deactivateEnemy(enemy);
       }
