@@ -60,14 +60,38 @@ function doSpawn() {
   if (spawnerElapsed < PHASE_1_END) {
     spawnEnemy('skiff', lane, hpMult);
   } else if (spawnerElapsed < PHASE_2_END) {
+    // Heavier ships in centre lane (lane 2), lighter on edges
+    const centreLane = 2;
+    const edgeLane = Math.random() < 0.5 ? 0 : 4;
     const roll = Math.random();
-    if (roll < 0.4) spawnEnemy('trireme', lane, hpMult);
-    else if (roll < 0.7) spawnEnemy('skiff', lane, hpMult);
-    else spawnEnemy('quadrireme', lane, hpMult);
+    if (roll < 0.3) {
+      // Heavy in centre
+      spawnEnemy('quadrireme', centreLane, hpMult);
+    } else if (roll < 0.6) {
+      spawnEnemy('trireme', centreLane, hpMult);
+    } else {
+      // Fast skiffs on random lane
+      spawnEnemy('skiff', lane, hpMult);
+    }
+    // Periodic paired edge waves (every 5th spawn)
+    if (totalSpawns % 5 === 0) {
+      spawnEnemy('skiff', 0, hpMult);
+      spawnEnemy('skiff', 4, hpMult);
+    }
   } else {
+    // Phase 3: heavy centre + paired edges
+    const centreLane = 2;
     const roll = Math.random();
-    if (roll < 0.35) spawnEnemy('quadrireme', lane, hpMult);
-    else if (roll < 0.7) spawnEnemy('trireme', lane, hpMult);
-    else spawnEnemy('skiff', lane, hpMult);
+    if (roll < 0.4) {
+      spawnEnemy('quadrireme', centreLane, hpMult);
+    } else if (roll < 0.7) {
+      spawnEnemy('trireme', centreLane, hpMult);
+    } else {
+      spawnEnemy('skiff', lane, hpMult);
+    }
+    if (totalSpawns % 4 === 0) {
+      spawnEnemy('trireme', 0, hpMult);
+      spawnEnemy('trireme', 4, hpMult);
+    }
   }
 }

@@ -55,13 +55,27 @@ export const ENEMY_TYPES = {
 export const ESCALATION_HP_FACTOR = 3;
 export const SESSION_DURATION = 600;  // 10 minutes
 
-// --- Multi-currency economy (passive altars) ---
+// --- Multi-currency economy (altar zones require beam contact) ---
+// 20% passive, 80% only while a beam is held on the altar zone.
+// Altars sit on the city ground BELOW the wall (y < WALL_Y).
+// A beam aimed at an altar goes DOWN; beams aimed at ships go UP.
+// No single path can reach both.
 export const ALTAR_RATES = {
-  brass:  5,  // per second
-  bronze: 3,
-  silver: 2,
-  gold:   1,
+  brass:  { passive: 1, lit: 5 },
+  bronze: { passive: 0.6, lit: 3 },
+  silver: { passive: 0.4, lit: 2 },
+  gold:   { passive: 0.2, lit: 1 },
 };
+export const ALTAR_OVERHEAT_TIME = 6;    // seconds of continuous beam before efficiency halves
+export const ALTAR_RECOVER_TIME = 10;    // seconds to recover from overheat
+export const ALTAR_POSITIONS = [
+  { x: -20, y: -44, type: 'brass',  colour: 0xccaa44 },
+  { x: -7,  y: -44, type: 'bronze', colour: 0xcc8833 },
+  { x: 7,   y: -44, type: 'silver', colour: 0xcccccc },
+  { x: 20,  y: -44, type: 'gold',   colour: 0xffdd00 },
+];
+export const ALTAR_HW = 4;
+export const ALTAR_HH = 2.5;
 
 // --- Shop prices ---
 export const SHOP = {

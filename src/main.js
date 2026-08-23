@@ -12,7 +12,7 @@ import { initInput, tickDebug } from './input.js';
 import { initEnemies, updateEnemies, applySlowStates } from './enemy.js';
 import { updateSpawner, resetSpawner } from './enemy-spawner.js';
 import { updateDamage } from './damage.js';
-import { initSession, updateSession, addBreaches, isGameOver, getElapsed, updateHud, handleRestartTap } from './session.js';
+import { initSession, updateSession, addBreaches, isGameOver, getElapsed, updateHud, handleRestartTap, decayWallFlash, getWallHitFlash } from './session.js';
 import { initFoundries, updateFoundries, getFoundryColliders } from './foundry.js';
 import { initCrafting, updateCraftingTray } from './crafting.js';
 import { initBackground, updateBackground } from './background.js';
@@ -107,6 +107,7 @@ function loop(now) {
 
   // Effects (glows, sparks, debris)
   updateEffects(dt);
+  decayWallFlash(dt);
 
   // Foundries (resource accumulation)
   updateFoundries(dt);

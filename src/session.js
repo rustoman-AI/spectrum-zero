@@ -78,10 +78,16 @@ export function addBreaches(damage) {
   if (damage <= 0 || gameOver) return;
   if (DEV.INVINCIBLE) return;
   wallIntegrity = Math.max(0, wallIntegrity - damage);
+  // Wall hit feedback: red edge flash
+  wallHitFlash = 0.3;
   if (wallIntegrity <= 0) {
     triggerLose();
   }
 }
+
+let wallHitFlash = 0;
+export function getWallHitFlash() { return wallHitFlash; }
+export function decayWallFlash(dt) { if (wallHitFlash > 0) wallHitFlash -= dt; }
 
 export function updateHud() {
   if (!hudCtx) return;
