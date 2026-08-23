@@ -1,29 +1,13 @@
 // ============================================================
-// src/crafting.js — Craft tray UI, purchase logic
-//
-// Rendered as a canvas-texture mesh INSIDE the 9:16 playfield,
-// at the very bottom of the screen (below enemy zone).
+// src/crafting.js — Shop UI: mirrors, prisms, priests, god abilities
+// Rendered as in-scene canvas texture at bottom of playfield.
 // ============================================================
 
-import {
-  CRAFT_PRISM, CRAFT_REPAIR, CRAFT_REINFORCED, CRAFT_IGNITION,
-  CRAFT_FOCUS, CRAFT_ANCHOR, FOCUS_DAMAGE_MULT, WORLD_HEIGHT, PRISM_TIERS
-} from './config.js';
-import { CRAFT_LABELS, HUD_COST_SLAG, HUD_COST_INSIGHT } from './strings.js';
-import { getScene, getWorldWidth, screenToWorld, getOverlayScene } from './renderer.js';
-import { getSlag, getInsight, spendSlag, spendInsight } from './foundry.js';
-import { placePrism, setTier, getActiveTier } from './prism.js';
-import { getMirrors, repairMirror, getSockets } from './mirror.js';
+import { SHOP, GOD_ABILITIES, WORLD_HEIGHT, PRISM_TIERS } from './config.js';
+import { getScene, getWorldWidth, getOverlayScene } from './renderer.js';
+import { getResources, canAfford, spend, getFaith, spendFaith, addPriest } from './foundry.js';
 import { markDirty } from './beam.js';
-
-const CRAFTS = [
-  { id: 'tier4', label: '4 bands', hint: 'wider, weaker', slag: 40,  insight: 15 },
-  { id: 'tier5', label: '5 bands', hint: 'wider, weaker', slag: 80,  insight: 30 },
-  { id: 'tier6', label: '6 bands', hint: 'widest, weakest', slag: 150, insight: 50 },
-  { id: 'repair',     label: CRAFT_LABELS.repair,     slag: CRAFT_REPAIR.slag,     insight: CRAFT_REPAIR.insight },
-  { id: 'focus',      label: CRAFT_LABELS.focus,      slag: CRAFT_FOCUS.slag,      insight: CRAFT_FOCUS.insight },
-  { id: 'anchor',     label: CRAFT_LABELS.anchor,     slag: CRAFT_ANCHOR.slag,     insight: CRAFT_ANCHOR.insight },
-];
+import { setTier } from './prism.js';
 
 let trayMesh = null;
 let trayCanvas = null;
@@ -31,12 +15,27 @@ let trayCtx = null;
 let trayTexture = null;
 let trayY = 0;
 let trayWidth = 0;
-let trayHeight = 4;
+const trayHeight = 5;
+let mirrorsBought = 0;
 let focusCount = 0;
+
+// Shop items displayed in the tray
+const SHOP_ITEMS = [
+  { id: 'mirror', label: 'Mirror', getCost: () => ({ brass: SHOP.mirror.brass + mirrorsBought * SHOP.mirror.scaling }) },
+  { id: 'prism4', label: '4-Prism', getCost: () => SHOP.prism4 },
+  { id: 'prism5', label: '5-Prism', getCost: () => SHOP.prism5 },
+  { id: 'prism6', label: '6-Prism', getCost: () => SHOP.prism6 },
+  { id: 'priest', label: 'Priest', getCost: () => SHOP.priest },
+  { id: 'zeus',   label: 'Zeus', getCost: () => ({ faith: GOD_ABILITIES.zeus.faith, gold: GOD_ABILITIES.zeus.gold }) },
+];
+
+export function getFocusMultiplier() { return 1 + focusCount * 0.15; }
 
 export function initCrafting() {
   const oScene = getOverlayScene();
   const worldWidth = getWorldWidth();
+  mirrorsBought = 0;
+  activeTier = 3;
   focusCount = 0;
 
   trayWidth = worldWidth * 0.95;
@@ -51,11 +50,7 @@ export function initCrafting() {
   trayTexture.minFilter = THREE.LinearFilter;
 
   const geo = new THREE.PlaneGeometry(trayWidth, trayHeight);
-  const mat = new THREE.MeshBasicMaterial({
-    map: trayTexture,
-    transparent: true,
-    depthWrite: false
-  });
+  const mat = new THREE.MeshBasicMaterial({ map: trayTexture, transparent: true, depthWrite: false });
   trayMesh = new THREE.Mesh(geo, mat);
   trayMesh.position.set(0, trayY, 0);
   oScene.add(trayMesh);
@@ -63,45 +58,35 @@ export function initCrafting() {
 
 export function updateCraftingTray() {
   if (!trayCtx) return;
-  const currentSlag = getSlag();
-  const currentInsight = getInsight();
+  const res = getResources();
+  const faith = getFaith();
 
   trayCtx.clearRect(0, 0, 512, 40);
   trayCtx.fillStyle = 'rgba(0,0,0,0.7)';
   trayCtx.fillRect(0, 0, 512, 40);
 
-  const btnW = 512 / CRAFTS.length;
-  for (let i = 0; i < CRAFTS.length; i++) {
-    const c = CRAFTS[i];
-    const affordable = currentSlag >= c.slag && currentInsight >= c.insight;
+  const btnW = 512 / SHOP_ITEMS.length;
+  for (let i = 0; i < SHOP_ITEMS.length; i++) {
+    const item = SHOP_ITEMS[i];
+    const cost = item.getCost();
+    const affordable = canAffordCombined(cost, res, faith);
     const x = i * btnW;
 
     trayCtx.fillStyle = affordable ? 'rgba(80,80,120,0.9)' : 'rgba(30,30,30,0.7)';
     trayCtx.fillRect(x + 1, 1, btnW - 2, 38);
 
     trayCtx.fillStyle = affordable ? '#ffffff' : '#555555';
-    trayCtx.font = 'bold 10px monospace';
+    trayCtx.font = 'bold 9px monospace';
     trayCtx.textAlign = 'center';
-    trayCtx.fillText(c.label, x + btnW / 2, c.hint ? 12 : 15);
+    trayCtx.fillText(item.label, x + btnW / 2, 14);
 
-    if (c.hint) {
-      trayCtx.font = '7px monospace';
-      trayCtx.fillStyle = affordable ? '#aaccaa' : '#444444';
-      trayCtx.fillText(c.hint, x + btnW / 2, 22);
-    }
-
-    trayCtx.font = '8px monospace';
+    trayCtx.font = '7px monospace';
     trayCtx.fillStyle = affordable ? '#aaaaaa' : '#333333';
-    let costStr = '';
-    if (c.slag > 0) costStr += c.slag + HUD_COST_SLAG;
-    if (c.insight > 0) costStr += (costStr ? ' ' : '') + c.insight + HUD_COST_INSIGHT;
-    trayCtx.fillText(costStr, x + btnW / 2, 30);
+    trayCtx.fillText(costStr(cost), x + btnW / 2, 28);
   }
-
   trayTexture.needsUpdate = true;
 }
 
-// Called from input.js on tap — checks if tap is in the tray area
 export function handleCraftTap(worldX, worldY) {
   const halfW = trayWidth / 2;
   const halfH = trayHeight / 2;
@@ -109,80 +94,60 @@ export function handleCraftTap(worldX, worldY) {
   if (worldX < -halfW || worldX > halfW) return false;
 
   const normX = (worldX + halfW) / trayWidth;
-  const btnIndex = Math.floor(normX * CRAFTS.length);
-  if (btnIndex < 0 || btnIndex >= CRAFTS.length) return false;
+  const btnIndex = Math.floor(normX * SHOP_ITEMS.length);
+  if (btnIndex < 0 || btnIndex >= SHOP_ITEMS.length) return false;
 
-  return attemptPurchase(CRAFTS[btnIndex]);
-}
-
-export function getFocusMultiplier() {
-  return 1 + focusCount * FOCUS_DAMAGE_MULT;
+  return attemptPurchase(SHOP_ITEMS[btnIndex]);
 }
 
 export function resetCrafting() {
+  mirrorsBought = 0;
   focusCount = 0;
+  if (typeof resetTier === 'function') resetTier();
 }
 
-function attemptPurchase(craft) {
-  const currentSlag = getSlag();
-  const currentInsight = getInsight();
-  if (currentSlag < craft.slag || currentInsight < craft.insight) return false;
+function attemptPurchase(item) {
+  const res = getResources();
+  const faith = getFaith();
+  const cost = item.getCost();
+  if (!canAffordCombined(cost, res, faith)) return false;
 
-  spendSlag(craft.slag);
-  spendInsight(craft.insight);
+  // Spend resources
+  const resCost = {};
+  for (const k in cost) {
+    if (k === 'faith') { spendFaith(cost[k]); }
+    else { resCost[k] = cost[k]; }
+  }
+  if (Object.keys(resCost).length > 0) spend(resCost);
 
-  switch (craft.id) {
-    case 'tier4': setTier(4); break;
-    case 'tier5': setTier(5); break;
-    case 'tier6': setTier(6); break;
-    case 'repair':
-      repairCrackedMirror();
-      break;
-    case 'focus':
-      focusCount++;
-      markDirty();
-      break;
-    case 'anchor':
-      anchorMirror();
-      break;
+  switch (item.id) {
+    case 'mirror': mirrorsBought++; break;
+    case 'prism4': setTier(4); markDirty(); break;
+    case 'prism5': setTier(5); markDirty(); break;
+    case 'prism6': setTier(6); markDirty(); break;
+    case 'priest': addPriest(); break;
+    case 'zeus': triggerGodAbility('zeus'); break;
   }
   return true;
 }
 
-function autoPlacePrism() {
-  const sockets = getSockets();
-  for (let i = 0; i < sockets.length; i++) {
-    if (sockets[i].type === null) {
-      placePrism(i);
-      return;
-    }
-  }
+function triggerGodAbility(god) {
+  // TODO: implement god ability effects
+  console.log('[God] ' + god + ' activated!');
 }
 
-function repairCrackedMirror() {
-  const mirrors = getMirrors();
-  for (const m of mirrors) {
-    if (m.hits > 0 && !m.shattered) { repairMirror(m); return; }
+function canAffordCombined(cost, res, faith) {
+  for (const k in cost) {
+    if (k === 'faith') { if (faith < cost[k]) return false; }
+    else { if ((res[k] || 0) < cost[k]) return false; }
   }
-  for (const m of mirrors) {
-    if (m.shattered) { repairMirror(m); return; }
-  }
+  return true;
 }
 
-function reinforceMirror() {
-  const mirrors = getMirrors();
-  for (const m of mirrors) {
-    if (!m.reinforced) {
-      m.reinforced = true;
-      m.mesh.material.color.setHex(0xaaaaee);
-      return;
-    }
+function costStr(cost) {
+  const parts = [];
+  for (const k in cost) {
+    parts.push(cost[k] + k[0].toUpperCase());
   }
-}
-
-function anchorMirror() {
-  const mirrors = getMirrors();
-  for (const m of mirrors) {
-    if (!m.anchored) { m.anchored = true; return; }
-  }
+  return parts.join(' ');
 }

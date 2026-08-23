@@ -5,13 +5,13 @@
 // Lose: 3 breaches, OR 15:00 with Devourer alive + Recombination < 100%.
 // ============================================================
 
-import { SESSION_DURATION, WORLD_HEIGHT, BREACH_Y, DEV } from './config.js';
+import { SESSION_DURATION, WORLD_HEIGHT, WALL_Y, DEV, WALL_MAX_HP } from './config.js';
 import { getScene, getWorldWidth, getOverlayScene } from './renderer.js';
 import { resetEnemies } from './enemy.js';
 import { resetSpawner } from './enemy-spawner.js';
 import { resetDamage } from './damage.js';
 import { markDirty } from './beam.js';
-import { getRecombination, resetFoundries, getSlag, getInsight } from './foundry.js';
+import { getResources, resetFoundries, getFaith } from './foundry.js';
 import { resetCrafting } from './crafting.js';
 import { resetMirrors } from './mirror.js';
 import { resetPrisms, resetTier } from './prism.js';
@@ -23,7 +23,6 @@ let gameOver = false;
 let gameWon = false;
 let devourerKilled = false;
 
-const WALL_MAX = 100;
 
 // HUD
 let hudCanvas = null;
@@ -40,7 +39,7 @@ let dimMesh = null;
 
 export function initSession() {
   elapsed = 0;
-  wallIntegrity = WALL_MAX;
+  wallIntegrity = WALL_MAX_HP;
   gameOver = false;
   gameWon = false;
   devourerKilled = false;
@@ -49,7 +48,7 @@ export function initSession() {
 }
 
 export function getElapsed() { return elapsed; }
-export function getBreaches() { return Math.floor(WALL_MAX - wallIntegrity); }
+export function getBreaches() { return Math.floor(WALL_MAX_HP - wallIntegrity); }
 export function getWallIntegrity() { return wallIntegrity; }
 export function isGameOver() { return gameOver; }
 export function isGameWon() { return gameWon; }
@@ -89,38 +88,42 @@ export function updateHud() {
   const mins = Math.floor(elapsed / 60);
   const secs = Math.floor(elapsed % 60);
   const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
-  const breachStr = 'Wall: ' + Math.ceil(wallIntegrity) + '%';
-  const recombo = Math.floor(getRecombination());
-  const slagVal = Math.floor(getSlag());
-  const insightVal = Math.floor(getInsight());
+  const res = getResources();
 
   hudCtx.clearRect(0, 0, 512, 64);
   // Timer (top-left)
-  hudCtx.fillStyle = elapsed >= 720 ? '#ff4444' : '#ffffff';
-  hudCtx.font = 'bold 26px monospace';
+  hudCtx.fillStyle = elapsed >= 480 ? '#ff4444' : '#ffffff';
+  hudCtx.font = 'bold 24px monospace';
   hudCtx.textAlign = 'left';
-  hudCtx.fillText(timeStr, 8, 22);
-  // Hearts (top-right)
+  hudCtx.fillText(timeStr, 8, 20);
+  // Wall (top-right)
   hudCtx.textAlign = 'right';
-  hudCtx.fillStyle = '#ff4444';
-  hudCtx.font = '22px monospace';
-  hudCtx.fillText(breachStr, 504, 22);
+  hudCtx.fillStyle = wallIntegrity > 30 ? '#ffffff' : '#ff4444';
+  hudCtx.font = '18px monospace';
+  hudCtx.fillText('Wall:' + Math.ceil(wallIntegrity) + '%', 504, 20);
   // Resources (bottom row)
-  hudCtx.font = '16px monospace';
+  hudCtx.font = '13px monospace';
   hudCtx.textAlign = 'left';
-  hudCtx.fillStyle = '#ff8c1a';
-  hudCtx.fillText(`${RES_SLAG_SHORT}:${slagVal}`, 8, 52);
-  hudCtx.fillStyle = '#00ddff';
-  hudCtx.fillText(`${RES_INSIGHT_SHORT}:${insightVal}`, 110, 52);
-  hudCtx.fillStyle = '#ffe9a0';
-  hudCtx.fillText(`${RES_RECOMBO_SHORT}:${recombo}%`, 210, 52);
+  hudCtx.fillStyle = '#ccaa44';
+  hudCtx.fillText('Br:' + Math.floor(res.brass), 8, 48);
+  hudCtx.fillStyle = '#cc8833';
+  hudCtx.fillText('Bz:' + Math.floor(res.bronze), 100, 48);
+  hudCtx.fillStyle = '#cccccc';
+  hudCtx.fillText('Si:' + Math.floor(res.silver), 195, 48);
+  hudCtx.fillStyle = '#ffdd00';
+  hudCtx.fillText('Au:' + Math.floor(res.gold), 285, 48);
+  hudCtx.fillStyle = '#aa88ff';
+  hudCtx.fillText('F:' + Math.floor(getFaith()), 370, 48);
+
+  hudTexture.needsUpdate = true;
+}
 
   hudTexture.needsUpdate = true;
 }
 
 export function resetSession() {
   elapsed = 0;
-  wallIntegrity = WALL_MAX;
+  wallIntegrity = WALL_MAX_HP;
   gameOver = false;
   gameWon = false;
   devourerKilled = false;

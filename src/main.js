@@ -2,7 +2,7 @@
 // src/main.js — Entry point: init scene, start game loop
 // ============================================================
 
-import { APERTURE_Y, DEV } from './config.js';
+import { APERTURE_Y, DEV, SUN_Y } from './config.js';
 import { initRenderer, render, getWorldWidth, getRenderer } from './renderer.js';
 import { initBeamRenderer, rebuildBeams, updateBeamPulse } from './beam-render.js';
 import { solve, isDirty, getSegments, markDirty } from './beam.js';
@@ -20,7 +20,7 @@ import { initEffects, updateEffects } from './effects.js';
 
 // --- Source state ---
 let sourceX = 0;
-let sourceY = APERTURE_Y;
+let sourceY = SUN_Y;
 
 // --- Clock ---
 let lastTime = 0;

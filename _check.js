@@ -1,59 +1,7 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Solar Siege</title>
-<style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-html, body { width: 100%; height: 100%; overflow: hidden; background: #000; touch-action: none; }
-canvas { display: block; width: 100%; height: 100%; }
-</style>
-</head>
-<body>
-<div id="intro-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:99999;background:#000;display:flex;align-items:center;justify-content:center;">
-  <video id="intro-video" src="./assets/syracuse_intro.mp4" poster="./assets/intro_poster.jpg"
-         playsinline webkit-playsinline preload="auto"
-         style="max-width:100%;max-height:100%;object-fit:contain;"></video>
-  <div id="intro-tap" style="position:absolute;bottom:15%;color:#fff;font:bold 16px monospace;opacity:0.8;pointer-events:none;">Tap to begin</div>
-</div>
-<script src="./vendor/three.min.js"></script>
-<script>
-// THREE is available as a global from the vendor script above
 
-// --- Intro video layer ---
-(function() {
-  var layer = document.getElementById('intro-layer');
-  var video = document.getElementById('intro-video');
-  var tapMsg = document.getElementById('intro-tap');
-  var started = false;
 
-  // Tap anywhere to play video (required for mobile autoplay policy)
-  layer.addEventListener('pointerdown', function() {
-    if (!started) {
-      started = true;
-      tapMsg.style.display = 'none';
-      video.play();
-    }
-  });
 
-  // When video ends, hide the layer and start the game
-  video.addEventListener('ended', startGame);
 
-  // Also allow skipping by tapping during playback
-  video.addEventListener('pointerdown', function(e) {
-    if (started && !video.ended) {
-      e.stopPropagation();
-      video.pause();
-      startGame();
-    }
-  });
-
-  function startGame() {
-    layer.style.display = 'none';
-    if (typeof init === 'function') init();
-  }
-})();
 
 // === src/config.js ===
 // ============================================================
@@ -2876,6 +2824,4 @@ function loop(now) {
 
 
 
-</script>
-</body>
-</html>
+

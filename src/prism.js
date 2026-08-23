@@ -2,7 +2,7 @@
 // src/prism.js — Prism object, uses generic socket grid
 // ============================================================
 
-import { SOCKET_POSITIONS, COLOUR_WHITE, DEFAULT_PRISM_SOCKET, DEFAULT_PRISM_TIER, PRISM_TIERS } from './config.js';
+import { SOCKET_POSITIONS, COLOUR_WHITE, DEFAULT_PRISM_SOCKET, DEFAULT_PRISM_TIER, PRISM_TIERS, PRISM_Y } from './config.js';
 import { getScene } from './renderer.js';
 import { markDirty } from './beam.js';
 import { getSockets, updateMirrorGeometry } from './mirror.js';

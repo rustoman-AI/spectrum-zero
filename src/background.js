@@ -9,7 +9,7 @@
 
 import {
   WORLD_HEIGHT, MIRROR_FIELD_TOP, MIRROR_FIELD_BOT,
-  BREACH_Y, FOUNDRY_Y, APERTURE_Y
+  WALL_Y, SUN_Y, SHIP_SPAWN_Y, PRISM_Y
 } from './config.js';
 import { getScene, getWorldWidth } from './renderer.js';
 
@@ -36,39 +36,37 @@ export function initBackground() {
     reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   }
 
-  // --- Band boundaries (derived from layout constants) ---
-  const cityTop = hh;                    // top of world
-  const cityBot = MIRROR_FIELD_TOP;      // where mirrors start
-  const battleTop = MIRROR_FIELD_TOP;    // mirror row
-  const battleBot = BREACH_Y;           // landing line
-  const seaTop = BREACH_Y;              // sea wall
-  const seaBot = -hh;                   // bottom of world
+  // --- Band boundaries (reversed: sea at top, city at bottom) ---
+  const seaTop = hh;                    // top of world
+  const seaBot = SHIP_SPAWN_Y - 5;     // sea extends to just above spawn area
+  const skyBot = seaBot;
+  const cityTop = MIRROR_FIELD_TOP + 5; // city above mirror field
+  const cityBot = -hh;                  // bottom of world
 
-  // --- 1. City/shore ground (above mirror row) ---
-  const cityH = cityTop - cityBot;
-  const cityGeo = new THREE.PlaneGeometry(ww + 2, cityH);
-  const cityMat = new THREE.MeshBasicMaterial({ color: COL_SHORE, depthWrite: false });
+  // --- 1. Sea band (top of screen where ships come from) ---
+  const seaH = seaTop - seaBot;
+  const cityGeo = new THREE.PlaneGeometry(ww + 2, seaH);
+  const cityMat = new THREE.MeshBasicMaterial({ color: COL_DEEP_SEA, depthWrite: false });
   const cityMeshObj = new THREE.Mesh(cityGeo, cityMat);
-  cityMeshObj.position.set(0, cityBot + cityH / 2, -10);
+  cityMeshObj.position.set(0, seaBot + seaH / 2, -10);
   scene.add(cityMeshObj);
 
-  // --- 2. Battlement band (mirror row to landing line) ---
-  const battleH = battleTop - battleBot;
-  const battleGeo = new THREE.PlaneGeometry(ww + 2, battleH);
+  // --- 2. City/wall band (bottom, where player defends) ---
+  const cityH = cityTop - cityBot;
+  const battleGeo = new THREE.PlaneGeometry(ww + 2, cityH);
   const battleMat = new THREE.MeshBasicMaterial({ color: COL_BATTLEMENT, depthWrite: false });
   const battleMeshObj = new THREE.Mesh(battleGeo, battleMat);
-  battleMeshObj.position.set(0, battleBot + battleH / 2, -10);
+  battleMeshObj.position.set(0, cityBot + cityH / 2, -10);
   scene.add(battleMeshObj);
 
-  // Wall base edge line (dark seam at shore/battlement boundary)
+  // Wall line
   const edgeGeo = new THREE.PlaneGeometry(ww + 2, 0.6);
-  const edgeMat = new THREE.MeshBasicMaterial({ color: COL_WALL_EDGE, depthWrite: false });
+  const edgeMat = new THREE.MeshBasicMaterial({ color: 0xff3333, transparent: true, opacity: 0.5, depthWrite: false });
   const edgeMesh = new THREE.Mesh(edgeGeo, edgeMat);
-  edgeMesh.position.set(0, MIRROR_FIELD_TOP - 0.3, -9.8);
+  edgeMesh.position.set(0, WALL_Y, -9.8);
   scene.add(edgeMesh);
 
-  // --- 3. Sea (landing line to bottom) ---
-  // Procedural gradient canvas texture with wave lines
+  // --- 3. Sea texture with waves (covers the sea band) ---
   const seaCanvas = document.createElement('canvas');
   seaCanvas.width = 32;
   seaCanvas.height = 256;
@@ -80,21 +78,14 @@ export function initBackground() {
   seaTexture.wrapT = THREE.RepeatWrapping;
   seaTexture.minFilter = THREE.LinearFilter;
 
-  const seaH = seaTop - seaBot;
-  const seaGeo = new THREE.PlaneGeometry(ww + 2, seaH);
-  const seaMat = new THREE.MeshBasicMaterial({ map: seaTexture, depthWrite: false });
-  seaMesh = new THREE.Mesh(seaGeo, seaMat);
-  seaMesh.position.set(0, seaBot + seaH / 2, -10);
+  // Overlay on sea band
+  const seaOverGeo = new THREE.PlaneGeometry(ww + 2, seaH);
+  const seaOverMat = new THREE.MeshBasicMaterial({ map: seaTexture, transparent: true, opacity: 0.5, depthWrite: false });
+  seaMesh = new THREE.Mesh(seaOverGeo, seaOverMat);
+  seaMesh.position.set(0, seaBot + seaH / 2, -9.5);
   scene.add(seaMesh);
 
-  // --- Surf line (thin band at the landing line) ---
-  const surfGeo = new THREE.PlaneGeometry(ww + 2, 1.2);
-  const surfMat = new THREE.MeshBasicMaterial({
-    color: COL_SURF, transparent: true, opacity: 0.4, depthWrite: false
-  });
-  surfMesh = new THREE.Mesh(surfGeo, surfMat);
-  surfMesh.position.set(0, BREACH_Y + 0.5, -9.5);
-  scene.add(surfMesh);
+  // Surf/wave line not needed at top — the sea band IS the top
 }
 
 export function updateBackground(dt) {

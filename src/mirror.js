@@ -4,7 +4,7 @@
 
 import {
   SOCKET_POSITIONS, MIRROR_COUNT_START, MIRROR_MAX_HITS,
-  COLOUR_GREY, DEFAULT_MIRROR_SOCKETS, MIRROR_TWEEN_MS,
+  COLOUR_GREY, DEFAULT_MIRROR_SOCKETS, MIRROR_LENGTH,
   FREE_PLACEMENT, MIRROR_FIELD_TOP, MIRROR_FIELD_BOT
 } from './config.js';
 import { getScene, getWorldWidth } from './renderer.js';
@@ -14,7 +14,6 @@ const sockets = [];
 const mirrors = [];
 let mirrorMeshGroup = null;
 
-const MIRROR_LENGTH = 8;
 const MIRROR_THICKNESS = 1;
 
 // Active tweens: { mirror, fromX, fromY, toX, toY, elapsed, duration }
