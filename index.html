@@ -12,7 +12,7 @@ canvas { display: block; width: 100%; height: 100%; }
 </head>
 <body>
 <div id="intro-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:99999;background:#000;display:flex;align-items:center;justify-content:center;">
-  <video id="intro-video" src="./assets/syracuse_intro.mp4?v=2" poster="./assets/intro_poster.jpg?v=2"
+  <video id="intro-video" src="./assets/archimed_intro.mp4?v=3" poster="./assets/intro_poster.jpg?v=3"
          playsinline webkit-playsinline preload="auto"
          style="max-width:100%;max-height:100%;object-fit:contain;"></video>
   <div id="intro-tap" style="position:absolute;bottom:15%;color:#fff;font:bold 16px monospace;opacity:0.8;pointer-events:none;">Loading…</div>
@@ -79,16 +79,35 @@ canvas { display: block; width: 100%; height: 100%; }
         startGame();
       });
     }
-    // 5-second failsafe
+    // 12-second failsafe (video is ~10s, transition at 8.3s — this is emergency only)
     setTimeout(function() {
       if (!gameStarted) {
-        updateDebugInfo('FAILSAFE 5s');
+        updateDebugInfo('FAILSAFE 12s');
         startGame();
       }
-    }, 5000);
+    }, 12000);
   });
 
   video.addEventListener('ended', startGame);
+  // White-flash transition: video has a flash at ~8.0s then fades to black.
+  // Start game at the peak so the player never sees dead black frames.
+  var transitioned = false;
+  var FLASH_START = 8.0;
+  var FLASH_GAME  = 8.3;  // start game while screen is still white
+  video.addEventListener('timeupdate', function() {
+    if (transitioned || !started) return;
+    var t = video.currentTime;
+    if (t >= FLASH_START) {
+      // Fade intro layer to white
+      layer.style.transition = 'background 0.3s';
+      layer.style.background = '#fff';
+    }
+    if (t >= FLASH_GAME) {
+      transitioned = true;
+      video.pause();
+      startGame();
+    }
+  });
   video.addEventListener('error', function() {
     updateDebugInfo('video error');
     startGame();
