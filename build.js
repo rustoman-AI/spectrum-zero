@@ -142,7 +142,7 @@ canvas { display: block; width: 100%; height: 100%; }
 
   function updateDebugInfo(msg) {
     if (!debugEl) return;
-    debugEl.textContent = 'DEBUG\n' + msg + '\nvideoReady=' + (video ? video.readyState : '?') + '\nvideoMuted=' + (video ? video.muted : '?') + '\ngameStarted=' + gameStarted + '\ncanvas=' + (!!document.querySelector('canvas'));
+    debugEl.textContent = 'DEBUG ' + msg + ' | vidReady=' + (video ? video.readyState : '?') + ' | muted=' + (video ? video.muted : '?') + ' | game=' + gameStarted + ' | canvas=' + (!!document.querySelector('canvas'));
   }
 })();
 
