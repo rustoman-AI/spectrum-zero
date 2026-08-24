@@ -96,7 +96,9 @@ canvas { display: block; width: 100%; height: 100%; }
   layer.addEventListener('pointerdown', function() {
     if (!started) {
       started = true;
-      // FIRST: start playback synchronously in the gesture — no work before this
+      // FIRST: start playback synchronously in the gesture — no work before this.
+      // Even if readyState is 0, calling play() registers the user activation;
+      // the browser will begin playback once data arrives.
       var playPromise = video.play();
       // THEN: UI updates
       tapMsg.style.display = 'none';
@@ -104,8 +106,13 @@ canvas { display: block; width: 100%; height: 100%; }
         playPromise.then(function() {
           updateDebugInfo('video playing, readyState=' + video.readyState);
         }).catch(function(err) {
-          updateDebugInfo('play() rejected: ' + err.message + ' — forcing game start');
-          startGame();
+          // NotAllowedError = gesture not honoured, bail immediately.
+          // AbortError = media not ready yet — do NOT kill the intro, let failsafe handle.
+          updateDebugInfo('play() catch: ' + err.name + ' ' + err.message);
+          if (err.name === 'NotAllowedError') {
+            startGame();
+          }
+          // For any other error, the 5s failsafe will start the game if video never plays.
         });
       }
       // 5-second failsafe: if game hasn't started, force it
