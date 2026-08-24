@@ -157,7 +157,12 @@ function triggerLose() {
   gameOver = true;
   gameWon = false;
   onEndState();
-  showOverlay(MSG_LOSE);
+  // Play defeat cinematic (once per session), then show overlay
+  if (typeof window !== 'undefined' && window.playDefeatCinematic) {
+    window.playDefeatCinematic(function() { showOverlay(MSG_LOSE); });
+  } else {
+    showOverlay(MSG_LOSE);
+  }
 }
 
 // Called when game ends — hide beams, craft tray
