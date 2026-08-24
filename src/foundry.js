@@ -45,7 +45,7 @@ export function resetFoundries() {
   resources = { brass: 0, bronze: 0, silver: 0, gold: 0 };
   faith = 0;
   priestCount = 0;
-  for (const a of altars) { a.litTime = 0; a.overheated = false; a.cooldown = 0; }
+  for (const a of altars) { a.litTime = 0; a.overheated = false; a.cooldown = 0; a.everLit = false; }
 }
 
 export function spendFaith(amount) { faith -= amount; }
@@ -57,16 +57,30 @@ export function initFoundries() {
 
   for (let i = 0; i < ALTAR_POSITIONS.length; i++) {
     const def = ALTAR_POSITIONS[i];
-    // Altar body mesh
+
+    // --- Glow ring (attention-grabbing pulse when unlit) ---
+    const glowGeo = new THREE.RingGeometry(
+      Math.max(ALTAR_HW, ALTAR_HH) * 1.3,
+      Math.max(ALTAR_HW, ALTAR_HH) * 1.6,
+      32
+    );
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: def.colour, transparent: true, opacity: 0.0, side: THREE.DoubleSide
+    });
+    const glowMesh = new THREE.Mesh(glowGeo, glowMat);
+    glowMesh.position.set(def.x, def.y, -0.2);
+    scene.add(glowMesh);
+
+    // --- Altar body mesh ---
     const geo = new THREE.PlaneGeometry(ALTAR_HW * 2, ALTAR_HH * 2);
     const mat = new THREE.MeshBasicMaterial({
-      color: def.colour, transparent: true, opacity: 0.3
+      color: def.colour, transparent: true, opacity: 0.25
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(def.x, def.y, -0.1);
     scene.add(mesh);
 
-    // Label
+    // --- Label ---
     const lCanvas = document.createElement('canvas');
     lCanvas.width = 64; lCanvas.height = 20;
     const lCtx = lCanvas.getContext('2d');
@@ -82,25 +96,22 @@ export function initFoundries() {
     labelMesh.position.set(def.x, def.y + ALTAR_HH + 1.5, 0.2);
     scene.add(labelMesh);
 
-    // Overheat gauge (bar above altar)
-    const ohBg = new THREE.Mesh(
-      new THREE.PlaneGeometry(ALTAR_HW * 2, 0.5),
-      new THREE.MeshBasicMaterial({ color: 0x222222 })
-    );
-    ohBg.position.set(def.x, def.y - ALTAR_HH - 1, 0.1);
-    scene.add(ohBg);
-    const ohFill = new THREE.Mesh(
-      new THREE.PlaneGeometry(ALTAR_HW * 2, 0.5),
-      new THREE.MeshBasicMaterial({ color: 0x44cc44 })
-    );
-    ohFill.position.set(def.x, def.y - ALTAR_HH - 1, 0.15);
-    ohFill.scale.x = 0;
-    scene.add(ohFill);
+    // --- Overheat arc (RingGeometry with partial theta) ---
+    const arcRadius = Math.max(ALTAR_HW, ALTAR_HH) * 1.1;
+    const arcGeo = new THREE.RingGeometry(arcRadius - 0.3, arcRadius, 32, 1, 0, 0.01);
+    const arcMat = new THREE.MeshBasicMaterial({
+      color: 0x44cc44, transparent: true, opacity: 0.9, side: THREE.DoubleSide
+    });
+    const arcMesh = new THREE.Mesh(arcGeo, arcMat);
+    arcMesh.position.set(def.x, def.y, 0.3);
+    arcMesh.visible = false;
+    scene.add(arcMesh);
 
     altars.push({
       type: def.type, colour: def.colour,
       x: def.x, y: def.y,
-      mesh, ohFill, lit: false,
+      mesh, glowMesh, arcMesh, arcRadius,
+      lit: false, everLit: false,
       litTime: 0, overheated: false, cooldown: 0
     });
   }
@@ -108,6 +119,7 @@ export function initFoundries() {
 
 export function updateFoundries(dt) {
   const segments = getSegments();
+  const time = performance.now() * 0.001; // seconds for animation
 
   for (const altar of altars) {
     // Check if any beam segment hits this altar (segment-vs-AABB)
@@ -118,6 +130,7 @@ export function updateFoundries(dt) {
         break;
       }
     }
+    if (altar.lit) altar.everLit = true;
 
     // Overheat logic
     if (altar.lit) {
@@ -148,20 +161,55 @@ export function updateFoundries(dt) {
     const totalRate = (passiveRate + litRate) * efficiency;
     resources[altar.type] += totalRate * dt;
 
-    // Visual feedback
-    altar.mesh.material.opacity = altar.lit ? 0.7 : 0.3;
-    if (altar.overheated) {
-      altar.mesh.material.opacity = altar.lit ? 0.4 : 0.2;
+    // --- VISUAL FEEDBACK ---
+
+    // 1. Body mesh opacity
+    if (altar.lit) {
+      altar.mesh.material.opacity = altar.overheated ? 0.55 : 0.8;
+    } else {
+      // Unlit: gentle pulse if never lit (attract attention)
+      if (!altar.everLit) {
+        const pulse = 0.2 + 0.15 * Math.sin(time * 2.5 + altar.x * 0.5);
+        altar.mesh.material.opacity = pulse;
+      } else {
+        altar.mesh.material.opacity = 0.25;
+      }
     }
-    // Overheat gauge
-    if (altar.ohFill) {
-      const heatFrac = Math.min(1, altar.litTime / ALTAR_OVERHEAT_TIME);
-      altar.ohFill.scale.x = altar.lit ? heatFrac : (altar.overheated ? 1 - altar.cooldown / ALTAR_RECOVER_TIME : 0);
-      // Colour: green → yellow → red
-      if (heatFrac < 0.5) altar.ohFill.material.color.setHex(0x44cc44);
-      else if (heatFrac < 0.8) altar.ohFill.material.color.setHex(0xcccc44);
-      else altar.ohFill.material.color.setHex(0xcc4444);
-      if (altar.overheated) altar.ohFill.material.color.setHex(0xcc4444);
+
+    // 2. Glow ring
+    if (altar.lit) {
+      // Steady bright glow matching metal colour
+      altar.glowMesh.material.opacity = altar.overheated ? 0.2 : 0.5;
+    } else if (!altar.everLit) {
+      // Attention pulse — gentle breathing glow
+      const gPulse = 0.1 + 0.2 * Math.abs(Math.sin(time * 1.8 + altar.x * 0.3));
+      altar.glowMesh.material.opacity = gPulse;
+    } else {
+      altar.glowMesh.material.opacity = 0.0;
+    }
+
+    // 3. Overheat arc
+    const heatFrac = Math.min(1, altar.litTime / ALTAR_OVERHEAT_TIME);
+    const coolFrac = altar.overheated ? (1 - altar.cooldown / ALTAR_RECOVER_TIME) : 0;
+    const arcFrac = altar.lit ? heatFrac : coolFrac;
+
+    if (arcFrac > 0.01) {
+      altar.arcMesh.visible = true;
+      // Rebuild arc geometry with new theta length
+      const theta = arcFrac * Math.PI * 2;
+      altar.arcMesh.geometry.dispose();
+      altar.arcMesh.geometry = new THREE.RingGeometry(
+        altar.arcRadius - 0.3, altar.arcRadius, 32, 1,
+        Math.PI * 0.5, // start at top
+        theta
+      );
+      // Color: green → yellow → red
+      if (arcFrac < 0.5) altar.arcMesh.material.color.setHex(0x44cc44);
+      else if (arcFrac < 0.8) altar.arcMesh.material.color.setHex(0xcccc44);
+      else altar.arcMesh.material.color.setHex(0xcc4444);
+      if (altar.overheated) altar.arcMesh.material.color.setHex(0xcc4444);
+    } else {
+      altar.arcMesh.visible = false;
     }
   }
 
