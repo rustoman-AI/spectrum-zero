@@ -60,8 +60,8 @@ canvas { display: block; width: 100%; height: 100%; }
 </head>
 <body>
 <div id="intro-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:99999;background:#000;display:flex;align-items:center;justify-content:center;">
-  <video id="intro-video" src="./assets/syracuse_intro.mp4" poster="./assets/intro_poster.jpg"
-         playsinline webkit-playsinline preload="auto"
+  <video id="intro-video" src="./assets/syracuse_intro.mp4?v=2" poster="./assets/intro_poster.jpg?v=2"
+         playsinline webkit-playsinline muted preload="auto"
          style="max-width:100%;max-height:100%;object-fit:contain;"></video>
   <div id="intro-tap" style="position:absolute;bottom:15%;color:#fff;font:bold 16px monospace;opacity:0.8;pointer-events:none;">Tap to begin</div>
 </div>
@@ -86,12 +86,15 @@ canvas { display: block; width: 100%; height: 100%; }
     updateDebugInfo('waiting for tap');
   }
 
-  // Tap to play
+  // Tap to play — video.play() MUST be the first call in the gesture handler
+  // (Safari only honours play() in the synchronous part of a user gesture)
   layer.addEventListener('pointerdown', function() {
     if (!started) {
       started = true;
-      tapMsg.style.display = 'none';
+      // FIRST: start playback synchronously in the gesture
       var playPromise = video.play();
+      // THEN: UI updates
+      tapMsg.style.display = 'none';
       if (playPromise && playPromise.then) {
         playPromise.then(function() {
           updateDebugInfo('video playing, readyState=' + video.readyState);
@@ -139,7 +142,7 @@ canvas { display: block; width: 100%; height: 100%; }
 
   function updateDebugInfo(msg) {
     if (!debugEl) return;
-    debugEl.textContent = 'DEBUG\\n' + msg + '\\nvideoReady=' + (video ? video.readyState : '?') + '\\ngameStarted=' + gameStarted;
+    debugEl.textContent = 'DEBUG\n' + msg + '\nvideoReady=' + (video ? video.readyState : '?') + '\nvideoMuted=' + (video ? video.muted : '?') + '\ngameStarted=' + gameStarted + '\ncanvas=' + (!!document.querySelector('canvas'));
   }
 })();
 
