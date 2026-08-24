@@ -63,7 +63,7 @@ canvas { display: block; width: 100%; height: 100%; }
   <video id="intro-video" src="./assets/syracuse_intro.mp4?v=2" poster="./assets/intro_poster.jpg?v=2"
          playsinline webkit-playsinline preload="auto"
          style="max-width:100%;max-height:100%;object-fit:contain;"></video>
-  <div id="intro-tap" style="position:absolute;bottom:15%;color:#fff;font:bold 16px monospace;opacity:0.8;pointer-events:none;">Tap to begin</div>
+  <div id="intro-tap" style="position:absolute;bottom:15%;color:#fff;font:bold 16px monospace;opacity:0.8;pointer-events:none;">Loading…</div>
 </div>
 <script src="./vendor/three.min.js"></script>
 <script>
@@ -74,60 +74,71 @@ canvas { display: block; width: 100%; height: 100%; }
   var layer = document.getElementById('intro-layer');
   var video = document.getElementById('intro-video');
   var tapMsg = document.getElementById('intro-tap');
+  var ready = false;
   var started = false;
   var gameStarted = false;
   var debugMode = window.location.search.indexOf('debug=1') > -1;
   var debugEl = null;
 
-  // Force layout at load time so video has computed dimensions before any gesture.
-  // iOS Safari refuses play() on a zero-size video, and doing reflow inside the tap
-  // handler burns the gesture token. This must happen BEFORE the tap listener.
-  void video.offsetHeight;
-
   if (debugMode) {
     debugEl = document.createElement('div');
     debugEl.style.cssText = 'position:fixed;bottom:10px;left:10px;color:lime;font:11px monospace;z-index:999999;background:rgba(0,0,0,0.8);padding:6px;white-space:pre;';
     document.body.appendChild(debugEl);
-    updateDebugInfo('waiting for tap');
+  }
+  updateDebugInfo('loading video');
+
+  // Force layout so video has real dimensions (iOS refuses zero-size play)
+  void video.offsetHeight;
+
+  // --- GATE: wait for canplaythrough OR 4s timeout ---
+  var gateTimeout = setTimeout(function() {
+    // Timeout: skip intro entirely, go straight to game
+    updateDebugInfo('gate timeout 4s — skipping intro');
+    startGame();
+  }, 4000);
+
+  video.addEventListener('canplaythrough', onReady);
+  // Also try canplay as fallback (some browsers fire it but not canplaythrough)
+  video.addEventListener('canplay', onReady);
+
+  function onReady() {
+    if (ready) return;
+    ready = true;
+    clearTimeout(gateTimeout);
+    video.removeEventListener('canplaythrough', onReady);
+    video.removeEventListener('canplay', onReady);
+    // Now enable tap
+    tapMsg.textContent = 'Tap to begin';
+    updateDebugInfo('ready, waiting for tap');
   }
 
-  // Tap to play — video.play() MUST be the FIRST call in the gesture handler.
-  // Nothing synchronous before play() — Safari's gesture token is fragile.
+  // --- TAP HANDLER ---
   layer.addEventListener('pointerdown', function() {
-    if (!started) {
-      started = true;
-      // FIRST: start playback synchronously in the gesture — no work before this.
-      // Even if readyState is 0, calling play() registers the user activation;
-      // the browser will begin playback once data arrives.
-      var playPromise = video.play();
-      // THEN: UI updates
-      tapMsg.style.display = 'none';
-      if (playPromise && playPromise.then) {
-        playPromise.then(function() {
-          updateDebugInfo('video playing, readyState=' + video.readyState);
-        }).catch(function(err) {
-          // NotAllowedError = gesture not honoured, bail immediately.
-          // AbortError = media not ready yet — do NOT kill the intro, let failsafe handle.
-          updateDebugInfo('play() catch: ' + err.name + ' ' + err.message);
-          if (err.name === 'NotAllowedError') {
-            startGame();
-          }
-          // For any other error, the 5s failsafe will start the game if video never plays.
-        });
-      }
-      // 5-second failsafe: if game hasn't started, force it
-      setTimeout(function() {
-        if (!gameStarted) {
-          updateDebugInfo('FAILSAFE: 5s timeout, forcing game start');
-          startGame();
-        }
-      }, 5000);
+    if (!ready || started) return; // ignore taps until ready
+    started = true;
+    // play() MUST be the absolute first call — Safari gesture token is fragile
+    var playPromise = video.play();
+    tapMsg.style.display = 'none';
+    if (playPromise && playPromise.then) {
+      playPromise.then(function() {
+        updateDebugInfo('video playing');
+      }).catch(function(err) {
+        updateDebugInfo('play() rejected: ' + err.name);
+        startGame();
+      });
     }
+    // 5-second failsafe
+    setTimeout(function() {
+      if (!gameStarted) {
+        updateDebugInfo('FAILSAFE 5s');
+        startGame();
+      }
+    }, 5000);
   });
 
   video.addEventListener('ended', startGame);
   video.addEventListener('error', function() {
-    updateDebugInfo('video error — forcing game start');
+    updateDebugInfo('video error');
     startGame();
   });
 
@@ -143,10 +154,11 @@ canvas { display: block; width: 100%; height: 100%; }
   function startGame() {
     if (gameStarted) return;
     gameStarted = true;
+    clearTimeout(gateTimeout);
     layer.style.display = 'none';
     try {
       if (typeof init === 'function') init();
-      updateDebugInfo('startGame OK, WebGL=' + (!!document.querySelector('canvas')));
+      updateDebugInfo('startGame OK');
     } catch(e) {
       updateDebugInfo('init ERROR: ' + e.message);
     }
@@ -154,7 +166,7 @@ canvas { display: block; width: 100%; height: 100%; }
 
   function updateDebugInfo(msg) {
     if (!debugEl) return;
-    debugEl.textContent = 'DEBUG ' + msg + ' | vidReady=' + (video ? video.readyState : '?') + ' | muted=' + (video ? video.muted : '?') + ' | game=' + gameStarted + ' | canvas=' + (!!document.querySelector('canvas'));
+    debugEl.textContent = 'DEBUG ' + msg + ' | vidReady=' + (video ? video.readyState : '?') + ' | game=' + gameStarted;
   }
 })();
 
