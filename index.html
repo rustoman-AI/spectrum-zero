@@ -31,6 +31,11 @@ canvas { display: block; width: 100%; height: 100%; }
   var debugMode = window.location.search.indexOf('debug=1') > -1;
   var debugEl = null;
 
+  // Force layout at load time so video has computed dimensions before any gesture.
+  // iOS Safari refuses play() on a zero-size video, and doing reflow inside the tap
+  // handler burns the gesture token. This must happen BEFORE the tap listener.
+  void video.offsetHeight;
+
   if (debugMode) {
     debugEl = document.createElement('div');
     debugEl.style.cssText = 'position:fixed;bottom:10px;left:10px;color:lime;font:11px monospace;z-index:999999;background:rgba(0,0,0,0.8);padding:6px;white-space:pre;';
@@ -38,14 +43,12 @@ canvas { display: block; width: 100%; height: 100%; }
     updateDebugInfo('waiting for tap');
   }
 
-  // Tap to play — video.play() MUST be the first call in the gesture handler
-  // (Safari only honours play() in the synchronous part of a user gesture)
+  // Tap to play — video.play() MUST be the FIRST call in the gesture handler.
+  // Nothing synchronous before play() — Safari's gesture token is fragile.
   layer.addEventListener('pointerdown', function() {
     if (!started) {
       started = true;
-      // Force layout so video has computed dimensions (iOS refuses zero-size play)
-      void video.offsetHeight;
-      // FIRST: start playback synchronously in the gesture
+      // FIRST: start playback synchronously in the gesture — no work before this
       var playPromise = video.play();
       // THEN: UI updates
       tapMsg.style.display = 'none';
