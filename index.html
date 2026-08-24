@@ -43,6 +43,8 @@ canvas { display: block; width: 100%; height: 100%; }
   layer.addEventListener('pointerdown', function() {
     if (!started) {
       started = true;
+      // Force layout so video has computed dimensions (iOS refuses zero-size play)
+      void video.offsetHeight;
       // FIRST: start playback synchronously in the gesture
       var playPromise = video.play();
       // THEN: UI updates
