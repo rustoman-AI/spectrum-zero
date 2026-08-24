@@ -27,22 +27,50 @@ canvas { display: block; width: 100%; height: 100%; }
   var video = document.getElementById('intro-video');
   var tapMsg = document.getElementById('intro-tap');
   var started = false;
+  var gameStarted = false;
+  var debugMode = window.location.search.indexOf('debug=1') > -1;
+  var debugEl = null;
 
-  // Tap anywhere to play video (required for mobile autoplay policy)
+  if (debugMode) {
+    debugEl = document.createElement('div');
+    debugEl.style.cssText = 'position:fixed;bottom:10px;left:10px;color:lime;font:11px monospace;z-index:999999;background:rgba(0,0,0,0.8);padding:6px;white-space:pre;';
+    document.body.appendChild(debugEl);
+    updateDebugInfo('waiting for tap');
+  }
+
+  // Tap to play
   layer.addEventListener('pointerdown', function() {
     if (!started) {
       started = true;
       tapMsg.style.display = 'none';
-      video.play();
+      var playPromise = video.play();
+      if (playPromise && playPromise.then) {
+        playPromise.then(function() {
+          updateDebugInfo('video playing, readyState=' + video.readyState);
+        }).catch(function(err) {
+          updateDebugInfo('play() rejected: ' + err.message + ' — forcing game start');
+          startGame();
+        });
+      }
+      // 5-second failsafe: if game hasn't started, force it
+      setTimeout(function() {
+        if (!gameStarted) {
+          updateDebugInfo('FAILSAFE: 5s timeout, forcing game start');
+          startGame();
+        }
+      }, 5000);
     }
   });
 
-  // When video ends, hide the layer and start the game
   video.addEventListener('ended', startGame);
+  video.addEventListener('error', function() {
+    updateDebugInfo('video error — forcing game start');
+    startGame();
+  });
 
-  // Also allow skipping by tapping during playback
+  // Skip by tapping during playback
   video.addEventListener('pointerdown', function(e) {
-    if (started && !video.ended) {
+    if (started && !video.ended && !gameStarted) {
       e.stopPropagation();
       video.pause();
       startGame();
@@ -50,8 +78,20 @@ canvas { display: block; width: 100%; height: 100%; }
   });
 
   function startGame() {
+    if (gameStarted) return;
+    gameStarted = true;
     layer.style.display = 'none';
-    if (typeof init === 'function') init();
+    try {
+      if (typeof init === 'function') init();
+      updateDebugInfo('startGame OK, WebGL=' + (!!document.querySelector('canvas')));
+    } catch(e) {
+      updateDebugInfo('init ERROR: ' + e.message);
+    }
+  }
+
+  function updateDebugInfo(msg) {
+    if (!debugEl) return;
+    debugEl.textContent = 'DEBUG\n' + msg + '\nvideoReady=' + (video ? video.readyState : '?') + '\ngameStarted=' + gameStarted;
   }
 })();
 
