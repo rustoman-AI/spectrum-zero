@@ -40,6 +40,16 @@ export function initMirrors() {
   for (let i = 0; i < MIRROR_COUNT_START; i++) {
     const socketIdx = DEFAULT_MIRROR_SOCKETS[i];
     const mirror = createMirror(socketIdx);
+    // Default angles: flank mirrors horizontal (aim bands into ship lanes),
+    // centre mirror vertical (needs player rotation to be useful)
+    if (i === 1) {
+      // Centre mirror (socket 4 at x=0): vertical, beam goes sideways
+      mirror.angle = Math.PI / 2;
+    } else {
+      // Flank mirrors (sockets 3,5 at x=±15): horizontal, beam goes up
+      mirror.angle = 0;
+    }
+    updateMirrorGeometry(mirror);
     mirrors.push(mirror);
     sockets[socketIdx].type = 'mirror';
     sockets[socketIdx].objectRef = mirror;
@@ -61,7 +71,7 @@ export function initMirrors() {
 
 function createMirror(socketIndex) {
   const [sx, sy] = SOCKET_POSITIONS[socketIndex];
-  const angle = Math.PI / 2; // vertical — reflects beams downward/sideways, player must rotate to aim at ships
+  const angle = 0; // default, overridden in initMirrors per-mirror
 
   const geo = new THREE.PlaneGeometry(MIRROR_LENGTH, MIRROR_THICKNESS);
   const mat = new THREE.MeshBasicMaterial({ color: 0x8888cc });
@@ -262,7 +272,7 @@ export function resetMirrors() {
     mirror.socketIndex = socketIdx;
     mirror.freeX = sx;
     mirror.freeY = sy;
-    mirror.angle = Math.PI / 2; // vertical default — player must rotate to aim
+    mirror.angle = (i === 1) ? Math.PI / 2 : 0; // flanks horizontal, centre vertical
     mirror.hits = 0;
     mirror.shattered = false;
     mirror.reinforced = false;

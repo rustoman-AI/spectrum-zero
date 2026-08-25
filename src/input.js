@@ -4,7 +4,6 @@
 import { SOCKET_POSITIONS, COLOUR_WHITE, ROTATION_SENSITIVITY, MOTE_TRAVEL_TIME_S, ENEMY_TRAVEL_DIST, ENEMY_TYPES, FREE_PLACEMENT } from './config.js';
 import { screenToWorld, getScene } from './renderer.js';
 import { getMirrors, moveMirrorToSocket, rotateMirror, getSockets, updateMirrorGeometry, moveMirrorFree } from './mirror.js';
-import { getPrisms, movePrismToSocket } from './prism.js';
 import { getSegments, getBeamDiag } from './beam.js';
 import { isGameOver, handleRestartTap, getElapsed, getBreaches } from './session.js';
 import { handleCraftTap } from './crafting.js';
@@ -118,8 +117,6 @@ function onPointerMove(e) {
       // Pointer moved significantly
       if (pointerDownOnObject && pointerDownType === 'mirror' && pointerDownOnObject !== selectedObject) {
         startDrag(pointerDownOnObject, pointerDownType);
-      } else if (pointerDownOnObject && pointerDownType === 'prism') {
-        startDrag(pointerDownOnObject, pointerDownType);
       } else if (selectedObject && selectedType === 'mirror') {
         // Any swipe while a mirror is selected = rotate (including on the mirror itself)
         state = STATE_ROTATE;
@@ -162,8 +159,6 @@ function onPointerUp(e) {
       if (nearest !== null && nearest !== dragObject.socketIndex) {
         if (dragType === 'mirror') {
           moveMirrorToSocket(dragObject, nearest);
-        } else if (dragType === 'prism') {
-          movePrismToSocket(dragObject, nearest);
         }
       } else {
         const [sx, sy] = SOCKET_POSITIONS[dragObject.socketIndex];
@@ -208,7 +203,6 @@ function startDrag(obj, type) {
 // --- Hit detection (world coords) ---
 function findObjectAt(wx, wy) {
   const mirrors = getMirrors();
-  const prisms = getPrisms();
   for (const mirror of mirrors) {
     if (mirror.shattered) continue;
     const mx = FREE_PLACEMENT ? mirror.freeX : SOCKET_POSITIONS[mirror.socketIndex][0];
@@ -218,12 +212,7 @@ function findObjectAt(wx, wy) {
       return { type: 'mirror', object: mirror };
     }
   }
-  for (const prism of prisms) {
-    const dist = Math.sqrt((wx - prism.position.x) ** 2 + (wy - prism.position.y) ** 2);
-    if (dist < HIT_RADIUS) {
-      return { type: 'prism', object: prism };
-    }
-  }
+  // Prism is fixed infrastructure — not selectable
   return null;
 }
 function findNearestSocket(wx, wy) {
