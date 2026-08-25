@@ -182,4 +182,166 @@ export function resetAudio() {
   if (humGain) humGain.gain.value = 0;
   if (burnGain) burnGain.gain.value = 0;
   if (altarGain) altarGain.gain.value = 0;
+  // Stop all crackle voices
+  for (const cv of crackleVoices) { stopCrackleVoice(cv); }
+  crackleVoices.length = 0;
+}
+
+// ============================================================
+// WOOD CRACKLE — per-ship looping: flame hiss + random pops
+// Max 4 simultaneous voices (highest heat ships).
+// ============================================================
+const MAX_CRACKLE_VOICES = 4;
+const crackleVoices = []; // { enemyId, hissGain, hissSrc, popInterval, nextPop, filterNode, gain }
+
+// Called each frame from damage.js or main — pass array of {id, heat} for all burning ships
+export function updateCrackle(burningShips) {
+  if (!ensureCtx()) return;
+
+  // Sort by heat descending, take top MAX_CRACKLE_VOICES
+  burningShips.sort((a, b) => b.heat - a.heat);
+  const topShips = burningShips.slice(0, MAX_CRACKLE_VOICES);
+  const topIds = topShips.map(s => s.id);
+
+  // Remove voices for ships no longer in top burning
+  for (let i = crackleVoices.length - 1; i >= 0; i--) {
+    if (!topIds.includes(crackleVoices[i].enemyId)) {
+      stopCrackleVoice(crackleVoices[i]);
+      crackleVoices.splice(i, 1);
+    }
+  }
+
+  // Add/update voices for top burning ships
+  for (const ship of topShips) {
+    let voice = crackleVoices.find(v => v.enemyId === ship.id);
+    if (!voice) {
+      voice = startCrackleVoice(ship.id);
+      if (voice) crackleVoices.push(voice);
+    }
+    if (voice) {
+      // Scale volume and pop rate by heat (0 to 1)
+      const heat = Math.min(1, ship.heat);
+      voice.gain.gain.value = 0.03 + heat * 0.07; // hiss volume
+      voice.popRate = 2 + heat * 4; // 2 to 6 pops/sec
+    }
+  }
+
+  // Fire pops on schedule
+  const now = ctx.currentTime;
+  for (const voice of crackleVoices) {
+    if (now >= voice.nextPop) {
+      fireCracklePop(voice);
+      voice.nextPop = now + (1 / voice.popRate) * (0.5 + Math.random());
+    }
+  }
+}
+
+function startCrackleVoice(enemyId) {
+  if (!ctx) return null;
+  // Hiss: looping noise through a highpass
+  const bufLen = ctx.sampleRate * 0.3;
+  const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < bufLen; i++) data[i] = Math.random() * 2 - 1;
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.loop = true;
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'highpass';
+  filter.frequency.value = 2500;
+  const gain = ctx.createGain();
+  gain.gain.value = 0.03;
+  src.connect(filter).connect(gain).connect(masterGain);
+  src.start();
+  return {
+    enemyId,
+    hissSrc: src,
+    gain,
+    filterNode: filter,
+    popRate: 3,
+    nextPop: ctx.currentTime + Math.random() * 0.3,
+  };
+}
+
+function fireCracklePop(voice) {
+  if (!ctx || activeVoices >= MAX_VOICES) return;
+  // Short noise burst 15-40ms through bandpass 800-2000Hz
+  const duration = 0.015 + Math.random() * 0.025;
+  const bufLen = Math.ceil(ctx.sampleRate * duration);
+  const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < bufLen; i++) {
+    data[i] = (Math.random() * 2 - 1) * (1 - i / bufLen); // decay envelope baked in
+  }
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 800 + Math.random() * 1200; // 800-2000 Hz
+  bp.Q.value = 2 + Math.random() * 3;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.08 + Math.random() * 0.12, ctx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+  src.connect(bp).connect(g).connect(masterGain);
+  src.start();
+  src.stop(ctx.currentTime + duration + 0.01);
+}
+
+function stopCrackleVoice(voice) {
+  try { voice.hissSrc.stop(); } catch (_) {}
+  try { voice.gain.disconnect(); } catch (_) {}
+}
+
+// ============================================================
+// SINKING GLUG — descending sine + filtered noise swell
+// Plays after destruction (call with slight delay).
+// ============================================================
+export function playSinkGlug() {
+  if (!ensureCtx() || activeVoices >= MAX_VOICES) return;
+  activeVoices++;
+
+  const now = ctx.currentTime;
+  const duration = 0.45;
+
+  // Descending sine: 400Hz → 80Hz over 400ms
+  const osc = ctx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(400, now);
+  osc.frequency.exponentialRampToValueAtTime(80, now + 0.4);
+
+  // Lowpass filter closing with the pitch
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(2000, now);
+  lp.frequency.exponentialRampToValueAtTime(100, now + 0.4);
+
+  const oscGain = ctx.createGain();
+  oscGain.gain.setValueAtTime(0.2, now);
+  oscGain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+  osc.connect(lp).connect(oscGain).connect(masterGain);
+  osc.start(now);
+  osc.stop(now + duration);
+
+  // Water noise swell underneath
+  const noiseDur = 0.3;
+  const nBufLen = Math.ceil(ctx.sampleRate * noiseDur);
+  const nBuf = ctx.createBuffer(1, nBufLen, ctx.sampleRate);
+  const nData = nBuf.getChannelData(0);
+  for (let i = 0; i < nBufLen; i++) nData[i] = Math.random() * 2 - 1;
+  const nSrc = ctx.createBufferSource();
+  nSrc.buffer = nBuf;
+  const nLp = ctx.createBiquadFilter();
+  nLp.type = 'lowpass';
+  nLp.frequency.setValueAtTime(600, now);
+  nLp.frequency.linearRampToValueAtTime(200, now + noiseDur);
+  const nGain = ctx.createGain();
+  nGain.gain.setValueAtTime(0, now);
+  nGain.gain.linearRampToValueAtTime(0.12, now + 0.05); // quick swell
+  nGain.gain.exponentialRampToValueAtTime(0.001, now + noiseDur);
+  nSrc.connect(nLp).connect(nGain).connect(masterGain);
+  nSrc.start(now);
+  nSrc.stop(now + noiseDur + 0.01);
+
+  osc.onended = () => activeVoices--;
 }

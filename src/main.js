@@ -18,7 +18,7 @@ import { initFortress, updateFortress, triggerBreachShake } from './fortress.js'
 import { initCrafting, updateCraftingTray } from './crafting.js';
 import { initBackground, updateBackground } from './background.js';
 import { initEffects, updateEffects } from './effects.js';
-import { initAudio, updateHum, updateBurnHiss, updateAltarTone, playWallHit, resetAudio } from './audio.js';
+import { initAudio, updateHum, updateBurnHiss, updateAltarTone, updateCrackle, playWallHit, playSinkGlug, resetAudio } from './audio.js';
 
 // --- Source state ---
 let sourceX = 0;
@@ -122,6 +122,12 @@ function loop(now) {
   const activeEnemyCount = getEnemyPool().filter(e => e.active && e.bandsHitting > 0).length;
   updateBurnHiss(activeEnemyCount / 10);
   updateHum(getSegments().length * 3);
+
+  // Wood crackle: pass burning ships with heat > 0
+  const burningShips = getEnemyPool()
+    .filter(e => e.active && e.heat > 0)
+    .map(e => ({ id: e.mesh.id, heat: e.heat / e.maxHp }));
+  updateCrackle(burningShips);
 
   // Foundries (resource accumulation)
   updateFoundries(dt);

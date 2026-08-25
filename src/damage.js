@@ -23,6 +23,7 @@ import { getFocusMultiplier } from './crafting.js';
 import { addSlagDirect } from './foundry.js';
 import { spawnContactGlow, spawnSparks, spawnDestruction } from './effects.js';
 import { getActiveTier } from './prism.js';
+import { playSinkGlug } from './audio.js';
 
 const ENEMY_HIT_HALF_W = 3;
 const ENEMY_HIT_HALF_H = 3;
@@ -137,6 +138,8 @@ export function updateDamage(dt) {
         totalKills++;
         const ex = -worldWidth / 2 + laneWidth * (enemy.lane + 0.5);
         spawnDestruction(ex, enemy.y);
+        // Sinking glug plays after the explosion (200ms delay)
+        setTimeout(playSinkGlug, 200);
         triggerKillEffect(enemy, reward);
         deactivateEnemy(enemy);
       }
