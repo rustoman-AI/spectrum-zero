@@ -52,37 +52,24 @@ canvas { display: block; width: 100%; height: 100%; }
   layer.addEventListener('pointerdown', function() {
     if (started) return;
     started = true;
-    // play() MUST be the absolute first call — Safari gesture token is fragile
+    // Strategy: start muted (always succeeds from gesture), then unmute immediately.
+    // Chrome rejects unmuted play() on low-engagement sites, but allows unmuting
+    // a playing video within the same user activation.
+    video.muted = true;
     var playPromise = video.play();
     tapMsg.style.display = 'none';
     if (playPromise && playPromise.then) {
       playPromise.then(function() {
-        updateDebugInfo('video playing (with audio)');
+        // Unmute now — still within the user activation microtask chain
+        video.muted = false;
+        updateDebugInfo('video playing, unmuted');
       }).catch(function(err) {
-        updateDebugInfo('play() rejected: ' + err.name + ' — trying muted');
-        // Fallback: play muted, show unmute button
-        video.muted = true;
-        var mutePromise = video.play();
-        if (mutePromise && mutePromise.then) {
-          mutePromise.then(function() {
-            updateDebugInfo('video playing (muted fallback)');
-            // Show unmute tap target
-            var unmBtn = document.createElement('div');
-            unmBtn.textContent = '🔊 Tap for sound';
-            unmBtn.style.cssText = 'position:absolute;top:10%;color:#fff;font:bold 14px monospace;background:rgba(0,0,0,0.6);padding:8px 16px;border-radius:4px;cursor:pointer;z-index:100000;';
-            layer.appendChild(unmBtn);
-            unmBtn.addEventListener('pointerdown', function(e) {
-              e.stopPropagation();
-              video.muted = false;
-              unmBtn.remove();
-              updateDebugInfo('unmuted by user');
-            });
-          }).catch(function(err2) {
-            updateDebugInfo('muted play also failed: ' + err2.name);
-            startGame();
-          });
-        }
+        updateDebugInfo('play() failed entirely: ' + err.name);
+        startGame();
       });
+    } else {
+      // Older browser, no promise — just unmute
+      video.muted = false;
     }
     // 12-second failsafe (video is ~10s, transition at 8.3s — this is emergency only)
     setTimeout(function() {
