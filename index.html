@@ -3151,9 +3151,17 @@ let dragType = null;
 let pointerStart = null;     // world coords at pointer down
 let pointerDownOnObject = null;  // what was under pointer at down
 let pointerDownType = null;
+let prevPointerWorld = null;  // previous frame's pointer world coords (for delta)
+let targetAngle = 0;          // smoothed rotation target
 const DRAG_THRESHOLD = 3;
 const HIT_RADIUS = 8;
 const SOCKET_SNAP_RADIUS = 10;
+
+// --- Distance-aware rotation constants ---
+const ROT_K = 1.8;           // tuning constant: controls overall sensitivity
+const ROT_L_MIN = 15;        // minimum beam length (prevents explosive rotation on short beams)
+const ROT_LERP_RATE = 0.20;  // 20% per frame toward target (at 60fps)
+const ROT_MAX_SPEED = 2.5;   // max radians/second angular speed
 // Selection highlight ring
 let highlightMesh = null;
 // Drop-target highlight (shown during drag at nearest socket)
@@ -3249,6 +3257,8 @@ function onPointerMove(e) {
       } else if (selectedObject && selectedType === 'mirror') {
         // Any swipe while a mirror is selected = rotate (including on the mirror itself)
         state = STATE_ROTATE;
+        targetAngle = selectedObject.angle; // start from current angle
+        prevPointerWorld = { x: world.x, y: world.y };
       }
     }
   }
@@ -3266,11 +3276,26 @@ function onPointerMove(e) {
       dropTargetMesh.visible = false;
     }
   } else if (state === STATE_ROTATE && selectedObject && selectedType === 'mirror') {
-    // Rotation: pointer angle relative to mirror centre = mirror angle
-    const mx = FREE_PLACEMENT ? selectedObject.freeX : SOCKET_POSITIONS[selectedObject.socketIndex][0];
-    const my = FREE_PLACEMENT ? selectedObject.freeY : SOCKET_POSITIONS[selectedObject.socketIndex][1];
-    const angle = Math.atan2(world.y - my, world.x - mx);
-    rotateMirror(selectedObject, angle);
+    // Distance-aware rotation: angleDelta = (pointerDelta * K) / max(L, L_MIN)
+    if (prevPointerWorld) {
+      const pdx = world.x - prevPointerWorld.x;
+      const pdy = world.y - prevPointerWorld.y;
+      // Use tangential component of pointer movement (perpendicular to mirror→pointer line)
+      const mx = FREE_PLACEMENT ? selectedObject.freeX : SOCKET_POSITIONS[selectedObject.socketIndex][0];
+      const my = FREE_PLACEMENT ? selectedObject.freeY : SOCKET_POSITIONS[selectedObject.socketIndex][1];
+      const toPointerX = world.x - mx;
+      const toPointerY = world.y - my;
+      const toPointerLen = Math.sqrt(toPointerX * toPointerX + toPointerY * toPointerY);
+      if (toPointerLen > 0.1) {
+        // Tangential component: cross product of (toPointer_normalized, pointerDelta)
+        const tangential = (toPointerX * pdy - toPointerY * pdx) / toPointerLen;
+        // Get reflected beam length from this mirror
+        const L = getReflectedBeamLength(selectedObject);
+        const angleDelta = (tangential * ROT_K) / Math.max(L, ROT_L_MIN);
+        targetAngle += angleDelta;
+      }
+    }
+    prevPointerWorld = { x: world.x, y: world.y };
   }
   updateDebug();
 }
@@ -3299,7 +3324,9 @@ function onPointerUp(e) {
     dropTargetMesh.visible = false;
     state = selectedObject ? STATE_SELECTED : STATE_IDLE;
   } else if (state === STATE_ROTATE) {
-    // Rotation done, stay selected
+    // Rotation done, stay selected. Snap to final target.
+    if (selectedObject) rotateMirror(selectedObject, targetAngle);
+    prevPointerWorld = null;
     state = STATE_SELECTED;
   } else {
     // It was a tap (no drag, no rotate)
@@ -3405,8 +3432,57 @@ function updateDebug() {
   if (iLog.length > 0) debugEl.textContent += '\n--- Insight ---\n' + iLog.slice(-5).map(e => `${e.t} ${e.delta} =${e.total} [${e.reason}]`).join('\n');
 }
 // Called from main loop each frame so overlay stays current when visible
-function tickDebug() {
+function tickDebug(dt) {
+  updateRotationSmoothing(dt);
   updateDebug();
+}
+
+// --- Distance-aware rotation helpers ---
+
+// Get the length of the reflected beam leaving this mirror (longest segment originating from it)
+function getReflectedBeamLength(mirror) {
+  const segments = getSegments();
+  const mx = FREE_PLACEMENT ? mirror.freeX : SOCKET_POSITIONS[mirror.socketIndex][0];
+  const my = FREE_PLACEMENT ? mirror.freeY : SOCKET_POSITIONS[mirror.socketIndex][1];
+  const SNAP_DIST = 5; // how close a segment start must be to count as "from this mirror"
+  let maxLen = 0;
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    const sdx = seg.start.x - mx;
+    const sdy = seg.start.y - my;
+    if (sdx * sdx + sdy * sdy < SNAP_DIST * SNAP_DIST) {
+      const edx = seg.end.x - seg.start.x;
+      const edy = seg.end.y - seg.start.y;
+      const len = Math.sqrt(edx * edx + edy * edy);
+      if (len > maxLen) maxLen = len;
+    }
+  }
+  return maxLen > 0 ? maxLen : 50; // fallback: mid-range if no segment found
+}
+
+// Lerp mirror angle toward targetAngle each frame, clamped by max angular speed
+function updateRotationSmoothing(dt) {
+  if (state !== STATE_ROTATE || !selectedObject || selectedType !== 'mirror') return;
+  if (!dt || dt <= 0) dt = 1 / 60;
+
+  let diff = targetAngle - selectedObject.angle;
+  // Normalize diff to [-PI, PI]
+  while (diff > Math.PI) diff -= 2 * Math.PI;
+  while (diff < -Math.PI) diff += 2 * Math.PI;
+
+  // Frame-rate independent lerp: 1 - (1-rate)^(dt*60)
+  const lerpFactor = 1 - Math.pow(1 - ROT_LERP_RATE, dt * 60);
+  let step = diff * lerpFactor;
+
+  // Clamp angular speed
+  const maxStep = ROT_MAX_SPEED * dt;
+  if (Math.abs(step) > maxStep) {
+    step = Math.sign(step) * maxStep;
+  }
+
+  if (Math.abs(diff) > 0.001) {
+    rotateMirror(selectedObject, selectedObject.angle + step);
+  }
 }
 
 
@@ -3540,7 +3616,7 @@ function loop(now) {
   // HUD + crafting tray
   updateHud();
   updateCraftingTray();
-  tickDebug();
+  tickDebug(dt);
 
   // --- Render ---
   render();

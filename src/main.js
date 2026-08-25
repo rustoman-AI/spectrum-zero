@@ -127,7 +127,7 @@ function loop(now) {
   // HUD + crafting tray
   updateHud();
   updateCraftingTray();
-  tickDebug();
+  tickDebug(dt);
 
   // --- Render ---
   render();
