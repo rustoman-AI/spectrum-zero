@@ -8,6 +8,7 @@ import { getScene, getWorldWidth, getOverlayScene } from './renderer.js';
 import { getResources, canAfford, spend, getFaith, spendFaith, addPriest } from './foundry.js';
 import { markDirty } from './beam.js';
 import { setTier } from './prism.js';
+import { addMirror } from './mirror.js';
 
 let trayMesh = null;
 let trayCanvas = null;
@@ -138,7 +139,7 @@ function attemptPurchase(item) {
   if (Object.keys(resCost).length > 0) spend(resCost);
 
   switch (item.id) {
-    case 'mirror': mirrorsBought++; break;
+    case 'mirror': mirrorsBought++; addMirror(); break;
     case 'prism4': setTier(4); markDirty(); break;
     case 'prism5': setTier(5); markDirty(); break;
     case 'prism6': setTier(6); markDirty(); break;

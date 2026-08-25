@@ -108,6 +108,34 @@ function createMirror(socketIndex) {
   };
 }
 
+// Add a new mirror at purchase — placed in the centre of mirror field, horizontal (angle=0)
+export function addMirror() {
+  const ww = getWorldWidth();
+  // Find a free socket, or place freely in the mirror field
+  let socketIdx = -1;
+  for (let i = 0; i < sockets.length; i++) {
+    if (sockets[i].type === null) { socketIdx = i; break; }
+  }
+  if (socketIdx < 0) socketIdx = 0; // fallback
+
+  const mirror = createMirror(socketIdx);
+  mirror.angle = 0; // horizontal — immediately useful (reflects beams upward)
+
+  if (FREE_PLACEMENT) {
+    // Place in the middle of the mirror field, slightly offset so it doesn't overlap existing
+    const offsetX = (Math.random() - 0.5) * 10;
+    mirror.freeX = offsetX;
+    mirror.freeY = (MIRROR_FIELD_TOP + MIRROR_FIELD_BOT) / 2;
+  }
+
+  updateMirrorGeometry(mirror);
+  mirrors.push(mirror);
+  sockets[socketIdx].type = 'mirror';
+  sockets[socketIdx].objectRef = mirror;
+  markDirty();
+  return mirror;
+}
+
 function drawMirrorSprite(ctx, sz) {
   const cx = sz / 2;
   const cy = sz / 2;
