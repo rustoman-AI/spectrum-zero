@@ -14,6 +14,7 @@ import { updateSpawner, resetSpawner } from './enemy-spawner.js';
 import { updateDamage } from './damage.js';
 import { initSession, updateSession, addBreaches, isGameOver, getElapsed, updateHud, handleRestartTap, decayWallFlash, getWallHitFlash } from './session.js';
 import { initFoundries, updateFoundries, getFoundryColliders, getAltarAudioState } from './foundry.js';
+import { initFortress, updateFortress, triggerBreachShake } from './fortress.js';
 import { initCrafting, updateCraftingTray } from './crafting.js';
 import { initBackground, updateBackground } from './background.js';
 import { initEffects, updateEffects } from './effects.js';
@@ -31,6 +32,7 @@ export function init() {
   console.log('[Solar Siege] init starting');
   initRenderer();
   initBackground();
+  initFortress();
   initSockets();
   initMirrors();
   updateAllMirrorGeometries();
@@ -102,6 +104,7 @@ function loop(now) {
   const newBreaches = updateEnemies(dt);
   if (newBreaches > 0) {
     addBreaches(newBreaches);
+    triggerBreachShake(newBreaches);
     playWallHit();
   }
 
@@ -111,6 +114,9 @@ function loop(now) {
   // Effects (glows, sparks, debris)
   updateEffects(dt);
   decayWallFlash(dt);
+
+  // Fortress visual update (damage stages, shake, dust)
+  updateFortress(dt);
 
   // Audio updates
   const activeEnemyCount = getEnemyPool().filter(e => e.active && e.bandsHitting > 0).length;

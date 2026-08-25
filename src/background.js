@@ -74,18 +74,18 @@ export function initBackground() {
   seaMesh.position.set(0, seaBot + seaH_world / 2, -10);
   scene.add(seaMesh);
 
-  // --- 3. Shoreline foam (thin bright band at sea/ground boundary) ---
-  const foamH = 1.5;
+  // --- 3. Shoreline foam (thin band at sea/ground boundary) ---
+  const foamH = 1.2;
   const foamGeo = new THREE.PlaneGeometry(ww + 4, foamH);
-  const foamMat = new THREE.MeshBasicMaterial({ color: 0x2a5060, transparent: true, opacity: 0.7, depthWrite: false });
+  const foamMat = new THREE.MeshBasicMaterial({ color: 0x1a3a48, transparent: true, opacity: 0.7, depthWrite: false });
   const foamMesh = new THREE.Mesh(foamGeo, foamMat);
   foamMesh.position.set(0, WALL_Y + foamH / 2, -9.8);
   scene.add(foamMesh);
 
-  // Thin white foam edge
-  const edgeH = 0.4;
+  // Thin foam edge
+  const edgeH = 0.3;
   const edgeGeo = new THREE.PlaneGeometry(ww + 4, edgeH);
-  const edgeMat = new THREE.MeshBasicMaterial({ color: 0x3a6878, transparent: true, opacity: 0.5, depthWrite: false });
+  const edgeMat = new THREE.MeshBasicMaterial({ color: 0x234858, transparent: true, opacity: 0.4, depthWrite: false });
   const edgeMesh = new THREE.Mesh(edgeGeo, edgeMat);
   edgeMesh.position.set(0, WALL_Y + edgeH / 2, -9.7);
   scene.add(edgeMesh);
@@ -123,10 +123,10 @@ export function updateBackground(dt) {
 function drawSeaBase(ctx, w, h) {
   // Vertical gradient: dark at top (#12303F), lighter toward shore (#1A4257)
   const grad = ctx.createLinearGradient(0, 0, 0, h);
-  grad.addColorStop(0, '#0e2530');  // darkest at top (deep sea, horizon)
+  grad.addColorStop(0, '#0c1e2a');  // darkest at top (deep sea, horizon)
   grad.addColorStop(0.4, '#12303F');
-  grad.addColorStop(0.8, '#1A4257');
-  grad.addColorStop(1.0, '#1e4a60'); // lightest at bottom (approaching shore)
+  grad.addColorStop(0.85, '#1A4257');
+  grad.addColorStop(1.0, '#1a4257'); // stays at limit, no brighter
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, w, h);
 }
@@ -140,8 +140,8 @@ function drawWaveCrests(ctx, w, h, offset) {
   for (let i = 0; i < NUM_CRESTS; i++) {
     const baseY = ((i * spacing + offset) % h);
     // Varying opacity per crest (some subtle, some slightly brighter)
-    const alpha = 0.08 + 0.04 * Math.sin(i * 1.7);
-    ctx.strokeStyle = `rgba(80, 140, 170, ${alpha})`;
+    const alpha = 0.06 + 0.03 * Math.sin(i * 1.7);
+    ctx.strokeStyle = `rgba(50, 100, 130, ${alpha})`;
     ctx.lineWidth = 1.2;
     ctx.beginPath();
     for (let x = 0; x < w; x++) {
