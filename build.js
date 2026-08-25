@@ -125,34 +125,18 @@ canvas { display: block; width: 100%; height: 100%; }
       // Older browser, no promise — just unmute
       video.muted = false;
     }
-    // 12-second failsafe (video is ~10s, transition at 8.3s — this is emergency only)
+    // 14-second failsafe (intro is 10.6s — this is emergency only)
     setTimeout(function() {
       if (!gameStarted) {
-        updateDebugInfo('FAILSAFE 12s');
+        updateDebugInfo('FAILSAFE 14s');
         startGame();
       }
-    }, 12000);
+    }, 14000);
   });
 
   video.addEventListener('ended', startGame);
-  // Transition: video fades to black from ~4.5s, cut to game at 8.0s.
-  var transitioned = false;
-  var FADE_START = 7.5;
-  var FADE_GAME  = 8.0;
-  video.addEventListener('timeupdate', function() {
-    if (transitioned || !started) return;
-    var t = video.currentTime;
-    if (t >= FADE_START) {
-      // Darken overlay (video is already fading to black)
-      layer.style.transition = 'background 0.5s';
-      layer.style.background = '#000';
-    }
-    if (t >= FADE_GAME) {
-      transitioned = true;
-      video.pause();
-      startGame();
-    }
-  });
+  // Narration runs to ~10.5s (file is 10.6s). Let video play to end naturally.
+  // No early timeupdate transition — the 'ended' event above handles handoff.
   video.addEventListener('error', function() {
     updateDebugInfo('video error');
     startGame();
@@ -274,8 +258,6 @@ canvas { display: block; width: 100%; height: 100%; }
   var winVideo = document.getElementById('win-video');
   var winActive = false;
   var winDone = false;
-  var WIN_FLASH_START = 7.5;
-  var WIN_FLASH_GAME  = 8.0;
 
   // Preload: start fetching a few seconds into gameplay
   setTimeout(function() {
@@ -316,19 +298,8 @@ canvas { display: block; width: 100%; height: 100%; }
       winVideo.muted = false;
     }
 
-    // White bloom transition at end
-    winVideo.addEventListener('timeupdate', function onTime() {
-      if (winDone) { winVideo.removeEventListener('timeupdate', onTime); return; }
-      var t = winVideo.currentTime;
-      if (t >= WIN_FLASH_START) {
-        winLayer.style.transition = 'background 0.5s';
-        winLayer.style.background = '#fff';
-      }
-      if (t >= WIN_FLASH_GAME) {
-        winVideo.removeEventListener('timeupdate', onTime);
-        finish();
-      }
-    });
+    // Narration runs to ~8.0s (file is 8.3s). Let video play to end.
+    // 'ended' event below handles handoff.
 
     // Fallbacks
     winVideo.addEventListener('ended', finish);
