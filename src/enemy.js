@@ -221,6 +221,7 @@ export function spawnEnemy(type, lane, hpMultiplier, yOffset) {
       e.armour = template.armour;
       e.shieldAngle = template.shieldAngle || 0;
       e.shieldBlocking = false;
+      e.stunTimer = 0;
       e.lane = lane;
       e.y = SHIP_SPAWN_Y + (yOffset || 0);
       e.speed = template.speed;
@@ -247,7 +248,12 @@ export function updateEnemies(dt) {
     const e = pool[i];
     if (!e.active) continue;
     e.slowed = false;
-    e.y -= e.speed * dt; // descend
+    // Zeus stun: skip movement while stunned
+    if (e.stunTimer && e.stunTimer > 0) {
+      e.stunTimer -= dt;
+    } else {
+      e.y -= e.speed * dt; // descend
+    }
     if (e.y <= WALL_Y) {
       // Breach: ship reached the wall
       const dmg = BREACH_DAMAGE[e.type] || 10;

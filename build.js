@@ -16,6 +16,7 @@ const SOURCE_FILES = [
   'src/renderer.js',
   'src/background.js',
   'src/fortress.js',
+  'src/zeus.js',
   'src/beam.js',
   'src/beam-render.js',
   'src/mirror.js',

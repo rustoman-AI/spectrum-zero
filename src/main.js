@@ -2,7 +2,7 @@
 // src/main.js — Entry point: init scene, start game loop
 // ============================================================
 
-import { APERTURE_Y, DEV, SUN_Y } from './config.js';
+import { APERTURE_Y, DEV, SUN_Y, GOD_ABILITIES } from './config.js';
 import { initRenderer, render, getWorldWidth, getRenderer } from './renderer.js';
 import { initBeamRenderer, rebuildBeams, updateBeamPulse } from './beam-render.js';
 import { solve, isDirty, getSegments, markDirty } from './beam.js';
@@ -13,12 +13,13 @@ import { initEnemies, updateEnemies, applySlowStates, getEnemyPool } from './ene
 import { updateSpawner, resetSpawner } from './enemy-spawner.js';
 import { updateDamage } from './damage.js';
 import { initSession, updateSession, addBreaches, isGameOver, getElapsed, updateHud, handleRestartTap, decayWallFlash, getWallHitFlash } from './session.js';
-import { initFoundries, updateFoundries, getFoundryColliders, getAltarAudioState } from './foundry.js';
+import { initFoundries, updateFoundries, getFoundryColliders, getAltarAudioState, getFaith } from './foundry.js';
 import { initFortress, updateFortress, triggerBreachShake } from './fortress.js';
 import { initCrafting, updateCraftingTray } from './crafting.js';
 import { initBackground, updateBackground } from './background.js';
 import { initEffects, updateEffects } from './effects.js';
 import { initAudio, updateHum, updateBurnHiss, updateAltarTone, updateCrackle, playWallHit, playSinkGlug, resetAudio } from './audio.js';
+import { initZeus, updateZeus, getZeusFlash, getZeusShake, isZeusReady } from './zeus.js';
 
 // --- Source state ---
 let sourceX = 0;
@@ -33,6 +34,7 @@ export function init() {
   initRenderer();
   initBackground();
   initFortress();
+  initZeus();
   initSockets();
   initMirrors();
   updateAllMirrorGeometries();
@@ -135,6 +137,9 @@ function loop(now) {
   // Altar audio (tone + overheat pitch drop)
   const altarAudio = getAltarAudioState();
   updateAltarTone(altarAudio.litCount, altarAudio.anyOverheated);
+
+  // Zeus ultimate (ready state + strike animation)
+  updateZeus(dt, getFaith(), GOD_ABILITIES.zeus.faith);
 
   // HUD + crafting tray
   updateHud();

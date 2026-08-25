@@ -9,6 +9,7 @@ import { getResources, canAfford, spend, getFaith, spendFaith, addPriest } from 
 import { markDirty } from './beam.js';
 import { setTier } from './prism.js';
 import { addMirror } from './mirror.js';
+import { triggerZeusStrike, isZeusReady } from './zeus.js';
 
 let trayMesh = null;
 let trayCanvas = null;
@@ -83,23 +84,37 @@ export function updateCraftingTray() {
     if (pulseTimes[i] > 0) pulseTimes[i] -= 0.016; // approx 1 frame
 
     const pulsing = pulseTimes[i] > 0;
-    const bgColour = affordable ? (pulsing ? 'rgba(130,130,200,1)' : 'rgba(70,70,120,0.9)') : 'rgba(40,40,50,0.6)';
-    const borderCol = affordable ? (pulsing ? '#ffffff' : '#9999cc') : 'rgba(60,60,80,0.4)';
+
+    // Zeus button: extra-loud pulsing when ready
+    const isZeusBtn = item.id === 'zeus';
+    const zeusGlow = isZeusBtn && isZeusReady();
+    const zeusPhase = zeusGlow ? (Math.sin(Date.now() * 0.008) * 0.5 + 0.5) : 0;
+
+    let bgColour, borderCol;
+    if (zeusGlow) {
+      // Zeus ready: bright gold pulsing
+      const glow = 0.6 + zeusPhase * 0.4;
+      bgColour = `rgba(${Math.floor(180*glow)},${Math.floor(140*glow)},${Math.floor(40*glow)},1)`;
+      borderCol = '#FFDD44';
+    } else {
+      bgColour = affordable ? (pulsing ? 'rgba(130,130,200,1)' : 'rgba(70,70,120,0.9)') : 'rgba(40,40,50,0.6)';
+      borderCol = affordable ? (pulsing ? '#ffffff' : '#9999cc') : 'rgba(60,60,80,0.4)';
+    }
 
     trayCtx.fillStyle = bgColour;
     trayCtx.fillRect(x + 1, 1, btnW - 2, 38);
     // Border
     trayCtx.strokeStyle = borderCol;
-    trayCtx.lineWidth = pulsing ? 2.5 : (affordable ? 1.5 : 0.5);
+    trayCtx.lineWidth = zeusGlow ? 3 : (pulsing ? 2.5 : (affordable ? 1.5 : 0.5));
     trayCtx.strokeRect(x + 1, 1, btnW - 2, 38);
 
-    trayCtx.fillStyle = affordable ? '#ffffff' : '#777777';
+    trayCtx.fillStyle = (affordable || zeusGlow) ? '#ffffff' : '#777777';
     trayCtx.font = 'bold 9px monospace';
     trayCtx.textAlign = 'center';
     trayCtx.fillText(item.label, x + btnW / 2, 14);
 
     trayCtx.font = '7px monospace';
-    trayCtx.fillStyle = affordable ? '#cccccc' : '#555555';
+    trayCtx.fillStyle = (affordable || zeusGlow) ? '#cccccc' : '#555555';
     trayCtx.fillText(costStr(cost), x + btnW / 2, 28);
   }
   trayTexture.needsUpdate = true;
@@ -150,8 +165,9 @@ function attemptPurchase(item) {
 }
 
 function triggerGodAbility(god) {
-  // TODO: implement god ability effects
-  console.log('[God] ' + god + ' activated!');
+  if (god === 'zeus') {
+    triggerZeusStrike();
+  }
 }
 
 function canAffordCombined(cost, res, faith) {
