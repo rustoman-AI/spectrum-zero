@@ -150,7 +150,12 @@ function triggerWin() {
   gameOver = true;
   gameWon = true;
   onEndState();
-  showOverlay(MSG_WIN);
+  // Play win cinematic, then show overlay
+  if (typeof window !== 'undefined' && window.playWinCinematic) {
+    window.playWinCinematic(function() { showOverlay(MSG_WIN); });
+  } else {
+    showOverlay(MSG_WIN);
+  }
 }
 
 function triggerLose() {

@@ -12,13 +12,17 @@ canvas { display: block; width: 100%; height: 100%; }
 </head>
 <body>
 <div id="intro-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:99999;background:#000;display:flex;align-items:center;justify-content:center;">
-  <video id="intro-video" src="./assets/archimed_intro.mp4?v=3" poster="./assets/intro_poster.jpg?v=3"
+  <video id="intro-video" src="./assets/fixed_intro.mp4?v=4" poster="./assets/intro_poster.jpg?v=4"
          playsinline webkit-playsinline preload="auto"
          style="max-width:100%;max-height:100%;object-fit:contain;"></video>
   <div id="intro-tap" style="position:absolute;bottom:15%;color:#fff;font:bold 16px monospace;opacity:0.8;pointer-events:none;">Tap to begin</div>
 </div>
 <div id="defeat-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:99998;background:#000;display:none;align-items:center;justify-content:center;">
   <video id="defeat-video" playsinline webkit-playsinline preload="none"
+         style="max-width:100%;max-height:100%;object-fit:contain;"></video>
+</div>
+<div id="win-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:99998;background:#000;display:none;align-items:center;justify-content:center;">
+  <video id="win-video" playsinline webkit-playsinline preload="none"
          style="max-width:100%;max-height:100%;object-fit:contain;"></video>
 </div>
 <script src="./vendor/three.min.js"></script>
@@ -81,20 +85,19 @@ canvas { display: block; width: 100%; height: 100%; }
   });
 
   video.addEventListener('ended', startGame);
-  // White-flash transition: video has a flash at ~8.0s then fades to black.
-  // Start game at the peak so the player never sees dead black frames.
+  // Transition: video fades to black from ~4.5s, cut to game at 8.0s.
   var transitioned = false;
-  var FLASH_START = 8.0;
-  var FLASH_GAME  = 8.3;  // start game while screen is still white
+  var FADE_START = 7.5;
+  var FADE_GAME  = 8.0;
   video.addEventListener('timeupdate', function() {
     if (transitioned || !started) return;
     var t = video.currentTime;
-    if (t >= FLASH_START) {
-      // Fade intro layer to white
-      layer.style.transition = 'background 0.3s';
-      layer.style.background = '#fff';
+    if (t >= FADE_START) {
+      // Darken overlay (video is already fading to black)
+      layer.style.transition = 'background 0.5s';
+      layer.style.background = '#000';
     }
-    if (t >= FLASH_GAME) {
+    if (t >= FADE_GAME) {
       transitioned = true;
       video.pause();
       startGame();
@@ -211,6 +214,84 @@ canvas { display: block; width: 100%; height: 100%; }
 
     // Failsafe: 12s max
     setTimeout(function() { if (!defeatDone) finish(); }, 12000);
+  };
+})();
+
+// --- Win video layer ---
+// Plays on every win. Skippable. Falls back to victory screen on any failure.
+(function() {
+  var winLayer = document.getElementById('win-layer');
+  var winVideo = document.getElementById('win-video');
+  var winActive = false;
+  var winDone = false;
+  var WIN_FLASH_START = 7.5;
+  var WIN_FLASH_GAME  = 8.0;
+
+  // Preload: start fetching a few seconds into gameplay
+  setTimeout(function() {
+    winVideo.src = './assets/archimed_win.mp4?v=4';
+    winVideo.load();
+  }, 8000);
+
+  // Exposed globally so session.js triggerWin can call it
+  window.playWinCinematic = function(onDone) {
+    if (winActive) { onDone(); return; }
+    winActive = true;
+    winDone = false;
+
+    var finish = function() {
+      if (winDone) return;
+      winDone = true;
+      winVideo.pause();
+      winLayer.style.display = 'none';
+      winActive = false;
+      onDone();
+    };
+
+    // If video not ready, skip straight to victory screen
+    if (!winVideo.src || winVideo.readyState < 2) {
+      finish();
+      return;
+    }
+
+    // Show layer and play
+    winLayer.style.display = 'flex';
+    winLayer.style.background = '#000';
+    winVideo.muted = true;
+    var playPromise = winVideo.play();
+    if (playPromise && playPromise.then) {
+      playPromise.then(function() { winVideo.muted = false; })
+        .catch(function() { finish(); });
+    } else {
+      winVideo.muted = false;
+    }
+
+    // White bloom transition at end
+    winVideo.addEventListener('timeupdate', function onTime() {
+      if (winDone) { winVideo.removeEventListener('timeupdate', onTime); return; }
+      var t = winVideo.currentTime;
+      if (t >= WIN_FLASH_START) {
+        winLayer.style.transition = 'background 0.5s';
+        winLayer.style.background = '#fff';
+      }
+      if (t >= WIN_FLASH_GAME) {
+        winVideo.removeEventListener('timeupdate', onTime);
+        finish();
+      }
+    });
+
+    // Fallbacks
+    winVideo.addEventListener('ended', finish);
+    winVideo.addEventListener('error', finish);
+
+    // Skip on tap
+    winLayer.addEventListener('pointerdown', function skipTap() {
+      winLayer.removeEventListener('pointerdown', skipTap);
+      finish();
+    });
+
+    // Failsafe: 12s max
+    setTimeout(function() { if (!winDone) finish(); }, 12000);
   };
 })();
 
@@ -4061,7 +4142,12 @@ function triggerWin() {
   gameOver = true;
   gameWon = true;
   onEndState();
-  showOverlay(MSG_WIN);
+  // Play win cinematic, then show overlay
+  if (typeof window !== 'undefined' && window.playWinCinematic) {
+    window.playWinCinematic(function() { showOverlay(MSG_WIN); });
+  } else {
+    showOverlay(MSG_WIN);
+  }
 }
 
 function triggerLose() {
