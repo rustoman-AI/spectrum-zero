@@ -265,6 +265,7 @@ const ENEMY_TYPES = {
   skiff:       { hp: 30,   armour: 0, speed: 5,   reward: { brass: 10 } },
   trireme:     { hp: 100,  armour: 0, speed: 3.5, reward: { brass: 20, bronze: 5 } },
   quadrireme:  { hp: 200,  armour: 2, speed: 2.5, reward: { bronze: 15, silver: 3 } },
+  shieldbearer:{ hp: 400,  armour: 1, speed: 2.0, reward: { bronze: 20, silver: 8 }, shieldAngle: 25 },
   flagship:    { hp: 1500, armour: 4, speed: 1.0, reward: { gold: 20 } },
 };
 
@@ -322,7 +323,7 @@ const HEAT_DECAY_RATE = 0.15;
 
 // --- Wall ---
 const WALL_MAX_HP = 100;
-const BREACH_DAMAGE = { skiff: 5, trireme: 15, quadrireme: 25, flagship: 100 };
+const BREACH_DAMAGE = { skiff: 5, trireme: 15, quadrireme: 25, shieldbearer: 20, flagship: 100 };
 
 // --- Mirror ---
 const MIRROR_MAX_HITS = 3;
@@ -1540,6 +1541,16 @@ function initEnemies() {
     barFill.scale.x = 0;
     mesh.add(barFill);
 
+    // Shield plate (visible only on shield-bearer type)
+    const shieldPlate = new THREE.Mesh(
+      new THREE.PlaneGeometry(4.5, 1.2),
+      new THREE.MeshBasicMaterial({ color: 0xCC8844, transparent: true, opacity: 0.9 })
+    );
+    shieldPlate.position.y = 2.8;
+    shieldPlate.position.z = 0.06;
+    shieldPlate.visible = false;
+    mesh.add(shieldPlate);
+
     enemyGroup.add(mesh);
     pool.push({
       active: false, type: 'skiff',
@@ -1548,7 +1559,7 @@ function initEnemies() {
       speed: 0, baseSpeed: 0,
       burn: 0, slowed: false,
       bandsHitting: 0, lastHitColour: 0,
-      mesh, barFill, hullMat: mat
+      mesh, barFill, shieldPlate, hullMat: mat
     });
   }
 }
@@ -1566,6 +1577,8 @@ function spawnEnemy(type, lane, hpMultiplier) {
       e.maxHp = template.hp * hpMultiplier;
       e.hp = e.maxHp;
       e.armour = template.armour;
+      e.shieldAngle = template.shieldAngle || 0;
+      e.shieldBlocking = false;
       e.lane = lane;
       e.y = SHIP_SPAWN_Y;
       e.speed = template.speed;
@@ -1660,9 +1673,11 @@ function updateEnemyVisual(e) {
     const brightness = 0.35 + 0.15 * (1 - e.burn);
     e.hullMat.color.setRGB(brightness, brightness*0.8, brightness*0.8);
   }
-  const sizes = { skiff: 2.5, trireme: 3.5, quadrireme: 4.5, flagship: 8 };
+  const sizes = { skiff: 2.5, trireme: 3.5, quadrireme: 4.5, shieldbearer: 4.0, flagship: 8 };
   const s = sizes[e.type] || 3;
   e.mesh.scale.set(s/3, s/3, 1);
+  // Shield plate visibility
+  if (e.shieldPlate) e.shieldPlate.visible = (e.type === 'shieldbearer');
 }
 
 
@@ -1685,6 +1700,8 @@ let spawnTimer = 0;
 let spawnerElapsed = 0;
 let totalSpawns = 0;
 let flagshipSpawned = false;
+let shieldBearerTimer = 0;
+let firstShieldSpawned = false;
 
 function getSpawnCount() { return totalSpawns; }
 function getCurrentInterval() { return getInterval(); }
@@ -1697,6 +1714,27 @@ function updateSpawner(dt, sessionTime) {
     totalSpawns++;
     spawnTimer = getInterval();
   }
+
+  // Shield-bearer spawning (separate timer)
+  // First at 30s alone in centre, then every 20s from 60s
+  if (!firstShieldSpawned && spawnerElapsed >= 30) {
+    firstShieldSpawned = true;
+    spawnEnemy('shieldbearer', 2, 1.0); // centre lane, no escalation on first
+    shieldBearerTimer = 20;
+  } else if (firstShieldSpawned && spawnerElapsed >= 60) {
+    shieldBearerTimer -= dt;
+    if (shieldBearerTimer <= 0) {
+      shieldBearerTimer = 20;
+      const hpMult = 1 + (spawnerElapsed / SESSION_DURATION) * ESCALATION_HP_FACTOR;
+      // Phase 2: centre only. Phase 3+: also flanks
+      if (spawnerElapsed >= PHASE_2_END) {
+        const flankLane = Math.random() < 0.5 ? 0 : 4;
+        spawnEnemy('shieldbearer', flankLane, hpMult);
+      } else {
+        spawnEnemy('shieldbearer', 2, hpMult);
+      }
+    }
+  }
 }
 
 function resetSpawner() {
@@ -1704,6 +1742,8 @@ function resetSpawner() {
   spawnerElapsed = 0;
   totalSpawns = 0;
   flagshipSpawned = false;
+  shieldBearerTimer = 0;
+  firstShieldSpawned = false;
 }
 
 function getInterval() {
@@ -2635,6 +2675,7 @@ function updateDamage(dt) {
   for (let i = 0; i < pool.length; i++) {
     const enemy = pool[i];
     if (!enemy.active) continue;
+    enemy.shieldBlocking = false;
 
     // Enemy world position
     const ex = -worldWidth / 2 + laneWidth * (enemy.lane + 0.5);
@@ -2653,6 +2694,25 @@ function updateDamage(dt) {
       // Pre-split beam (raw sun column) does no damage
       if (seg.preSplit) continue;
       if (segmentIntersectsBox(seg, ex, ey, ENEMY_HIT_HALF_W, ENEMY_HIT_HALF_H)) {
+        // Shield-bearer check: block beams within shieldAngle degrees of vertical
+        if (enemy.shieldAngle > 0) {
+          const dx = seg.end.x - seg.start.x;
+          const dy = seg.end.y - seg.start.y;
+          const len = Math.sqrt(dx * dx + dy * dy);
+          if (len > 0.01) {
+            // Angle from vertical: atan2(|horizontal|, |vertical|)
+            const angleFromVert = Math.atan2(Math.abs(dx / len), Math.abs(dy / len)) * (180 / Math.PI);
+            if (angleFromVert <= enemy.shieldAngle) {
+              // Blocked — spawn deflection spark
+              if (Math.random() < dt * 8) {
+                spawnContactGlow(ex, ey + ENEMY_HIT_HALF_H, 0xccaa44, 5);
+                spawnSparks(ex, ey + ENEMY_HIT_HALF_H, 0xffcc66, 1);
+              }
+              enemy.shieldBlocking = true;
+              continue; // this segment does no damage
+            }
+          }
+        }
         totalBeamsHitting++;
         hitColour = seg.colour;
         if (seg.colour === COLOUR_GOLD) goldHitting = true;

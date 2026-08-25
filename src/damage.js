@@ -40,6 +40,7 @@ export function updateDamage(dt) {
   for (let i = 0; i < pool.length; i++) {
     const enemy = pool[i];
     if (!enemy.active) continue;
+    enemy.shieldBlocking = false;
 
     // Enemy world position
     const ex = -worldWidth / 2 + laneWidth * (enemy.lane + 0.5);
@@ -58,6 +59,25 @@ export function updateDamage(dt) {
       // Pre-split beam (raw sun column) does no damage
       if (seg.preSplit) continue;
       if (segmentIntersectsBox(seg, ex, ey, ENEMY_HIT_HALF_W, ENEMY_HIT_HALF_H)) {
+        // Shield-bearer check: block beams within shieldAngle degrees of vertical
+        if (enemy.shieldAngle > 0) {
+          const dx = seg.end.x - seg.start.x;
+          const dy = seg.end.y - seg.start.y;
+          const len = Math.sqrt(dx * dx + dy * dy);
+          if (len > 0.01) {
+            // Angle from vertical: atan2(|horizontal|, |vertical|)
+            const angleFromVert = Math.atan2(Math.abs(dx / len), Math.abs(dy / len)) * (180 / Math.PI);
+            if (angleFromVert <= enemy.shieldAngle) {
+              // Blocked — spawn deflection spark
+              if (Math.random() < dt * 8) {
+                spawnContactGlow(ex, ey + ENEMY_HIT_HALF_H, 0xccaa44, 5);
+                spawnSparks(ex, ey + ENEMY_HIT_HALF_H, 0xffcc66, 1);
+              }
+              enemy.shieldBlocking = true;
+              continue; // this segment does no damage
+            }
+          }
+        }
         totalBeamsHitting++;
         hitColour = seg.colour;
         if (seg.colour === COLOUR_GOLD) goldHitting = true;

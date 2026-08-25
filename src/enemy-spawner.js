@@ -19,6 +19,8 @@ let spawnTimer = 0;
 let spawnerElapsed = 0;
 let totalSpawns = 0;
 let flagshipSpawned = false;
+let shieldBearerTimer = 0;
+let firstShieldSpawned = false;
 
 export function getSpawnCount() { return totalSpawns; }
 export function getCurrentInterval() { return getInterval(); }
@@ -31,6 +33,27 @@ export function updateSpawner(dt, sessionTime) {
     totalSpawns++;
     spawnTimer = getInterval();
   }
+
+  // Shield-bearer spawning (separate timer)
+  // First at 30s alone in centre, then every 20s from 60s
+  if (!firstShieldSpawned && spawnerElapsed >= 30) {
+    firstShieldSpawned = true;
+    spawnEnemy('shieldbearer', 2, 1.0); // centre lane, no escalation on first
+    shieldBearerTimer = 20;
+  } else if (firstShieldSpawned && spawnerElapsed >= 60) {
+    shieldBearerTimer -= dt;
+    if (shieldBearerTimer <= 0) {
+      shieldBearerTimer = 20;
+      const hpMult = 1 + (spawnerElapsed / SESSION_DURATION) * ESCALATION_HP_FACTOR;
+      // Phase 2: centre only. Phase 3+: also flanks
+      if (spawnerElapsed >= PHASE_2_END) {
+        const flankLane = Math.random() < 0.5 ? 0 : 4;
+        spawnEnemy('shieldbearer', flankLane, hpMult);
+      } else {
+        spawnEnemy('shieldbearer', 2, hpMult);
+      }
+    }
+  }
 }
 
 export function resetSpawner() {
@@ -38,6 +61,8 @@ export function resetSpawner() {
   spawnerElapsed = 0;
   totalSpawns = 0;
   flagshipSpawned = false;
+  shieldBearerTimer = 0;
+  firstShieldSpawned = false;
 }
 
 function getInterval() {

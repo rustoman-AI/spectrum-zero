@@ -48,6 +48,7 @@ export const ENEMY_TYPES = {
   skiff:       { hp: 30,   armour: 0, speed: 5,   reward: { brass: 10 } },
   trireme:     { hp: 100,  armour: 0, speed: 3.5, reward: { brass: 20, bronze: 5 } },
   quadrireme:  { hp: 200,  armour: 2, speed: 2.5, reward: { bronze: 15, silver: 3 } },
+  shieldbearer:{ hp: 400,  armour: 1, speed: 2.0, reward: { bronze: 20, silver: 8 }, shieldAngle: 25 },
   flagship:    { hp: 1500, armour: 4, speed: 1.0, reward: { gold: 20 } },
 };
 
@@ -105,7 +106,7 @@ export const HEAT_DECAY_RATE = 0.15;
 
 // --- Wall ---
 export const WALL_MAX_HP = 100;
-export const BREACH_DAMAGE = { skiff: 5, trireme: 15, quadrireme: 25, flagship: 100 };
+export const BREACH_DAMAGE = { skiff: 5, trireme: 15, quadrireme: 25, shieldbearer: 20, flagship: 100 };
 
 // --- Mirror ---
 export const MIRROR_MAX_HITS = 3;

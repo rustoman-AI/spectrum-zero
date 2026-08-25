@@ -77,6 +77,16 @@ export function initEnemies() {
     barFill.scale.x = 0;
     mesh.add(barFill);
 
+    // Shield plate (visible only on shield-bearer type)
+    const shieldPlate = new THREE.Mesh(
+      new THREE.PlaneGeometry(4.5, 1.2),
+      new THREE.MeshBasicMaterial({ color: 0xCC8844, transparent: true, opacity: 0.9 })
+    );
+    shieldPlate.position.y = 2.8;
+    shieldPlate.position.z = 0.06;
+    shieldPlate.visible = false;
+    mesh.add(shieldPlate);
+
     enemyGroup.add(mesh);
     pool.push({
       active: false, type: 'skiff',
@@ -85,7 +95,7 @@ export function initEnemies() {
       speed: 0, baseSpeed: 0,
       burn: 0, slowed: false,
       bandsHitting: 0, lastHitColour: 0,
-      mesh, barFill, hullMat: mat
+      mesh, barFill, shieldPlate, hullMat: mat
     });
   }
 }
@@ -103,6 +113,8 @@ export function spawnEnemy(type, lane, hpMultiplier) {
       e.maxHp = template.hp * hpMultiplier;
       e.hp = e.maxHp;
       e.armour = template.armour;
+      e.shieldAngle = template.shieldAngle || 0;
+      e.shieldBlocking = false;
       e.lane = lane;
       e.y = SHIP_SPAWN_Y;
       e.speed = template.speed;
@@ -197,7 +209,9 @@ function updateEnemyVisual(e) {
     const brightness = 0.35 + 0.15 * (1 - e.burn);
     e.hullMat.color.setRGB(brightness, brightness*0.8, brightness*0.8);
   }
-  const sizes = { skiff: 2.5, trireme: 3.5, quadrireme: 4.5, flagship: 8 };
+  const sizes = { skiff: 2.5, trireme: 3.5, quadrireme: 4.5, shieldbearer: 4.0, flagship: 8 };
   const s = sizes[e.type] || 3;
   e.mesh.scale.set(s/3, s/3, 1);
+  // Shield plate visibility
+  if (e.shieldPlate) e.shieldPlate.visible = (e.type === 'shieldbearer');
 }
