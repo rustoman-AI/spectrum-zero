@@ -102,7 +102,7 @@ export function initEnemies() {
 
 export function getEnemyPool() { return pool; }
 
-export function spawnEnemy(type, lane, hpMultiplier) {
+export function spawnEnemy(type, lane, hpMultiplier, yOffset) {
   const template = ENEMY_TYPES[type];
   if (!template) return null;
   for (let i = 0; i < pool.length; i++) {
@@ -116,7 +116,7 @@ export function spawnEnemy(type, lane, hpMultiplier) {
       e.shieldAngle = template.shieldAngle || 0;
       e.shieldBlocking = false;
       e.lane = lane;
-      e.y = SHIP_SPAWN_Y;
+      e.y = SHIP_SPAWN_Y + (yOffset || 0);
       e.speed = template.speed;
       e.baseSpeed = template.speed;
       e.burn = 0;
