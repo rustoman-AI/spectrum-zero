@@ -13,7 +13,7 @@ import { initEnemies, updateEnemies, applySlowStates, getEnemyPool } from './ene
 import { updateSpawner, resetSpawner } from './enemy-spawner.js';
 import { updateDamage } from './damage.js';
 import { initSession, updateSession, addBreaches, isGameOver, getElapsed, updateHud, handleRestartTap, decayWallFlash, getWallHitFlash } from './session.js';
-import { initFoundries, updateFoundries, getFoundryColliders } from './foundry.js';
+import { initFoundries, updateFoundries, getFoundryColliders, getAltarAudioState } from './foundry.js';
 import { initCrafting, updateCraftingTray } from './crafting.js';
 import { initBackground, updateBackground } from './background.js';
 import { initEffects, updateEffects } from './effects.js';
@@ -119,6 +119,10 @@ function loop(now) {
 
   // Foundries (resource accumulation)
   updateFoundries(dt);
+
+  // Altar audio (tone + overheat pitch drop)
+  const altarAudio = getAltarAudioState();
+  updateAltarTone(altarAudio.litCount, altarAudio.anyOverheated);
 
   // HUD + crafting tray
   updateHud();

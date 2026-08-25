@@ -82,25 +82,23 @@ export function updateCraftingTray() {
     if (pulseTimes[i] > 0) pulseTimes[i] -= 0.016; // approx 1 frame
 
     const pulsing = pulseTimes[i] > 0;
-    const bgColour = affordable ? (pulsing ? 'rgba(120,120,180,1)' : 'rgba(80,80,120,0.9)') : 'rgba(30,30,30,0.7)';
-    const borderCol = affordable ? (pulsing ? '#ffffff' : '#8888aa') : 'transparent';
+    const bgColour = affordable ? (pulsing ? 'rgba(130,130,200,1)' : 'rgba(70,70,120,0.9)') : 'rgba(40,40,50,0.6)';
+    const borderCol = affordable ? (pulsing ? '#ffffff' : '#9999cc') : 'rgba(60,60,80,0.4)';
 
     trayCtx.fillStyle = bgColour;
     trayCtx.fillRect(x + 1, 1, btnW - 2, 38);
-    // Border for affordable buttons
-    if (affordable) {
-      trayCtx.strokeStyle = borderCol;
-      trayCtx.lineWidth = pulsing ? 2 : 1;
-      trayCtx.strokeRect(x + 1, 1, btnW - 2, 38);
-    }
+    // Border
+    trayCtx.strokeStyle = borderCol;
+    trayCtx.lineWidth = pulsing ? 2.5 : (affordable ? 1.5 : 0.5);
+    trayCtx.strokeRect(x + 1, 1, btnW - 2, 38);
 
-    trayCtx.fillStyle = affordable ? '#ffffff' : '#555555';
+    trayCtx.fillStyle = affordable ? '#ffffff' : '#777777';
     trayCtx.font = 'bold 9px monospace';
     trayCtx.textAlign = 'center';
     trayCtx.fillText(item.label, x + btnW / 2, 14);
 
     trayCtx.font = '7px monospace';
-    trayCtx.fillStyle = affordable ? '#aaaaaa' : '#333333';
+    trayCtx.fillStyle = affordable ? '#cccccc' : '#555555';
     trayCtx.fillText(costStr(cost), x + btnW / 2, 28);
   }
   trayTexture.needsUpdate = true;

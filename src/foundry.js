@@ -255,3 +255,12 @@ export function spendSlag() {}
 export function spendInsight() {}
 export function addSlagDirect(amount) { resources.brass += amount; }
 export function getFoundryColliders() { return []; }
+export function getAltarAudioState() {
+  let litCount = 0;
+  let anyOverheated = false;
+  for (const a of altars) {
+    if (a.lit) litCount++;
+    if (a.overheated) anyOverheated = true;
+  }
+  return { litCount, anyOverheated };
+}
