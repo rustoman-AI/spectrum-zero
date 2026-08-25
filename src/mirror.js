@@ -73,8 +73,18 @@ function createMirror(socketIndex) {
   const [sx, sy] = SOCKET_POSITIONS[socketIndex];
   const angle = 0; // default, overridden in initMirrors per-mirror
 
-  const geo = new THREE.PlaneGeometry(MIRROR_LENGTH, MIRROR_THICKNESS);
-  const mat = new THREE.MeshBasicMaterial({ color: 0x8888cc });
+  // Draw mirror as bronze shield on wooden cart (canvas texture)
+  const texSize = 64;
+  const c = document.createElement('canvas');
+  c.width = texSize; c.height = texSize;
+  const ctx = c.getContext('2d');
+  drawMirrorSprite(ctx, texSize);
+  const tex = new THREE.CanvasTexture(c);
+  tex.minFilter = THREE.LinearFilter;
+
+  const spriteSize = MIRROR_LENGTH + 2; // slightly larger for the cart frame
+  const geo = new THREE.PlaneGeometry(spriteSize, spriteSize);
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.set(sx, sy, 0);
   mesh.rotation.z = angle;
@@ -96,6 +106,64 @@ function createMirror(socketIndex) {
     normal: { x: 0, y: 0 },
     length: MIRROR_LENGTH,
   };
+}
+
+function drawMirrorSprite(ctx, sz) {
+  const cx = sz / 2;
+  const cy = sz / 2;
+  ctx.clearRect(0, 0, sz, sz);
+
+  // Wooden cart frame (horizontal bar behind the shield)
+  ctx.fillStyle = '#3D2010';
+  ctx.fillRect(cx - sz * 0.42, cy - 2, sz * 0.84, 4);
+
+  // Wheels (small circles at ends)
+  ctx.fillStyle = '#2A1500';
+  ctx.beginPath();
+  ctx.arc(cx - sz * 0.38, cy + 3, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx + sz * 0.38, cy + 3, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+  // Wheel spokes
+  ctx.strokeStyle = '#5C3D2E';
+  ctx.lineWidth = 0.8;
+  for (let w = -1; w <= 1; w += 2) {
+    const wx = cx + w * sz * 0.38;
+    const wy = cy + 3;
+    ctx.beginPath(); ctx.moveTo(wx - 2, wy); ctx.lineTo(wx + 2, wy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(wx, wy - 2); ctx.lineTo(wx, wy + 2); ctx.stroke();
+  }
+
+  // Bronze polished shield face (large ellipse — wider than tall since mirror is oriented horizontally)
+  const shieldRx = sz * 0.32;
+  const shieldRy = sz * 0.28;
+  // Metallic gradient
+  const grad = ctx.createRadialGradient(cx - 4, cy - 4, 2, cx, cy, shieldRx);
+  grad.addColorStop(0, '#E8C87A');   // bright highlight
+  grad.addColorStop(0.3, '#CC9944'); // polished bronze
+  grad.addColorStop(0.7, '#996633'); // darker bronze
+  grad.addColorStop(1, '#664422');   // rim shadow
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, shieldRx, shieldRy, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Shield rim ring
+  ctx.strokeStyle = '#553311';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, shieldRx, shieldRy, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Centre boss (raised bump)
+  ctx.fillStyle = '#DDAA55';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#AA7733';
+  ctx.lineWidth = 1;
+  ctx.stroke();
 }
 
 export function updateMirrorGeometry(mirror) {

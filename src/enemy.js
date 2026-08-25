@@ -11,54 +11,160 @@ import { addKillReward } from './foundry.js';
 
 const pool = [];
 let enemyGroup = null;
+const shipTextures = {};
+
+// --- Procedural ship sprite generation (drawn to canvas at load) ---
+function generateShipTextures() {
+  const types = ['skiff', 'trireme', 'quadrireme', 'shieldbearer', 'flagship'];
+  for (const type of types) {
+    const sz = 128;
+    const c = document.createElement('canvas');
+    c.width = sz; c.height = sz;
+    const ctx = c.getContext('2d');
+    drawShip(ctx, sz, type);
+    const tex = new THREE.CanvasTexture(c);
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    shipTextures[type] = tex;
+  }
+}
+
+function drawShip(ctx, sz, type) {
+  const cx = sz / 2;
+  const cy = sz / 2;
+  ctx.clearRect(0, 0, sz, sz);
+
+  // Ship type variations
+  const configs = {
+    skiff:        { hullW: 0.55, hullH: 0.18, prowLen: 0.12, mastH: 0.35, sailW: 0.25, sailH: 0.22, oars: 3, stripe: '#8B4513', hullCol: '#6B4226', deckCol: '#9E6B3E' },
+    trireme:      { hullW: 0.65, hullH: 0.20, prowLen: 0.15, mastH: 0.40, sailW: 0.30, sailH: 0.28, oars: 5, stripe: '#C41E3A', hullCol: '#5C3317', deckCol: '#8B6B4A' },
+    quadrireme:   { hullW: 0.72, hullH: 0.22, prowLen: 0.16, mastH: 0.45, sailW: 0.35, sailH: 0.30, oars: 7, stripe: '#1E5631', hullCol: '#4A2B10', deckCol: '#7A5B3A' },
+    shieldbearer: { hullW: 0.68, hullH: 0.22, prowLen: 0.14, mastH: 0.38, sailW: 0.28, sailH: 0.24, oars: 5, stripe: '#CC8844', hullCol: '#5C3317', deckCol: '#8B6B4A' },
+    flagship:     { hullW: 0.80, hullH: 0.25, prowLen: 0.18, mastH: 0.50, sailW: 0.40, sailH: 0.35, oars: 9, stripe: '#DAA520', hullCol: '#3D1F00', deckCol: '#6B4226' },
+  };
+  const cfg = configs[type] || configs.skiff;
+
+  const hullW = cfg.hullW * sz;
+  const hullH = cfg.hullH * sz;
+  const prowLen = cfg.prowLen * sz;
+  const mastH = cfg.mastH * sz;
+  const sailW = cfg.sailW * sz;
+  const sailH = cfg.sailH * sz;
+
+  // Hull (pointed prow at top, flat stern at bottom)
+  const hullTop = cy - hullH * 0.3;
+  const hullBot = cy + hullH * 0.7;
+  const prowTip = hullTop - prowLen;
+
+  ctx.save();
+
+  // Hull body with carved prow
+  ctx.beginPath();
+  ctx.moveTo(cx, prowTip);                          // prow tip (top centre)
+  ctx.quadraticCurveTo(cx + hullW * 0.3, hullTop, cx + hullW / 2, hullTop + hullH * 0.3); // right bow curve
+  ctx.lineTo(cx + hullW / 2, hullBot - 4);         // right side
+  ctx.quadraticCurveTo(cx + hullW * 0.4, hullBot, cx, hullBot); // stern curve right
+  ctx.quadraticCurveTo(cx - hullW * 0.4, hullBot, cx - hullW / 2, hullBot - 4); // stern curve left
+  ctx.lineTo(cx - hullW / 2, hullTop + hullH * 0.3); // left side
+  ctx.quadraticCurveTo(cx - hullW * 0.3, hullTop, cx, prowTip); // left bow curve
+  ctx.closePath();
+  ctx.fillStyle = cfg.hullCol;
+  ctx.fill();
+
+  // Deck (lighter inner area)
+  ctx.beginPath();
+  const deckInset = 4;
+  ctx.ellipse(cx, cy + 2, hullW / 2 - deckInset, hullH * 0.5, 0, 0, Math.PI * 2);
+  ctx.fillStyle = cfg.deckCol;
+  ctx.fill();
+
+  // Painted stripe along the hull sides
+  ctx.strokeStyle = cfg.stripe;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(cx - hullW / 2 + 3, cy);
+  ctx.lineTo(cx - hullW * 0.2, hullTop + 6);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx + hullW / 2 - 3, cy);
+  ctx.lineTo(cx + hullW * 0.2, hullTop + 6);
+  ctx.stroke();
+
+  // Oar strokes along sides
+  ctx.strokeStyle = 'rgba(90, 60, 30, 0.7)';
+  ctx.lineWidth = 1;
+  const oarStartY = cy - hullH * 0.1;
+  const oarEndY = cy + hullH * 0.5;
+  const oarSpacing = (oarEndY - oarStartY) / (cfg.oars + 1);
+  for (let i = 1; i <= cfg.oars; i++) {
+    const oy = oarStartY + i * oarSpacing;
+    // Left oar
+    ctx.beginPath();
+    ctx.moveTo(cx - hullW / 2, oy);
+    ctx.lineTo(cx - hullW / 2 - 8, oy + 3);
+    ctx.stroke();
+    // Right oar
+    ctx.beginPath();
+    ctx.moveTo(cx + hullW / 2, oy);
+    ctx.lineTo(cx + hullW / 2 + 8, oy + 3);
+    ctx.stroke();
+  }
+
+  // Mast
+  ctx.fillStyle = '#3D2010';
+  ctx.fillRect(cx - 1.5, cy - mastH, 3, mastH * 0.9);
+
+  // Sail (trapezoid/triangle)
+  ctx.fillStyle = 'rgba(230, 215, 190, 0.85)';
+  ctx.beginPath();
+  ctx.moveTo(cx - sailW / 2, cy - mastH * 0.2);
+  ctx.lineTo(cx + sailW / 2, cy - mastH * 0.2);
+  ctx.lineTo(cx + sailW * 0.3, cy - mastH * 0.85);
+  ctx.lineTo(cx - sailW * 0.3, cy - mastH * 0.85);
+  ctx.closePath();
+  ctx.fill();
+  // Sail cross-bar
+  ctx.strokeStyle = '#3D2010';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(cx - sailW / 2, cy - mastH * 0.2);
+  ctx.lineTo(cx + sailW / 2, cy - mastH * 0.2);
+  ctx.stroke();
+
+  // Prow ornament (small ram/beak)
+  ctx.fillStyle = '#2A1500';
+  ctx.beginPath();
+  ctx.moveTo(cx, prowTip - 3);
+  ctx.lineTo(cx - 3, prowTip + 4);
+  ctx.lineTo(cx + 3, prowTip + 4);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+}
 
 export function initEnemies() {
   const scene = getScene();
   enemyGroup = new THREE.Group();
   scene.add(enemyGroup);
 
+  // Generate ship sprite textures (procedural canvas, no image files)
+  generateShipTextures();
+
   for (let i = 0; i < ENEMY_POOL_SIZE; i++) {
-    // Ship silhouette: hull (warm wood) + mast line + sail triangle
     const mesh = new THREE.Group();
     mesh.position.z = 0.3;
 
-    // Hull (wide rectangle, warm wood tone)
-    const hull = new THREE.Mesh(
-      new THREE.PlaneGeometry(4, 1.5),
-      new THREE.MeshBasicMaterial({ color: 0x8B5E3C })
-    );
-    hull.position.y = -0.3;
-    mesh.add(hull);
-
-    // Deck line (lighter stripe)
-    const deck = new THREE.Mesh(
-      new THREE.PlaneGeometry(3.5, 0.3),
-      new THREE.MeshBasicMaterial({ color: 0xC4956A })
-    );
-    deck.position.y = 0;
-    deck.position.z = 0.05;
-    mesh.add(deck);
-
-    // Mast (thin vertical line)
-    const mast = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.2, 3),
-      new THREE.MeshBasicMaterial({ color: 0x5C3D2E })
-    );
-    mast.position.y = 1.2;
-    mast.position.z = 0.02;
-    mesh.add(mast);
-
-    // Sail (triangle-ish rectangle)
-    const sail = new THREE.Mesh(
-      new THREE.PlaneGeometry(2, 1.8),
-      new THREE.MeshBasicMaterial({ color: 0xEEDDCC, transparent: true, opacity: 0.8 })
-    );
-    sail.position.y = 1.5;
-    sail.position.z = 0.03;
-    mesh.add(sail);
+    // Ship sprite (canvas-drawn, swapped per type)
+    const spriteGeo = new THREE.PlaneGeometry(6, 6);
+    const spriteMat = new THREE.MeshBasicMaterial({
+      map: shipTextures.skiff, transparent: true, depthWrite: false
+    });
+    const spriteMesh = new THREE.Mesh(spriteGeo, spriteMat);
+    spriteMesh.position.z = 0.01;
+    mesh.add(spriteMesh);
 
     mesh.visible = false;
-    const mat = hull.material; // reference for colour changes
 
     // Burn meter bar
     const barBg = new THREE.Mesh(
@@ -95,7 +201,7 @@ export function initEnemies() {
       speed: 0, baseSpeed: 0,
       burn: 0, slowed: false,
       bandsHitting: 0, lastHitColour: 0,
-      mesh, barFill, shieldPlate, hullMat: mat
+      mesh, barFill, shieldPlate, spriteMat, hullMat: spriteMat
     });
   }
 }
@@ -197,18 +303,27 @@ function updateEnemyVisual(e) {
   e.burn = Math.max(0, (e.heat || 0) / e.maxHp);
   e.barFill.scale.x = e.burn;
   e.barFill.position.x = -2.5 * (1 - e.burn);
+
+  // Swap sprite texture to match type
+  const tex = shipTextures[e.type] || shipTextures.skiff;
+  if (e.spriteMat.map !== tex) {
+    e.spriteMat.map = tex;
+    e.spriteMat.needsUpdate = true;
+  }
+
+  // Burn tint on sprite
   if (e.bandsHitting > 0 && e.lastHitColour !== 0) {
     const r = ((e.lastHitColour >> 16) & 0xff) / 255;
     const g = ((e.lastHitColour >> 8) & 0xff) / 255;
     const b = (e.lastHitColour & 0xff) / 255;
-    const t = Math.min(0.3 + e.burn * 1.0, 1.0);
-    e.hullMat.color.setRGB(0.25*(1-t)+r*t, 0.2*(1-t)+g*t, 0.2*(1-t)+b*t);
+    const t = Math.min(0.3 + e.burn * 0.7, 1.0);
+    e.spriteMat.color.setRGB(1*(1-t)+r*t, 1*(1-t)+g*t, 1*(1-t)+b*t);
   } else if (e.slowed) {
-    e.hullMat.color.setRGB(0.4, 0.5, 0.25);
+    e.spriteMat.color.setRGB(0.7, 0.9, 0.5);
   } else {
-    const brightness = 0.35 + 0.15 * (1 - e.burn);
-    e.hullMat.color.setRGB(brightness, brightness*0.8, brightness*0.8);
+    e.spriteMat.color.setRGB(1, 1, 1); // neutral (texture has its own colours)
   }
+
   const sizes = { skiff: 2.5, trireme: 3.5, quadrireme: 4.5, shieldbearer: 4.0, flagship: 8 };
   const s = sizes[e.type] || 3;
   e.mesh.scale.set(s/3, s/3, 1);
