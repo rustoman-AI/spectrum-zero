@@ -626,7 +626,8 @@ function drawSeaTexture(ctx, w, h) {
 // src/beam.js — Iterative raycast beam solver with resonance detection
 // ============================================================
 
-// Segment: { start, end, colour, intensity, bounces }
+
+// Segment: { start, end, colour, intensity, bounces, preSplit }
 let segments = [];
 let dirty = true;
 // Diagnostics — read by debug overlay
@@ -661,7 +662,8 @@ function solve(sourceX, sourceY, mirrors, prisms, worldWidth, foundryColliders) 
     worldWidth,
     MAX_BOUNCES,
     null,
-    0
+    0,
+    true // preSplit: this is the raw sun beam before hitting prism
   );
   dirty = false;
   // Post-solve: detect resonance (3+ bounces between same mirror pair)
@@ -680,7 +682,7 @@ function detectResonance() {
     if (count >= RESONANCE_MIN_BOUNCES) { resonanceActive = true; resonanceMirrors = [a, b]; return; }
   }
 }
-function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft, excludePrism, bouncesUsed) {
+function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft, excludePrism, bouncesUsed, preSplit) {
   if (segments.length >= MAX_SEGMENTS) return;
   if (bouncesLeft < 0) {
     hitBounceCap = true;
@@ -692,7 +694,8 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
     end: { x: hit.point.x, y: hit.point.y },
     colour,
     intensity,
-    bounces: bouncesUsed
+    bounces: bouncesUsed,
+    preSplit: !!preSplit
   });
   if (hit.type === 'mirror' && bouncesLeft > 0) {
     // Record for resonance detection
@@ -723,16 +726,16 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
     reflected.y /= len;
     const newBounces = bouncesUsed + 1;
     if (newBounces > maxBouncesUsed) maxBouncesUsed = newBounces;
-    traceBeam(hit.point, reflected, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, null, newBounces);
+    traceBeam(hit.point, reflected, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, null, newBounces, preSplit);
   } else if (hit.type === 'prism') {
     if (colour === COLOUR_WHITE) {
       // Generate N bands based on active prism tier
-      const tier = (typeof getActiveTier === 'function') ? getActiveTier() : 3;
+      const tier = getActiveTier();
       const bands = generateBandAngles(tier);
       for (const band of bands) {
         if (segments.length >= MAX_SEGMENTS) break;
         const newDir = rotateVec(direction, band.angleOffset);
-        traceBeam(hit.point, newDir, band.colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, hit.object, bouncesUsed);
+        traceBeam(hit.point, newDir, band.colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, hit.object, bouncesUsed, false);
       }
     } else {
       // Second prism on a coloured band: split into two weaker sub-rays
@@ -743,7 +746,7 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
       for (const sub of subRays) {
         if (segments.length >= MAX_SEGMENTS) break;
         const newDir = rotateVec(direction, sub.angleOffset);
-        traceBeam(hit.point, newDir, colour, intensity * 0.5, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, hit.object, bouncesUsed);
+        traceBeam(hit.point, newDir, colour, intensity * 0.5, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, hit.object, bouncesUsed, false);
       }
     }
   }
@@ -1941,8 +1944,10 @@ function updateFoundries(dt) {
 
   for (const altar of altars) {
     // Check if any beam segment hits this altar (segment-vs-AABB)
+    // Pre-split beam (raw sun column) does not power altars
     altar.lit = false;
     for (let s = 0; s < segments.length; s++) {
+      if (segments[s].preSplit) continue;
       if (segHitsBox(segments[s], altar.x, altar.y, ALTAR_HW, ALTAR_HH)) {
         altar.lit = true;
         break;
@@ -2696,6 +2701,8 @@ function updateDamage(dt) {
 
     for (let s = 0; s < segments.length; s++) {
       const seg = segments[s];
+      // Pre-split beam (raw sun column) does no damage
+      if (seg.preSplit) continue;
       if (segmentIntersectsBox(seg, ex, ey, ENEMY_HIT_HALF_W, ENEMY_HIT_HALF_H)) {
         totalBeamsHitting++;
         hitColour = seg.colour;
@@ -2728,7 +2735,7 @@ function updateDamage(dt) {
       //   totalRaw = (synergyDPS + flatDPS) * focusMult * resonanceMult
       //   final = max(0, totalRaw - armour * totalBeams)
       // -------------------------------------------------------
-      const tier = (typeof getActiveTier === 'function') ? getActiveTier() : 3;
+      const tier = getActiveTier();
       const tierData = PRISM_TIERS[tier] || PRISM_TIERS[3];
       const dBase = tierData.dBase;
       const synBonus = tierData.synergy;

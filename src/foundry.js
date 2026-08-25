@@ -123,8 +123,10 @@ export function updateFoundries(dt) {
 
   for (const altar of altars) {
     // Check if any beam segment hits this altar (segment-vs-AABB)
+    // Pre-split beam (raw sun column) does not power altars
     altar.lit = false;
     for (let s = 0; s < segments.length; s++) {
+      if (segments[s].preSplit) continue;
       if (segHitsBox(segments[s], altar.x, altar.y, ALTAR_HW, ALTAR_HH)) {
         altar.lit = true;
         break;

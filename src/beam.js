@@ -7,7 +7,8 @@ import {
   COLOUR_AMBER, COLOUR_CYAN, COLOUR_GOLD,
   FOUNDRY_HW, FOUNDRY_HH, RESONANCE_MIN_BOUNCES
 } from './config.js';
-// Segment: { start, end, colour, intensity, bounces }
+import { getActiveTier } from './prism.js';
+// Segment: { start, end, colour, intensity, bounces, preSplit }
 let segments = [];
 let dirty = true;
 // Diagnostics — read by debug overlay
@@ -42,7 +43,8 @@ export function solve(sourceX, sourceY, mirrors, prisms, worldWidth, foundryColl
     worldWidth,
     MAX_BOUNCES,
     null,
-    0
+    0,
+    true // preSplit: this is the raw sun beam before hitting prism
   );
   dirty = false;
   // Post-solve: detect resonance (3+ bounces between same mirror pair)
@@ -61,7 +63,7 @@ function detectResonance() {
     if (count >= RESONANCE_MIN_BOUNCES) { resonanceActive = true; resonanceMirrors = [a, b]; return; }
   }
 }
-function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft, excludePrism, bouncesUsed) {
+function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft, excludePrism, bouncesUsed, preSplit) {
   if (segments.length >= MAX_SEGMENTS) return;
   if (bouncesLeft < 0) {
     hitBounceCap = true;
@@ -73,7 +75,8 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
     end: { x: hit.point.x, y: hit.point.y },
     colour,
     intensity,
-    bounces: bouncesUsed
+    bounces: bouncesUsed,
+    preSplit: !!preSplit
   });
   if (hit.type === 'mirror' && bouncesLeft > 0) {
     // Record for resonance detection
@@ -104,16 +107,16 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
     reflected.y /= len;
     const newBounces = bouncesUsed + 1;
     if (newBounces > maxBouncesUsed) maxBouncesUsed = newBounces;
-    traceBeam(hit.point, reflected, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, null, newBounces);
+    traceBeam(hit.point, reflected, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, null, newBounces, preSplit);
   } else if (hit.type === 'prism') {
     if (colour === COLOUR_WHITE) {
       // Generate N bands based on active prism tier
-      const tier = (typeof getActiveTier === 'function') ? getActiveTier() : 3;
+      const tier = getActiveTier();
       const bands = generateBandAngles(tier);
       for (const band of bands) {
         if (segments.length >= MAX_SEGMENTS) break;
         const newDir = rotateVec(direction, band.angleOffset);
-        traceBeam(hit.point, newDir, band.colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, hit.object, bouncesUsed);
+        traceBeam(hit.point, newDir, band.colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, hit.object, bouncesUsed, false);
       }
     } else {
       // Second prism on a coloured band: split into two weaker sub-rays
@@ -124,7 +127,7 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
       for (const sub of subRays) {
         if (segments.length >= MAX_SEGMENTS) break;
         const newDir = rotateVec(direction, sub.angleOffset);
-        traceBeam(hit.point, newDir, colour, intensity * 0.5, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, hit.object, bouncesUsed);
+        traceBeam(hit.point, newDir, colour, intensity * 0.5, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, hit.object, bouncesUsed, false);
       }
     }
   }

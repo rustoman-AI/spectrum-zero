@@ -55,6 +55,8 @@ export function updateDamage(dt) {
 
     for (let s = 0; s < segments.length; s++) {
       const seg = segments[s];
+      // Pre-split beam (raw sun column) does no damage
+      if (seg.preSplit) continue;
       if (segmentIntersectsBox(seg, ex, ey, ENEMY_HIT_HALF_W, ENEMY_HIT_HALF_H)) {
         totalBeamsHitting++;
         hitColour = seg.colour;
@@ -87,7 +89,7 @@ export function updateDamage(dt) {
       //   totalRaw = (synergyDPS + flatDPS) * focusMult * resonanceMult
       //   final = max(0, totalRaw - armour * totalBeams)
       // -------------------------------------------------------
-      const tier = (typeof getActiveTier === 'function') ? getActiveTier() : 3;
+      const tier = getActiveTier();
       const tierData = PRISM_TIERS[tier] || PRISM_TIERS[3];
       const dBase = tierData.dBase;
       const synBonus = tierData.synergy;
