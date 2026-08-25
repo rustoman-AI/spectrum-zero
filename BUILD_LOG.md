@@ -1,77 +1,187 @@
 # BUILD LOG — Solar Siege
 
-## Phase 1: Core Prototype
+An honest record of development including wrong turns, corrections, and the reasoning behind each decision. Written for the Meta Horizon Creator Competition judges to demonstrate that an AI assistant performed the implementation work, including the mistakes.
 
-**c9eb9c3** — Initial prototype: beam ray-tracer, mirror reflection, prism splitting, enemy pool, damage system, foundry resource generation, crafting shop, win/lose state. Single-file HTML5 build with Three.js vendored.
+---
 
-**7df7175** — Burn feedback VFX (white flash on hit), pass-through foundries (beams no longer terminate at resource zones), rotation UX fix for touch, unlimited lives toggle for testing.
+## 2026-08-20 — Initial Prototype (c9eb9c3)
 
-**66dc76d** — Solar Siege reskin: renamed from generic prototype, free mirror placement (no socket snapping), hearts/wall-integrity fix.
+**Asked:** Build a single-file HTML5 tower defence game based on the Archimedes legend (focusing sunlight to burn ships). Three.js vendored, no network requests, runs from file://.
 
-**54b59a5** — Game-over overlay with restart, beam-contact glow on enemies, destruction sequence (fragment debris), resonance mechanic (multi-beam synergy bonus), free placement cleanup.
+**Generated:** Full game loop in one session: iterative beam ray-tracer, mirror reflection, prism splitting into coloured bands, enemy pool with movement and HP, damage system with multi-beam synergy, foundry resource generation, crafting shop with upgradeable items, win/lose state machine, 10-minute session timer.
 
-## Phase 2: Gameplay Tuning
+**Decisions locked:** Single-file build via concatenation. ES modules in src/ stripped of import/export and wrapped in one IIFE. THREE as global from vendor script.
 
-**0e70e8d** — Stable build: heat decay as separate accumulator (15%/s when beam leaves, not HP healing), paired spawning for multi-lane pressure, wall integrity system replacing lives, resonance balancing.
+**Broke:** Nothing critical on day one, but the workspace had a requirements spec describing a completely different game (a roguelite dungeon crawler). The spec mismatch was caught later when reviewing design documents — the AI had built what was asked verbally, not what was in the written spec. No code was affected but the DESIGN_INTENT document needed rewriting from scratch.
 
-**87454b9** _(tag: submission-fallback)_ — Prism tier system (tiers 3–6), synergy scaled per tier (B(N) = 0.6/(N-1)) so focused DPS = 48 at all tiers, MAX_SEGMENTS raised to 24, first submission zip prepared.
+---
 
-## Phase 3: Reversed Layout Refactor
+## 2026-08-22 — Polish & Free Placement (7df7175, 66dc76d)
 
-**8e36195** — Major layout flip: sun at top (y=48), ships spawn at y=40 and descend toward wall at y=-40, mirrors placed at y=-15 to -35 reflecting upward, altars below wall at y=-44. Initial commit had syntax error.
+**Asked:** Burn feedback, free mirror placement (no socket snapping), reskin to "Solar Siege" name.
 
-**526fa67** — Fix syntax error from refactor, add build-time syntax check (`new Function()` validation in build.js), prism positioned at PRISM_Y, beam reaches ships correctly.
+**Generated:** White flash on beam contact, pass-through foundries (beams no longer terminate at resource zones), pointer rotation UX fix, unlimited-lives DEV toggle, free placement mode, hearts/wall-integrity system.
 
-**06acf70** — Visual fixes for reversed layout: sea fills middle band, ship silhouettes face downward, mirrors confirmed reflecting UP, prism at correct Y.
+**Misstep — heat decay as HP healing:** The heat system was implemented as HP regeneration at 15%/s when the beam left an enemy. This made enemies unkillable: any momentary break in beam contact healed them faster than damage accumulated. The user caught this immediately in play.
 
-## Phase 4: Economy & Audio
+**Correction:** Heat was separated into its own accumulator independent of HP. Heat decays at 15%/s, HP never heals. Once an enemy takes damage it stays damaged. This was the correct design — heat represents thermal momentum, not vitality.
 
-**f606e54** — Four-currency altar economy (brass/bronze/silver/gold). 20% passive income, 80% beam-powered. Overheat at 6s continuous, 10s recovery. Wall-hit flash VFX. Spawn distribution: heavy centre + paired edges.
+---
 
-**bec50f0** — WebAudio synthesis: hum drone, chime (purchase), burn hiss, destruction boom, wall-hit impact, altar tone with overheat pitch drop. Voice cap (6 simultaneous). Hum ducking under explosions. Mute toggle. Overheat gauge bar. Craft affordability pulse. Spawn tuning.
+## 2026-08-23 — Layout Reversal & Economy (0e70e8d → f606e54)
 
-## Phase 5: Intro & Defeat Cinematics
+**Asked:** Reverse the layout: sun at top, ships spawn high and descend toward a wall, mirrors at the bottom reflect upward.
 
-**1f6f596** — Intro video layer: 5-second failsafe timeout guarantees game starts regardless of video success. Error handler falls through to game.
+**Misstep — coverage calculation:** Before the reversal, a coverage analysis was run to determine whether the new layout needed different mirror heights. The calculation used a fixed 30-degree sweep angle instead of full rotation. This produced a misleading result suggesting taller mirrors were needed. The corrected calculation showed mirror height has zero effect on angular coverage — only position and rotation range matter. No code change was needed, but it wasted a design discussion cycle.
 
-**d50f8a9** — Re-encode video: H.264 Baseline profile Level 3.1, yuv420p, AAC stereo 96kbps, moov at front. File size 2.3MB.
+**Misstep — shipped syntax error (8e36195):** The layout refactor commit had a syntax error (malformed template literal in the concatenated output). The build script did not validate syntax, so `index.html` was generated but could not execute. The game was broken for one commit.
 
-**165ff84 → eed772d** — Six iterations on mobile video playback: cache-busting, gesture handling, layout reflow timing, error recovery. Root causes: iOS won't preload without gesture, Chrome rejects unmuted play on low-engagement sites.
+**Correction (526fa67):** Added `new Function(gameCode)` syntax validation to build.js. If the concatenated output fails to parse, build.js now deletes index.html and exits with an error. This has prevented syntax regressions since.
 
-**c202607** — Gate tap on canplaythrough with 4s fallback.
+**Generated:** Complete layout flip, four-currency economy (brass/bronze/silver/gold), altar zones below the wall with 20% passive / 80% beam-fed income split, overheat system (6s continuous → halved efficiency, 10s recovery), wall integrity replacing lives, paired-edge spawning.
 
-**35a5054** — Altar visibility overhaul: pulsing glow ring on unlit altars, steady metal glow when lit, curved overheat arc (green→yellow→red).
+**Decisions locked:**
+- Altars at y=-44 (below wall at y=-40). Beams to altars go DOWN, beams to ships go UP — no single path serves both.
+- Overheat is a separate accumulator (not HP-based), decays instantly when beam removed, triggers after 6s continuous.
+- Session: 600 seconds, escalating HP multiplier.
 
-**f3030c4** — Replace intro video with archimed_intro.mp4 (English voiceover, 1.2MB re-encoded). White-flash transition at 8.0s, game starts at 8.3s.
+---
 
-**8f08a43** — Defeat cinematic: archimed_fail.mp4 (1.55MB). Plays once per session on first loss, skippable from first frame, preloaded during gameplay.
+## 2026-08-23 — Prism Tiers & Synergy (87454b9)
 
-**01e60bd → d027c60** — Final mobile video fix: removed canplaythrough gate (iOS never fires it pre-gesture), start muted then unmute in .then() callback to satisfy Chrome's autoplay policy on low-engagement sites.
+**Asked:** Scale the prism to 6 tiers. Higher tiers split into more bands but must not make focused single-target DPS higher than lower tiers.
 
-## Phase 6: Core Beam Fixes
+**Generated:** Tier system with synergy formula B(N) = 0.6/(N-1), producing constant focused DPS = 48 regardless of band count. Sub-rays from secondary prism hits excluded from synergy (flat damage only). MAX_SEGMENTS raised to 24.
 
-**81e8a24** — Raw sun beam no longer damages or powers altars. Every segment tagged with `preSplit` flag. Pre-prism segments (sun→prism) are inert. Post-prism bands can damage and power altars. `getActiveTier()` properly imported — band count derives from prism presence/tier, no fallback to hardcoded 3.
+**Decision locked:** Synergy scales inversely with tier. More bands = better area coverage but same single-target kill speed. This prevents higher tiers being strictly dominant.
 
-**58db9b9** — Default mirrors set to vertical (π/2). Headless trace confirms: zero bands reach ship lanes without player input. Kill rate with no interaction: zero. The game now requires active mirror rotation to function.
+---
 
-## Phase 7: Polish (Current)
+## 2026-08-23 — Audio Synthesis (bec50f0)
 
-- Craft button affordability: full-contrast text + bright border when affordable, 300ms pulse at cost-crossing moment, 40% desaturated when not.
-- Altar tone wired into main loop (was imported but never called).
-- Contact glow, kill flash, sparks, debris, audio already functional from Phase 4.
-- DESIGN_INTENT.docx rewritten: centered on the wall-vs-altar attention trade.
+**Generated:** Full WebAudio sound set synthesized at runtime (no audio files): beam hum drone scaled by segment count, burn hiss scaled by enemies under fire, prism chime on purchase, wood-crack destruction, dull wall-hit impact, altar tone with pitch drop on overheat. Voice cap (6 simultaneous), hum ducking under explosions, mute toggle button.
+
+---
+
+## 2026-08-24 — Mobile Video Playback (1f6f596 → d027c60)
+
+Six commits over several hours to make a 10-second intro video play reliably on mobile. This was the most frustrating sequence of the project.
+
+**Root causes discovered (in order):**
+1. Video was Main profile Level 4.2 with moov atom at end — mobile Safari refuses this entirely.
+2. After re-encoding to Baseline 3.1 fast-start, video still failed: `preload="auto"` doesn't work on iOS (won't buffer without user gesture).
+3. `canplaythrough` event never fires on iOS before a tap, so the readiness gate's 4s timeout always fired first, skipping the intro silently.
+4. Chrome mobile rejects `play()` with audio even from a user gesture on sites with low Media Engagement Index.
+5. Putting `void video.offsetHeight` inside the tap handler burned Safari's gesture token — any synchronous work between event dispatch and `play()` invalidates the user activation.
+
+**What broke at each step:**
+- Adding `muted` fixed playback but killed the voiceover narration.
+- Removing `muted` broke playback again on Chrome.
+- The `canplaythrough` gate caused the game to silently skip the intro on every mobile device.
+- The `void video.offsetHeight` reflow in the tap handler caused both debug and plain paths to fail.
+
+**Final solution (d027c60):** Start muted (always succeeds from gesture), then unmute in the `.then()` microtask callback (still within user activation on Chrome). 5-second failsafe guarantees game starts regardless. The debug flag only prints text, never changes behaviour.
+
+**Misstep — debug flag changing behaviour:** The debug overlay's `document.body.appendChild()` was forcing a layout reflow at page load that gave the video element computed dimensions. Without the debug flag, the video stayed zero-size and iOS refused `play()`. The user correctly identified: "a debug flag must only display numbers, never change behaviour." This was fixed by making the reflow unconditional.
+
+---
+
+## 2026-08-24 — Defeat Cinematic (8f08a43)
+
+**Generated:** Second video (archimed_fail.mp4, 1.55MB re-encoded same spec) plays once on first loss per browsing session. Skippable from first frame. Preloaded 5s into gameplay. Falls back to defeat screen on any failure. SessionStorage flag prevents replay on retries.
+
+---
+
+## 2026-08-24 — Raw Beam Damage Fix (81e8a24, 58db9b9)
+
+**Asked:** "The raw sun beam must not damage ships. Only light that has passed through the prism should be a weapon."
+
+**What was broken:** The beam from sun→prism was intersecting enemies and dealing damage with zero player input. The centre lane defended itself permanently.
+
+**Generated:** `preSplit` flag on every segment. Initial beam from sun = `preSplit: true`, excluded from damage and altar income checks. Post-prism bands = `preSplit: false`. Mirror reflection preserves the flag (a reflected pre-prism beam is still pre-prism).
+
+**Also fixed:** `getActiveTier()` was accessed via `typeof` fallback to hardcoded 3 instead of being properly imported. Band count now derives from actual prism tier.
+
+**Misstep — default mirrors auto-aimed:** With horizontal default mirrors positioned directly below the prism's split paths, all 3 bands reflected straight into ship lanes, making zero-input play viable. A headless geometry trace confirmed: with angle=0 (horizontal), 2/3 bands reached the ship lane.
+
+**Correction (58db9b9):** Default mirrors set to vertical (π/2). Headless trace confirmed: 0/3 bands reach ships. Player must actively rotate mirrors to deal any damage.
+
+**Decision locked:** Post-prism bands that hit a target without mirror reflection DO damage (prism is a player purchase). Only the raw pre-prism column is inert.
+
+---
+
+## 2026-08-24 — Prism Pinned (5b1f8cd)
+
+**Asked:** "The prism has drifted down next to the mirror row. Make it stationary and find why the split point and the prism sprite are in different places."
+
+**Root cause:** `movePrismToSocket()` set `prism.position.y` to the socket's Y coordinate instead of PRISM_Y. Once dragged, the solver hit-tested at the wrong position while the mesh stayed at the original visual position (or vice versa).
+
+**Fix:** Removed prism from socket system, drag system, and selection entirely. Pinned permanently at `(0, PRISM_Y)`. One position object, shared by mesh and solver. `movePrismToSocket` deleted.
+
+---
+
+## 2026-08-24 — Shield-Bearer (e0aa2a8, c604266)
+
+**Asked:** An enemy that forces angled shots. Beams within 25° of vertical hit a shield plate and are blocked.
+
+**Generated:** Shield-bearer type (HP=400, armour=1, speed=2.0). Angle check computes `atan2(|dx|, |dy|)` of each segment, blocks if ≤25°. Bronze deflection sparks on block. First appearance at 30s alone in centre. Escort formation: 2-3 trailing ships in tight column.
+
+**HP arithmetic:** One angled band at 70% uptime = 252 damage (63% HP, doesn't kill). Two bands with synergy = 672 damage (kills at 42% travel). Design goal: second band clearly needed.
+
+**Also fixed — centre lane bias:** Audit revealed 60-70% of spawns were forced to lane 2. Rewritten: all types use random lanes, shield-bearers cycle [2,0,4,1,3], flagship random lane, pairs use random opposite lanes.
+
+---
+
+## 2026-08-25 — Distance-Aware Rotation (14429b5)
+
+**Asked:** "One degree of rotation moves the landing point a few units when the target is close and dozens when far. Aiming at distant ships is impossible."
+
+**Generated:** `angleDelta = (tangential * K) / max(L, L_MIN)` where L = reflected beam length from mirror to termination. K=1.8, L_MIN=15. Lerp smoothing at 20%/frame (frame-rate independent via `pow()`). Max angular speed 2.5 rad/s.
+
+**Verified:** Full swipe moves mid-range landing ~46% of field width. Near/mid/far targets move at comparable screen speeds (16%/46%/56% per swipe).
+
+---
+
+## 2026-08-25 — Multi-Pointer Rotation (0afc1d7 → d748f28)
+
+**Misstep — first implementation broke all rotation (0afc1d7):** Rewrote input.js from scratch with a `Map<pointerId, state>` architecture. Removed the entire single-finger state machine. This broke basic rotation because the new code had different gesture-threshold semantics and the craft-tap/game-over paths were missing.
+
+**Reverted (fe23287):** Full revert to working state. Single-finger rotation confirmed working again.
+
+**Added regression test (74b2d5b):** Headless test simulating pointer events: 7 scenarios, 11 assertions covering basic rotation, sensitivity scaling, L_MIN clamp, max speed, radial immunity, release/re-grab, frame-rate independence.
+
+**Reimplemented correctly (d748f28):** Minimal additive approach — kept entire primary state machine untouched. Added `secondPointer` object alongside (not replacing) existing variables. Routes by `e.pointerId`. Primary pointer uses existing code paths. Secondary pointer only enters rotation mode. `setPointerCapture` per pointer. `lostpointercapture` releases only the lost pointer. Tests still pass 11/11.
+
+**Lesson learned:** Never replace a working system wholesale. Layer new behaviour on top with explicit routing.
+
+---
+
+## 2026-08-25 — Art Pass (ecc0771, 409ab68, 4facaff)
+
+**Generated:**
+- Environment bands: sky strip, sea with vertical gradient (#0c1e2a → #1A4257) + scrolling wave crests (6 lines, canvas texture redrawn per frame), foam shoreline, warm stone ground. `prefers-reduced-motion` freezes animation.
+- Ship sprites: 128×128 procedural canvas per type. Carved prow with ram ornament, mast + trapezoid sail, oar strokes (3-9 per type), painted stripe (colour-coded: brown/red/green/bronze/gold). Distinct silhouettes at a glance.
+- Mirror sprites: 64×64 canvas. Bronze polished shield (radial gradient), wooden cart frame with wheels and spokes, centre boss. Rotates with angle.
+- Fortress: 512×256 canvas. Stone rampart with block courses, 16 crenellations, 3 towers with pointed caps, peaked rooftops. 4 damage stages tied live to wall integrity (cracks → breach + rubble + smoke → fires). Breach triggers 0.3s shake + dust particles.
+
+**Brightness rule enforced:** All backgrounds ≤6.3% luminance. Dimmest beam (amber) at 40.1%. Contrast ratio 6.4:1. Beams remain the brightest element on screen.
+
+All procedural canvas drawing at load time — zero image files, zip size unchanged.
+
+---
 
 ## Build System
 
-- `node build.js` — concatenates ES module sources into single IIFE, wraps in HTML with Three.js vendor script, validates syntax via `new Function()`, outputs `index.html`.
-- `node build.js --submission` — hard-errors if any DEV flags are true.
-- Source modules in `src/`: main.js, beam.js, beam-render.js, mirror.js, prism.js, enemy.js, enemy-spawner.js, foundry.js, crafting.js, effects.js, audio.js, damage.js, session.js, input.js, background.js, config.js, strings.js, renderer.js.
-- Vendor: `vendor/three.min.js` (Three.js r158).
+- `node build.js` — concatenates src/ modules, strips ES import/export, wraps in HTML, validates syntax via `new Function()`.
+- `node build.js --submission` — hard-errors if DEV flags are true.
+- `node test_rotation.js` — headless rotation regression test (7 scenarios, 11 assertions).
+- Source: 19 modules in `src/`.
+- Vendor: `vendor/three.min.js` (r158, 654KB).
 - Assets: `assets/archimed_intro.mp4` (1.2MB), `assets/archimed_fail.mp4` (1.55MB), `assets/intro_poster.jpg` (48KB).
-- Total zip size: **2.84 MB** (well under 35MB limit).
+- **Total zip: 2.84 MB** (limit: 35 MB).
 
 ## Deployment
 
 - GitHub Pages: https://rustoman-ai.github.io/spectrum-zero/
 - Branch: master (Pages deploys from root)
-- Safe revert point: `git tag submission-fallback` at commit 87454b9
+- Safe revert: `git tag submission-fallback` at 87454b9

@@ -50,3 +50,4 @@ M6: Build script, vendor folder, offline validation, zip packaging.
 ## Process Rules
 
 - When the user asks for numbers, an assessment, or arithmetic BEFORE implementation, produce them and STOP. Do not implement in the same pass, even when confident the numbers will hold. Wait for explicit approval to proceed.
+- At the end of every session, append an entry to `BUILD_LOG.md` without being asked. Format: date, what was asked, what was generated, what broke, what was corrected. Be honest about missteps.
