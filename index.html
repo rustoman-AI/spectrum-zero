@@ -15,7 +15,7 @@ canvas { display: block; width: 100%; height: 100%; }
   <video id="intro-video" src="./assets/archimed_intro.mp4?v=3" poster="./assets/intro_poster.jpg?v=3"
          playsinline webkit-playsinline preload="auto"
          style="max-width:100%;max-height:100%;object-fit:contain;"></video>
-  <div id="intro-tap" style="position:absolute;bottom:15%;color:#fff;font:bold 16px monospace;opacity:0.8;pointer-events:none;">Loading…</div>
+  <div id="intro-tap" style="position:absolute;bottom:15%;color:#fff;font:bold 16px monospace;opacity:0.8;pointer-events:none;">Tap to begin</div>
 </div>
 <div id="defeat-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:99998;background:#000;display:none;align-items:center;justify-content:center;">
   <video id="defeat-video" playsinline webkit-playsinline preload="none"
@@ -30,7 +30,6 @@ canvas { display: block; width: 100%; height: 100%; }
   var layer = document.getElementById('intro-layer');
   var video = document.getElementById('intro-video');
   var tapMsg = document.getElementById('intro-tap');
-  var ready = false;
   var started = false;
   var gameStarted = false;
   var debugMode = window.location.search.indexOf('debug=1') > -1;
@@ -46,31 +45,12 @@ canvas { display: block; width: 100%; height: 100%; }
   // Force layout so video has real dimensions (iOS refuses zero-size play)
   void video.offsetHeight;
 
-  // --- GATE: wait for canplaythrough OR 4s timeout ---
-  var gateTimeout = setTimeout(function() {
-    // Timeout: skip intro entirely, go straight to game
-    updateDebugInfo('gate timeout 4s — skipping intro');
-    startGame();
-  }, 4000);
-
-  video.addEventListener('canplaythrough', onReady);
-  // Also try canplay as fallback (some browsers fire it but not canplaythrough)
-  video.addEventListener('canplay', onReady);
-
-  function onReady() {
-    if (ready) return;
-    ready = true;
-    clearTimeout(gateTimeout);
-    video.removeEventListener('canplaythrough', onReady);
-    video.removeEventListener('canplay', onReady);
-    // Now enable tap
-    tapMsg.textContent = 'Tap to begin';
-    updateDebugInfo('ready, waiting for tap');
-  }
+  // On iOS, video won't load until a user gesture, so we allow tap immediately.
+  // play() in the gesture handler will trigger load+play in one step.
 
   // --- TAP HANDLER ---
   layer.addEventListener('pointerdown', function() {
-    if (!ready || started) return; // ignore taps until ready
+    if (started) return;
     started = true;
     // play() MUST be the absolute first call — Safari gesture token is fragile
     var playPromise = video.play();
@@ -129,7 +109,6 @@ canvas { display: block; width: 100%; height: 100%; }
   function startGame() {
     if (gameStarted) return;
     gameStarted = true;
-    clearTimeout(gateTimeout);
     layer.style.display = 'none';
     try {
       if (typeof init === 'function') init();
