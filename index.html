@@ -3153,6 +3153,7 @@ let pointerDownOnObject = null;  // what was under pointer at down
 let pointerDownType = null;
 let prevPointerWorld = null;  // previous frame's pointer world coords (for delta)
 let targetAngle = 0;          // smoothed rotation target
+let primaryPointerId = null;  // pointerId of the primary finger
 const DRAG_THRESHOLD = 3;
 const HIT_RADIUS = 8;
 const SOCKET_SNAP_RADIUS = 10;
@@ -3162,8 +3163,15 @@ const ROT_K = 1.8;           // tuning constant: controls overall sensitivity
 const ROT_L_MIN = 15;        // minimum beam length (prevents explosive rotation on short beams)
 const ROT_LERP_RATE = 0.20;  // 20% per frame toward target (at 60fps)
 const ROT_MAX_SPEED = 2.5;   // max radians/second angular speed
+
+// --- Secondary pointer (optional second finger) ---
+let secondPointer = { id: null, mirror: null, targetAngle: 0, prevWorld: null, active: false };
+
+// Canvas ref for setPointerCapture
+let canvasEl = null;
 // Selection highlight ring
 let highlightMesh = null;
+let highlight2Mesh = null;  // second finger highlight
 // Drop-target highlight (shown during drag at nearest socket)
 let dropTargetMesh = null;
 // --- Debug overlay ---
@@ -3173,11 +3181,13 @@ let lastPointerEvent = 'none';
 let lastWorldCoord = { x: 0, y: 0 };
 let lastHitCount = 0;
 function initInput(canvas) {
+  canvasEl = canvas;
   canvas.style.touchAction = 'none';
   canvas.addEventListener('pointerdown', onPointerDown, { passive: false });
   canvas.addEventListener('pointermove', onPointerMove, { passive: false });
   canvas.addEventListener('pointerup', onPointerUp, { passive: false });
   canvas.addEventListener('pointercancel', onPointerUp, { passive: false });
+  canvas.addEventListener('lostpointercapture', onLostCapture, { passive: false });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'd' || e.key === 'D') toggleDebug();
   });
@@ -3191,6 +3201,13 @@ function createHighlight() {
   highlightMesh.position.z = 0.5;
   highlightMesh.visible = false;
   getScene().add(highlightMesh);
+  // Second highlight for secondary pointer
+  const geo1b = new THREE.RingGeometry(4, 4.6, 24);
+  const mat1b = new THREE.MeshBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0.9 });
+  highlight2Mesh = new THREE.Mesh(geo1b, mat1b);
+  highlight2Mesh.position.z = 0.5;
+  highlight2Mesh.visible = false;
+  getScene().add(highlight2Mesh);
   // Drop target: yellow-ish ring shown at nearest socket while dragging
   const geo2 = new THREE.RingGeometry(4.2, 4.8, 24);
   const mat2 = new THREE.MeshBasicMaterial({ color: 0xffcc00, transparent: true, opacity: 0.7 });
@@ -3229,7 +3246,34 @@ function onPointerDown(e) {
     handleRestartTap();
     return;
   }
+
   const world = screenToWorld(e.clientX, e.clientY);
+  const id = e.pointerId;
+
+  // --- Secondary pointer: if primary is already active and rotating/selected,
+  //     a second finger on a DIFFERENT mirror starts secondary rotation ---
+  if (primaryPointerId !== null && id !== primaryPointerId) {
+    // Only allow secondary if primary is rotating or selected (not dragging)
+    if (state === STATE_ROTATE || state === STATE_SELECTED) {
+      const hit = findObjectAt(world.x, world.y);
+      if (hit && hit.type === 'mirror' && hit.object !== selectedObject && !secondPointer.active) {
+        // Grab this mirror as secondary
+        secondPointer.id = id;
+        secondPointer.mirror = hit.object;
+        secondPointer.targetAngle = hit.object.angle;
+        secondPointer.prevWorld = { x: world.x, y: world.y };
+        secondPointer.active = true;
+        try { canvasEl.setPointerCapture(id); } catch (_) {}
+        updateSecondHighlight();
+      }
+    }
+    return; // don't touch primary state
+  }
+
+  // --- Primary pointer ---
+  primaryPointerId = id;
+  try { canvasEl.setPointerCapture(id); } catch (_) {}
+
   lastPointerEvent = `down@${e.clientX},${e.clientY}`;
   lastWorldCoord = world;
   pointerStart = world;
@@ -3242,6 +3286,18 @@ function onPointerDown(e) {
 function onPointerMove(e) {
   e.preventDefault();
   const world = screenToWorld(e.clientX, e.clientY);
+  const id = e.pointerId;
+
+  // --- Secondary pointer rotation ---
+  if (secondPointer.active && id === secondPointer.id) {
+    applyRotationDelta(secondPointer, world);
+    updateSecondHighlight();
+    return;
+  }
+
+  // --- Primary pointer (existing logic) ---
+  if (id !== primaryPointerId) return; // stray pointer, ignore
+
   lastPointerEvent = `move@${e.clientX},${e.clientY}`;
   lastWorldCoord = world;
   if (!pointerStart) { updateDebug(); return; }
@@ -3301,6 +3357,19 @@ function onPointerMove(e) {
 }
 function onPointerUp(e) {
   e.preventDefault();
+  const id = e.pointerId;
+
+  // --- Secondary pointer release ---
+  if (secondPointer.active && id === secondPointer.id) {
+    // Snap to final target
+    if (secondPointer.mirror) rotateMirror(secondPointer.mirror, secondPointer.targetAngle);
+    releaseSecondPointer();
+    return;
+  }
+
+  // --- Primary pointer release ---
+  if (id !== primaryPointerId && primaryPointerId !== null) return; // stray
+
   const world = screenToWorld(e.clientX, e.clientY);
   lastPointerEvent = `up@${e.clientX},${e.clientY}`;
   lastWorldCoord = world;
@@ -3349,12 +3418,76 @@ function onPointerUp(e) {
   pointerStart = null;
   pointerDownOnObject = null;
   pointerDownType = null;
+  primaryPointerId = null;
   updateDebug();
 }
 function startDrag(obj, type) {
   state = STATE_DRAG;
   dragObject = obj;
   dragType = type;
+}
+
+// --- Secondary pointer helpers ---
+function applyRotationDelta(sp, world) {
+  if (!sp.mirror || !sp.prevWorld) return;
+  const mirror = sp.mirror;
+  const mx = FREE_PLACEMENT ? mirror.freeX : SOCKET_POSITIONS[mirror.socketIndex][0];
+  const my = FREE_PLACEMENT ? mirror.freeY : SOCKET_POSITIONS[mirror.socketIndex][1];
+  const pdx = world.x - sp.prevWorld.x;
+  const pdy = world.y - sp.prevWorld.y;
+  const toPointerX = world.x - mx;
+  const toPointerY = world.y - my;
+  const toPointerLen = Math.sqrt(toPointerX * toPointerX + toPointerY * toPointerY);
+  if (toPointerLen > 0.1) {
+    const tangential = (toPointerX * pdy - toPointerY * pdx) / toPointerLen;
+    const L = getReflectedBeamLength(mirror);
+    const angleDelta = (tangential * ROT_K) / Math.max(L, ROT_L_MIN);
+    sp.targetAngle += angleDelta;
+  }
+  sp.prevWorld = { x: world.x, y: world.y };
+}
+
+function releaseSecondPointer() {
+  try { canvasEl.releasePointerCapture(secondPointer.id); } catch (_) {}
+  secondPointer.id = null;
+  secondPointer.mirror = null;
+  secondPointer.targetAngle = 0;
+  secondPointer.prevWorld = null;
+  secondPointer.active = false;
+  if (highlight2Mesh) highlight2Mesh.visible = false;
+}
+
+function updateSecondHighlight() {
+  if (!secondPointer.active || !secondPointer.mirror) {
+    if (highlight2Mesh) highlight2Mesh.visible = false;
+    return;
+  }
+  const m = secondPointer.mirror;
+  const mx = FREE_PLACEMENT ? m.freeX : SOCKET_POSITIONS[m.socketIndex][0];
+  const my = FREE_PLACEMENT ? m.freeY : SOCKET_POSITIONS[m.socketIndex][1];
+  highlight2Mesh.position.x = mx;
+  highlight2Mesh.position.y = my;
+  highlight2Mesh.visible = true;
+}
+
+function onLostCapture(e) {
+  // A lost pointer capture must release only that pointer
+  const id = e.pointerId;
+  if (secondPointer.active && id === secondPointer.id) {
+    if (secondPointer.mirror) rotateMirror(secondPointer.mirror, secondPointer.targetAngle);
+    releaseSecondPointer();
+  } else if (id === primaryPointerId) {
+    // Primary lost capture — release as if pointerup
+    if (state === STATE_ROTATE && selectedObject) {
+      rotateMirror(selectedObject, targetAngle);
+    }
+    prevPointerWorld = null;
+    state = selectedObject ? STATE_SELECTED : STATE_IDLE;
+    pointerStart = null;
+    pointerDownOnObject = null;
+    pointerDownType = null;
+    primaryPointerId = null;
+  }
 }
 // --- Hit detection (world coords) ---
 function findObjectAt(wx, wy) {
@@ -3462,26 +3595,35 @@ function getReflectedBeamLength(mirror) {
 
 // Lerp mirror angle toward targetAngle each frame, clamped by max angular speed
 function updateRotationSmoothing(dt) {
-  if (state !== STATE_ROTATE || !selectedObject || selectedType !== 'mirror') return;
   if (!dt || dt <= 0) dt = 1 / 60;
 
-  let diff = targetAngle - selectedObject.angle;
-  // Normalize diff to [-PI, PI]
-  while (diff > Math.PI) diff -= 2 * Math.PI;
-  while (diff < -Math.PI) diff += 2 * Math.PI;
-
-  // Frame-rate independent lerp: 1 - (1-rate)^(dt*60)
-  const lerpFactor = 1 - Math.pow(1 - ROT_LERP_RATE, dt * 60);
-  let step = diff * lerpFactor;
-
-  // Clamp angular speed
-  const maxStep = ROT_MAX_SPEED * dt;
-  if (Math.abs(step) > maxStep) {
-    step = Math.sign(step) * maxStep;
+  // Primary pointer smoothing
+  if (state === STATE_ROTATE && selectedObject && selectedType === 'mirror') {
+    let diff = targetAngle - selectedObject.angle;
+    while (diff > Math.PI) diff -= 2 * Math.PI;
+    while (diff < -Math.PI) diff += 2 * Math.PI;
+    const lerpFactor = 1 - Math.pow(1 - ROT_LERP_RATE, dt * 60);
+    let step = diff * lerpFactor;
+    const maxStep = ROT_MAX_SPEED * dt;
+    if (Math.abs(step) > maxStep) step = Math.sign(step) * maxStep;
+    if (Math.abs(diff) > 0.001) {
+      rotateMirror(selectedObject, selectedObject.angle + step);
+    }
   }
 
-  if (Math.abs(diff) > 0.001) {
-    rotateMirror(selectedObject, selectedObject.angle + step);
+  // Secondary pointer smoothing
+  if (secondPointer.active && secondPointer.mirror) {
+    const mirror = secondPointer.mirror;
+    let diff = secondPointer.targetAngle - mirror.angle;
+    while (diff > Math.PI) diff -= 2 * Math.PI;
+    while (diff < -Math.PI) diff += 2 * Math.PI;
+    const lerpFactor = 1 - Math.pow(1 - ROT_LERP_RATE, dt * 60);
+    let step = diff * lerpFactor;
+    const maxStep = ROT_MAX_SPEED * dt;
+    if (Math.abs(step) > maxStep) step = Math.sign(step) * maxStep;
+    if (Math.abs(diff) > 0.001) {
+      rotateMirror(mirror, mirror.angle + step);
+    }
   }
 }
 
