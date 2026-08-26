@@ -2454,18 +2454,18 @@ function initEnemies() {
     shieldPlate.visible = false;
     mesh.add(shieldPlate);
 
-    // Oars (4 per side, animated at runtime for oared ships)
+    // Oars (3 per side, animated at runtime for oared ships)
     const oarMeshes = [];
-    const OAR_COUNT = 4;
+    const OAR_COUNT = 3;
     const oarMat = new THREE.MeshBasicMaterial({ color: 0x5C3D2E });
     for (let side = -1; side <= 1; side += 2) {
       for (let oi = 0; oi < OAR_COUNT; oi++) {
-        const oarGeo = new THREE.PlaneGeometry(0.15, 1.8);
+        const oarGeo = new THREE.PlaneGeometry(0.2, 1.6);
         const oar = new THREE.Mesh(oarGeo, oarMat);
         // Position: along hull sides, spread vertically
         oar.position.x = side * 2.2;
-        oar.position.y = -0.5 + oi * 0.7 - (OAR_COUNT * 0.7) / 2;
-        oar.position.z = 0.02;
+        oar.position.y = oi * 0.8 - (OAR_COUNT * 0.8) / 2;
+        oar.position.z = -0.02; // BEHIND the hull sprite
         oar.rotation.z = side * 0.3; // angled outward
         oar.visible = false;
         mesh.add(oar);
@@ -2542,14 +2542,14 @@ function updateEnemies(dt) {
     if (e.propulsion === 'oared') {
       // Oar cycle: slow synchronized stroke (period ~2s)
       e.oarPhase += dt * 3.2; // ~2s full cycle
-      // Hull rock: ±2 degrees in time with strokes
-      e.mesh.rotation.z = Math.sin(e.oarPhase) * 0.035; // ~2 degrees
+      // Hull rock: once per two strokes, ±1.5 degrees (slower, less twitchy)
+      e.mesh.rotation.z = Math.sin(e.oarPhase * 0.5) * 0.026;
       e.driftX = 0;
     } else {
       // Sailed: gentle lateral drift (slow sinusoid)
       e.oarPhase += dt * 1.2;
       e.driftX = Math.sin(e.oarPhase) * 0.8; // gentle sway
-      e.mesh.rotation.z = Math.sin(e.oarPhase * 0.7) * 0.02; // very slight roll
+      e.mesh.rotation.z = Math.sin(e.oarPhase * 0.7) * 0.015; // very slight roll
     }
 
     if (e.y <= WALL_Y) {
