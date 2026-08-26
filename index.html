@@ -314,11 +314,11 @@ const SYNERGY_BONUS = 0.3;
 
 // --- Enemy types ---
 const ENEMY_TYPES = {
-  skiff:       { hp: 30,   armour: 0, speed: 5,   reward: { brass: 10 } },
-  trireme:     { hp: 100,  armour: 0, speed: 3.5, reward: { brass: 20, bronze: 5 } },
-  quadrireme:  { hp: 200,  armour: 2, speed: 2.5, reward: { bronze: 15, silver: 3 } },
-  shieldbearer:{ hp: 400,  armour: 1, speed: 2.0, reward: { bronze: 20, silver: 8 }, shieldAngle: 25 },
-  flagship:    { hp: 1500, armour: 4, speed: 1.0, reward: { gold: 20 } },
+  skiff:       { hp: 30,   armour: 0, speed: 5,   reward: { brass: 10 }, propulsion: 'sailed' },
+  trireme:     { hp: 100,  armour: 0, speed: 3.5, reward: { brass: 20, bronze: 5 }, propulsion: 'oared' },
+  quadrireme:  { hp: 200,  armour: 2, speed: 2.5, reward: { bronze: 15, silver: 3 }, propulsion: 'oared' },
+  shieldbearer:{ hp: 400,  armour: 1, speed: 2.0, reward: { bronze: 20, silver: 8 }, shieldAngle: 25, propulsion: 'oared' },
+  flagship:    { hp: 1500, armour: 4, speed: 1.0, reward: { gold: 20 }, propulsion: 'sailed' },
 };
 
 // --- Escalation ---
@@ -2297,11 +2297,11 @@ function drawShip(ctx, sz, type) {
 
   // Ship type variations
   const configs = {
-    skiff:        { hullW: 0.55, hullH: 0.18, prowLen: 0.12, mastH: 0.35, sailW: 0.25, sailH: 0.22, oars: 3, stripe: '#8B4513', hullCol: '#6B4226', deckCol: '#9E6B3E' },
-    trireme:      { hullW: 0.65, hullH: 0.20, prowLen: 0.15, mastH: 0.40, sailW: 0.30, sailH: 0.28, oars: 5, stripe: '#C41E3A', hullCol: '#5C3317', deckCol: '#8B6B4A' },
-    quadrireme:   { hullW: 0.72, hullH: 0.22, prowLen: 0.16, mastH: 0.45, sailW: 0.35, sailH: 0.30, oars: 7, stripe: '#1E5631', hullCol: '#4A2B10', deckCol: '#7A5B3A' },
-    shieldbearer: { hullW: 0.68, hullH: 0.22, prowLen: 0.14, mastH: 0.38, sailW: 0.28, sailH: 0.24, oars: 5, stripe: '#CC8844', hullCol: '#5C3317', deckCol: '#8B6B4A' },
-    flagship:     { hullW: 0.80, hullH: 0.25, prowLen: 0.18, mastH: 0.50, sailW: 0.40, sailH: 0.35, oars: 9, stripe: '#DAA520', hullCol: '#3D1F00', deckCol: '#6B4226' },
+    skiff:        { hullW: 0.55, hullH: 0.18, prowLen: 0.12, mastH: 0.40, sailW: 0.35, sailH: 0.30, oars: 0, stripe: '#8B4513', hullCol: '#6B4226', deckCol: '#9E6B3E' },
+    trireme:      { hullW: 0.65, hullH: 0.20, prowLen: 0.15, mastH: 0.30, sailW: 0.18, sailH: 0.15, oars: 5, stripe: '#C41E3A', hullCol: '#5C3317', deckCol: '#8B6B4A' },
+    quadrireme:   { hullW: 0.72, hullH: 0.22, prowLen: 0.16, mastH: 0.30, sailW: 0.20, sailH: 0.15, oars: 7, stripe: '#1E5631', hullCol: '#4A2B10', deckCol: '#7A5B3A' },
+    shieldbearer: { hullW: 0.68, hullH: 0.22, prowLen: 0.14, mastH: 0.28, sailW: 0.16, sailH: 0.12, oars: 5, stripe: '#CC8844', hullCol: '#5C3317', deckCol: '#8B6B4A' },
+    flagship:     { hullW: 0.80, hullH: 0.25, prowLen: 0.18, mastH: 0.55, sailW: 0.50, sailH: 0.40, oars: 0, stripe: '#DAA520', hullCol: '#3D1F00', deckCol: '#6B4226' },
   };
   const cfg = configs[type] || configs.skiff;
 
@@ -2454,6 +2454,25 @@ function initEnemies() {
     shieldPlate.visible = false;
     mesh.add(shieldPlate);
 
+    // Oars (4 per side, animated at runtime for oared ships)
+    const oarMeshes = [];
+    const OAR_COUNT = 4;
+    const oarMat = new THREE.MeshBasicMaterial({ color: 0x5C3D2E });
+    for (let side = -1; side <= 1; side += 2) {
+      for (let oi = 0; oi < OAR_COUNT; oi++) {
+        const oarGeo = new THREE.PlaneGeometry(0.15, 1.8);
+        const oar = new THREE.Mesh(oarGeo, oarMat);
+        // Position: along hull sides, spread vertically
+        oar.position.x = side * 2.2;
+        oar.position.y = -0.5 + oi * 0.7 - (OAR_COUNT * 0.7) / 2;
+        oar.position.z = 0.02;
+        oar.rotation.z = side * 0.3; // angled outward
+        oar.visible = false;
+        mesh.add(oar);
+        oarMeshes.push({ mesh: oar, side, index: oi });
+      }
+    }
+
     enemyGroup.add(mesh);
     pool.push({
       active: false, type: 'skiff',
@@ -2462,7 +2481,7 @@ function initEnemies() {
       speed: 0, baseSpeed: 0,
       burn: 0, slowed: false,
       bandsHitting: 0, lastHitColour: 0,
-      mesh, barFill, shieldPlate, spriteMat, hullMat: spriteMat
+      mesh, barFill, shieldPlate, oarMeshes, spriteMat, hullMat: spriteMat
     });
   }
 }
@@ -2483,6 +2502,9 @@ function spawnEnemy(type, lane, hpMultiplier, yOffset) {
       e.shieldAngle = template.shieldAngle || 0;
       e.shieldBlocking = false;
       e.stunTimer = 0;
+      e.propulsion = template.propulsion || 'oared';
+      e.oarPhase = Math.random() * Math.PI * 2; // random start phase
+      e.driftX = 0;
       e.lane = lane;
       e.y = SHIP_SPAWN_Y + (yOffset || 0);
       e.speed = template.speed;
@@ -2515,6 +2537,21 @@ function updateEnemies(dt) {
     } else {
       e.y -= e.speed * dt; // descend
     }
+
+    // Propulsion animation
+    if (e.propulsion === 'oared') {
+      // Oar cycle: slow synchronized stroke (period ~2s)
+      e.oarPhase += dt * 3.2; // ~2s full cycle
+      // Hull rock: ±2 degrees in time with strokes
+      e.mesh.rotation.z = Math.sin(e.oarPhase) * 0.035; // ~2 degrees
+      e.driftX = 0;
+    } else {
+      // Sailed: gentle lateral drift (slow sinusoid)
+      e.oarPhase += dt * 1.2;
+      e.driftX = Math.sin(e.oarPhase) * 0.8; // gentle sway
+      e.mesh.rotation.z = Math.sin(e.oarPhase * 0.7) * 0.02; // very slight roll
+    }
+
     if (e.y <= WALL_Y) {
       // Breach: ship reached the wall
       const dmg = BREACH_DAMAGE[e.type] || 10;
@@ -2531,11 +2568,24 @@ function updateEnemies(dt) {
 
 function applyGoldSlow(enemy) { enemy.slowed = true; }
 
+// Wind state: affects sailed ships more than oared
+let windActive = false;
+const WIND_SAIL_SLOW = 0.35;  // sailed ships slowed to 35% speed
+const WIND_OAR_SLOW = 0.85;  // oared ships barely affected (85%)
+
+function setWindActive(active) { windActive = active; }
+function isWindActive() { return windActive; }
+
 function applySlowStates() {
   for (let i = 0; i < pool.length; i++) {
     const e = pool[i];
     if (!e.active) continue;
-    e.speed = e.slowed ? e.baseSpeed * 0.5 : e.baseSpeed;
+    let speedMult = 1.0;
+    if (e.slowed) speedMult *= 0.5; // gold beam slow
+    if (windActive) {
+      speedMult *= (e.propulsion === 'sailed') ? WIND_SAIL_SLOW : WIND_OAR_SLOW;
+    }
+    e.speed = e.baseSpeed * speedMult;
   }
 }
 
@@ -2562,7 +2612,7 @@ function positionEnemy(e) {
   const worldWidth = getWorldWidth();
   const laneWidth = worldWidth / ENEMY_LANE_COUNT;
   const x = -worldWidth / 2 + laneWidth * (e.lane + 0.5);
-  e.mesh.position.x = x;
+  e.mesh.position.x = x + (e.driftX || 0);
   e.mesh.position.y = e.y;
 }
 
@@ -2596,6 +2646,19 @@ function updateEnemyVisual(e) {
   e.mesh.scale.set(s/3, s/3, 1);
   // Shield plate visibility
   if (e.shieldPlate) e.shieldPlate.visible = (e.type === 'shieldbearer');
+
+  // Oar animation (oared ships only)
+  if (e.oarMeshes) {
+    const isOared = e.propulsion === 'oared';
+    for (const oarObj of e.oarMeshes) {
+      oarObj.mesh.visible = isOared;
+      if (isOared) {
+        // Synchronized rowing stroke: rotate oars in unison
+        const stroke = Math.sin(e.oarPhase + oarObj.index * 0.3);
+        oarObj.mesh.rotation.z = oarObj.side * (0.3 + stroke * 0.4);
+      }
+    }
+  }
 }
 
 

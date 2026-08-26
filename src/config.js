@@ -45,11 +45,11 @@ export const SYNERGY_BONUS = 0.3;
 
 // --- Enemy types ---
 export const ENEMY_TYPES = {
-  skiff:       { hp: 30,   armour: 0, speed: 5,   reward: { brass: 10 } },
-  trireme:     { hp: 100,  armour: 0, speed: 3.5, reward: { brass: 20, bronze: 5 } },
-  quadrireme:  { hp: 200,  armour: 2, speed: 2.5, reward: { bronze: 15, silver: 3 } },
-  shieldbearer:{ hp: 400,  armour: 1, speed: 2.0, reward: { bronze: 20, silver: 8 }, shieldAngle: 25 },
-  flagship:    { hp: 1500, armour: 4, speed: 1.0, reward: { gold: 20 } },
+  skiff:       { hp: 30,   armour: 0, speed: 5,   reward: { brass: 10 }, propulsion: 'sailed' },
+  trireme:     { hp: 100,  armour: 0, speed: 3.5, reward: { brass: 20, bronze: 5 }, propulsion: 'oared' },
+  quadrireme:  { hp: 200,  armour: 2, speed: 2.5, reward: { bronze: 15, silver: 3 }, propulsion: 'oared' },
+  shieldbearer:{ hp: 400,  armour: 1, speed: 2.0, reward: { bronze: 20, silver: 8 }, shieldAngle: 25, propulsion: 'oared' },
+  flagship:    { hp: 1500, armour: 4, speed: 1.0, reward: { gold: 20 }, propulsion: 'sailed' },
 };
 
 // --- Escalation ---
