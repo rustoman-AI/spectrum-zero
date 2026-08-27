@@ -1,5 +1,5 @@
 // ============================================================
-// src/zeus.js — Zeus ultimate: lightning strike
+// src/zeus.js â€” Zeus ultimate: lightning strike
 //
 // Ready state: "ZEUS IS LISTENING" text + chime when faith threshold met.
 // Strike: white flash, staggered lightning bolts to all ships,
@@ -13,8 +13,6 @@ import { SHIP_SPAWN_Y, ENEMY_LANE_COUNT, GOD_ABILITIES } from './config.js';
 // --- State ---
 let zeusReady = false;
 let readyNotified = false;
-let readyTextMesh = null;
-let readyTextTimer = 0;
 
 let strikeActive = false;
 let strikeTimer = 0;
@@ -38,23 +36,7 @@ export function getZeusShake() {
 }
 
 export function initZeus() {
-  const scene = getScene();
-  // "ZEUS IS LISTENING" text sprite
-  const c = document.createElement('canvas');
-  c.width = 320; c.height = 40;
-  const ctx = c.getContext('2d');
-  ctx.fillStyle = '#FFDD44';
-  ctx.font = 'bold 16px monospace';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('ZEUS IS LISTENING', 160, 20);
-  const tex = new THREE.CanvasTexture(c);
-  tex.minFilter = THREE.LinearFilter;
-  const geo = new THREE.PlaneGeometry(24, 3);
-  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false });
-  readyTextMesh = new THREE.Mesh(geo, mat);
-  readyTextMesh.position.set(0, SHIP_SPAWN_Y - 6, 6);
-  scene.add(readyTextMesh);
+  // No text label — the visual effects (bolts, flash, shake) carry the moment
 }
 
 // Called each frame from main loop
@@ -62,23 +44,13 @@ export function updateZeus(dt, affordable) {
   const wasReady = zeusReady;
   zeusReady = affordable;
 
-  // Notify on crossing threshold
+  // Notify on crossing threshold (chime only, no text)
   if (zeusReady && !readyNotified) {
     readyNotified = true;
-    readyTextTimer = 2.5;
     playReadyChime();
   }
   if (!zeusReady) {
     readyNotified = false;
-  }
-
-  // Fade text
-  if (readyTextTimer > 0) {
-    readyTextTimer -= dt;
-    const alpha = Math.min(1, readyTextTimer * 2); // fade in fast, out slow
-    readyTextMesh.material.opacity = alpha;
-  } else {
-    readyTextMesh.material.opacity = 0;
   }
 
   // Strike animation
@@ -111,8 +83,9 @@ export function triggerZeusStrike() {
     const ex = -ww / 2 + laneWidth * (enemy.lane + 0.5);
     const ey = enemy.y;
 
-    // Mark for Zeus kill — defer heat application by 0.2s for charring visual
+    // Mark for Zeus kill â€” defer heat application by 0.2s for charring visual
     // Store the pending heat to be applied after charring stage
+    const isLight = (enemy.type === 'skiff' || enemy.type === 'trireme');
     enemy.zeusPendingHeat = isLight ? enemy.maxHp * 1.5 : enemy.maxHp * 0.5;
     enemy.zeusCharring = 0.25; // 0.25s charring before heat hits
     // Stun: stop for 3 seconds
@@ -213,7 +186,7 @@ function playReadyChime() {
   const ctx = getACtx();
   if (!ctx) return;
   const now = ctx.currentTime;
-  // Rising two-note chime: C5 → E5
+  // Rising two-note chime: C5 â†’ E5
   const g = ctx.createGain();
   g.gain.setValueAtTime(0.2, now);
   g.gain.exponentialRampToValueAtTime(0.001, now + 0.6);

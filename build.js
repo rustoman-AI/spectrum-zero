@@ -339,6 +339,45 @@ if (scriptMatch) {
   }
 }
 
+// --- Strict-mode lint: catch undefined references ---
+// Wraps game code in strict mode inside a VM with browser-like globals stubbed.
+// Any ReferenceError (undefined variable) fails the build.
+const vm = require('vm');
+if (scriptMatch) {
+  const strictCode = `"use strict";\n(function(){\n${scriptMatch[1]}\n})();`;
+  // Stub browser globals so declarations don't throw for missing DOM/WebGL
+  const sandbox = {
+    THREE: new Proxy({}, { get: () => function(){return {prototype:{},setAttribute:()=>{},connect:()=>({connect:()=>({connect:()=>({})})}),start:()=>{},stop:()=>{},getChannelData:()=>new Float32Array(1)}} }),
+    window: { location:{search:''}, matchMedia:()=>({matches:false}), AudioContext: function(){}, webkitAudioContext: function(){}, devicePixelRatio:1 },
+    document: { createElement:()=>({getContext:()=>({clearRect:()=>{},fillRect:()=>{},fillText:()=>{},beginPath:()=>{},moveTo:()=>{},lineTo:()=>{},closePath:()=>{},fill:()=>{},stroke:()=>{},arc:()=>{},ellipse:()=>{},quadraticCurveTo:()=>{},scale:()=>{},save:()=>{},restore:()=>{},createLinearGradient:()=>({addColorStop:()=>{}}),createRadialGradient:()=>({addColorStop:()=>{}}),measureText:()=>({width:0}),set font(_){},set fillStyle(_){},set strokeStyle(_){},set lineWidth(_){},set textAlign(_){},set textBaseline(_){}}),width:128,height:128,style:{}}), getElementById:()=>({style:{},addEventListener:()=>{},play:()=>Promise.resolve(),pause:()=>{},load:()=>{}}), querySelector:()=>null, body:{appendChild:()=>{}}, addEventListener:()=>{} },
+    console: console,
+    setTimeout: ()=>0, setInterval: ()=>0, clearTimeout: ()=>{}, clearInterval: ()=>{},
+    requestAnimationFrame: ()=>0,
+    performance: {now:()=>0},
+    sessionStorage: {getItem:()=>null,setItem:()=>{}},
+    navigator: {},
+    Image: function(){},
+    Math: Math, Date: Date, JSON: JSON,
+    parseInt, parseFloat, isNaN, isFinite, undefined, NaN, Infinity,
+    Array, Object, String, Number, Boolean, RegExp, Error, TypeError, RangeError,
+    Map, Set, WeakMap, WeakSet, Promise, Proxy, Float32Array, Uint8Array, Int16Array,
+  };
+  try {
+    const script = new vm.Script(strictCode, { filename: 'index.html (strict lint)' });
+    script.runInNewContext(sandbox, { timeout: 5000 });
+  } catch (e) {
+    if (e.message && e.message.includes('is not defined')) {
+      console.error(`\n❌ BUILD FAILED: Undefined reference in strict mode`);
+      console.error(`  ${e.message}`);
+      console.error(`  This is likely a missing variable declaration (like the isLight bug).`);
+      console.error(`  Fix: declare the variable or import it.\n`);
+      fs.unlinkSync(outPath);
+      process.exit(1);
+    }
+    // Other runtime errors during lint are expected (missing DOM context etc) — ignore
+  }
+}
+
 const size = fs.statSync(outPath).size;
 console.log(`Built index.html (${(size / 1024).toFixed(1)} KB)`);
 
