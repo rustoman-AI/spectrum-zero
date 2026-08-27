@@ -11,7 +11,7 @@ import {
   ALTAR_RATES, ALTAR_POSITIONS, ALTAR_HW, ALTAR_HH,
   ALTAR_OVERHEAT_TIME, ALTAR_RECOVER_TIME
 } from './config.js';
-import { getScene, getWorldWidth } from './renderer.js';
+import { getScene, getWorldWidth, getOverlayScene } from './renderer.js';
 import { getSegments } from './beam.js';
 
 let resources = { brass: 0, bronze: 0, silver: 0, gold: 0 };
@@ -82,19 +82,26 @@ export function initFoundries() {
 
     // --- Label ---
     const lCanvas = document.createElement('canvas');
-    lCanvas.width = 64; lCanvas.height = 20;
+    lCanvas.width = 96; lCanvas.height = 24;
     const lCtx = lCanvas.getContext('2d');
-    lCtx.fillStyle = '#ffffff';
-    lCtx.font = 'bold 10px monospace';
+    // Dark outline for legibility over any background
+    lCtx.strokeStyle = '#000000';
+    lCtx.lineWidth = 3;
+    lCtx.font = 'bold 12px monospace';
     lCtx.textAlign = 'center';
-    lCtx.fillText(def.type.toUpperCase(), 32, 14);
+    lCtx.textBaseline = 'middle';
+    lCtx.strokeText(def.type.toUpperCase(), 48, 12);
+    lCtx.fillStyle = '#ffffff';
+    lCtx.fillText(def.type.toUpperCase(), 48, 12);
     const lTex = new THREE.CanvasTexture(lCanvas);
     lTex.minFilter = THREE.LinearFilter;
-    const lGeo = new THREE.PlaneGeometry(6, 2);
-    const lMat = new THREE.MeshBasicMaterial({ map: lTex, transparent: true, depthWrite: false });
+    lTex.premultiplyAlpha = false;
+    const lGeo = new THREE.PlaneGeometry(7, 1.8);
+    const lMat = new THREE.MeshBasicMaterial({ map: lTex, transparent: true, alphaTest: 0.05, depthWrite: false });
     const labelMesh = new THREE.Mesh(lGeo, lMat);
+    // Place in overlay scene so mirrors never cover the labels
     labelMesh.position.set(def.x, def.y + ALTAR_HH + 1.5, 0.2);
-    scene.add(labelMesh);
+    getOverlayScene().add(labelMesh);
 
     // --- Overheat arc (RingGeometry with partial theta) ---
     const arcRadius = Math.max(ALTAR_HW, ALTAR_HH) * 1.1;

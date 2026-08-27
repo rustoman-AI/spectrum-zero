@@ -126,14 +126,22 @@ export function updateCraftingTray() {
     trayCtx.lineWidth = zeusGlow ? 3 : (pulsing ? 2.5 : (affordable ? 1.5 : 0.5));
     trayCtx.strokeRect(x + 1, 1, btnW - 2, 38);
 
+    // Clip text to this button cell so labels can never bleed into neighbours
+    trayCtx.save();
+    trayCtx.beginPath();
+    trayCtx.rect(x + 1, 1, btnW - 2, 38);
+    trayCtx.clip();
+
     trayCtx.fillStyle = (affordable || zeusGlow) ? '#ffffff' : '#777777';
-    trayCtx.font = 'bold 9px monospace';
+    trayCtx.font = 'bold 8px monospace';
     trayCtx.textAlign = 'center';
-    trayCtx.fillText(item.label, x + btnW / 2, 14);
+    trayCtx.fillText(item.label, x + btnW / 2, 13);
 
     trayCtx.font = '7px monospace';
     trayCtx.fillStyle = (affordable || zeusGlow) ? '#cccccc' : '#555555';
-    trayCtx.fillText(costStr(cost), x + btnW / 2, 28);
+    trayCtx.fillText(costStr(cost), x + btnW / 2, 27);
+
+    trayCtx.restore();
 
     // Radial cooldown overlay for god powers
     let cooldownFrac = 0;

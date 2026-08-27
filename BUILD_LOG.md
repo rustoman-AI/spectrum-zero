@@ -187,3 +187,19 @@ All procedural canvas drawing at load time — zero image files, zip size unchan
 - GitHub Pages: https://rustoman-ai.github.io/spectrum-zero/
 - Branch: master (Pages deploys from root)
 - Safe revert: `git tag submission-fallback` at 87454b9
+
+---
+
+## 2026-08-25 — UI & Audio Polish Pass
+
+**Asked (from a recorded-playthrough review):** Four items: (1) shop buttons overlap when new prism/priest tiers unlock, (2) the four altar labels (BRASS/BRONZE/SILVER/GOLD) get fully covered when mirrors line up horizontally, (3) ships struck by Zeus lightning show no on-hull reaction the instant before death, (4) heavy flagship destruction and Zeus casts lack deep low-frequency bass to convey scale.
+
+**Generated:**
+- **Shop grid:** The tray already used a fixed grid (`btnW = 512/count`, `x = i*btnW`), so the reported overlap was label text bleeding past button edges, not the buttons themselves. Added a per-button clip rectangle so labels can never draw into a neighbour, and shrank fonts to 8px label / 7px cost.
+- **Altar labels:** Moved the four altar name labels out of the world layer and into the overlay scene so they always render on top of mirrors. Added a dark outline + alphaTest for legibility against the sea, on a larger 96×24 canvas.
+- **Zeus hull reaction:** During the 0.25s charring stage the hull now flickers electric white-blue and emits blue-white sparks (0x88ccff) around the ship; a bright electric burst (0xaaddff) fires at the moment the deferred heat is applied. `enemy.js` imports `spawnSparks`/`spawnContactGlow` from `effects.js` — these are `export function` declarations, hoisted in the concatenated IIFE, and `effects.js` does not import `enemy.js`, so there is no circular dependency.
+- **Deep bass:** `spawnDestruction(x, y, heavy)` now takes a `heavy` flag. For `flagship` and `quadrireme` kills, the flash grows (160 vs 100), the wood-crack burst lengthens/loudens, and a sub-bass sine drops 40Hz→22Hz over ~0.45s. Zeus `playThunderCrack` gains a dedicated sub-bass sine dropping 45Hz→20Hz over ~0.9s on top of the existing filtered rumble tail.
+
+**Note on the shop "overlap":** The first read of the code showed the grid was already correct. Rather than rewrite the layout, the fix targeted the actual visible symptom (label bleed), which is the smaller and safer change.
+
+**Verified:** `node build.js` → 179.3 KB, exit 0 (its strict-mode lint confirms the new cross-module refs resolve). `node test_rotation.js` 11/11, `node test_smoke.js` 29/29. Audio changes are synthesis-only and not covered by the headless tests; they were reasoned about by frequency/gain, not heard in this environment.

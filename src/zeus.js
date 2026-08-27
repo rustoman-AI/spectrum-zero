@@ -229,4 +229,16 @@ function playThunderCrack() {
   rg.gain.exponentialRampToValueAtTime(0.001, now + 1.5);
   rSrc.connect(lp).connect(rg).connect(ctx.destination);
   rSrc.start(now + 0.04);
+
+  // Deep sub-bass boom: sine dropping 45Hz -> 20Hz for a felt thunderclap
+  const sub = ctx.createOscillator();
+  sub.type = 'sine';
+  sub.frequency.setValueAtTime(45, now);
+  sub.frequency.exponentialRampToValueAtTime(20, now + 0.9);
+  const subGain = ctx.createGain();
+  subGain.gain.setValueAtTime(0.7, now);
+  subGain.gain.exponentialRampToValueAtTime(0.001, now + 1.1);
+  sub.connect(subGain).connect(ctx.destination);
+  sub.start(now);
+  sub.stop(now + 1.2);
 }

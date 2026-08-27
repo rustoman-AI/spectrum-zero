@@ -8,6 +8,7 @@ import {
 } from './config.js';
 import { getScene, getWorldWidth } from './renderer.js';
 import { addKillReward } from './foundry.js';
+import { spawnSparks, spawnContactGlow } from './effects.js';
 
 const pool = [];
 let enemyGroup = null;
@@ -315,10 +316,19 @@ export function updateEnemies(dt) {
     // Zeus charring: deferred kill stage (electric arcs then heat)
     if (e.zeusCharring > 0) {
       e.zeusCharring -= dt;
-      // Visual: white tint during charring
-      e.spriteMat.color.setRGB(2, 2, 2); // overbright white
+      // Visual: electric white-blue flicker during charring
+      const flicker = Math.random() > 0.5 ? 2.5 : 1.2;
+      e.spriteMat.color.setRGB(flicker, flicker, flicker * 1.2); // slight blue tint
+      // Electric arc sparks around the hull
+      const ww2 = getWorldWidth();
+      const lw2 = ww2 / ENEMY_LANE_COUNT;
+      const ex2 = -ww2 / 2 + lw2 * (e.lane + 0.5) + (e.driftX || 0) + (e.pullX || 0);
+      if (Math.random() < 0.6) {
+        spawnSparks(ex2, e.y, 0x88ccff, 2); // blue-white electric sparks
+      }
       if (e.zeusCharring <= 0 && e.zeusPendingHeat) {
-        // Apply the deferred heat now
+        // Apply the deferred heat now — bright electric burst on death
+        spawnContactGlow(ex2, e.y, 0xaaddff, 80);
         e.heat += e.zeusPendingHeat;
         e.zeusPendingHeat = 0;
         e.spriteMat.color.setRGB(1, 1, 1); // reset tint

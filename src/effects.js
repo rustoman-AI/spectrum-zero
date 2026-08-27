@@ -134,9 +134,10 @@ export function spawnSparks(x, y, colour, count) {
 }
 
 // Destruction sequence: flash + debris + audio
-export function spawnDestruction(x, y) {
+// heavy=true for flagship/large ships → deeper bass + bigger flash
+export function spawnDestruction(x, y, heavy) {
   // Flash (large bright glow)
-  spawnContactGlow(x, y, 0xffffff, 100);
+  spawnContactGlow(x, y, 0xffffff, heavy ? 160 : 100);
   // Debris particles
   for (let i = 0; i < 8; i++) {
     for (const d of debrisPool) {
@@ -154,8 +155,8 @@ export function spawnDestruction(x, y) {
       }
     }
   }
-  // Audio: wood crack + thump
-  playDestructionSound();
+  // Audio: wood crack + thump (+ sub-bass for heavy ships)
+  playDestructionSound(heavy);
 }
 
 // --- WebAudio synthesis ---
@@ -167,19 +168,19 @@ function ensureAudio() {
   return audioCtx;
 }
 
-function playDestructionSound() {
+function playDestructionSound(heavy) {
   const ctx = ensureAudio();
   if (!ctx) return;
   const now = ctx.currentTime;
   // Wood crack: short noise burst
-  const noiseLen = 0.08;
+  const noiseLen = heavy ? 0.14 : 0.08;
   const noiseBuf = ctx.createBuffer(1, ctx.sampleRate * noiseLen, ctx.sampleRate);
   const data = noiseBuf.getChannelData(0);
   for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
   const noise = ctx.createBufferSource();
   noise.buffer = noiseBuf;
   const noiseGain = ctx.createGain();
-  noiseGain.gain.setValueAtTime(0.3, now);
+  noiseGain.gain.setValueAtTime(heavy ? 0.4 : 0.3, now);
   noiseGain.gain.exponentialRampToValueAtTime(0.01, now + noiseLen);
   noise.connect(noiseGain).connect(ctx.destination);
   noise.start(now);
@@ -193,6 +194,19 @@ function playDestructionSound() {
   osc.connect(oscGain).connect(ctx.destination);
   osc.start(now);
   osc.stop(now + 0.2);
+  // Heavy ships: deep sub-bass explosion (rumbling drop from 40Hz -> 22Hz)
+  if (heavy) {
+    const sub = ctx.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(40, now);
+    sub.frequency.exponentialRampToValueAtTime(22, now + 0.45);
+    const subGain = ctx.createGain();
+    subGain.gain.setValueAtTime(0.6, now);
+    subGain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+    sub.connect(subGain).connect(ctx.destination);
+    sub.start(now);
+    sub.stop(now + 0.55);
+  }
 }
 
 export function resetEffects() {

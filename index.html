@@ -1320,6 +1320,18 @@ function playThunderCrack() {
   rg.gain.exponentialRampToValueAtTime(0.001, now + 1.5);
   rSrc.connect(lp).connect(rg).connect(ctx.destination);
   rSrc.start(now + 0.04);
+
+  // Deep sub-bass boom: sine dropping 45Hz -> 20Hz for a felt thunderclap
+  const sub = ctx.createOscillator();
+  sub.type = 'sine';
+  sub.frequency.setValueAtTime(45, now);
+  sub.frequency.exponentialRampToValueAtTime(20, now + 0.9);
+  const subGain = ctx.createGain();
+  subGain.gain.setValueAtTime(0.7, now);
+  subGain.gain.exponentialRampToValueAtTime(0.001, now + 1.1);
+  sub.connect(subGain).connect(ctx.destination);
+  sub.start(now);
+  sub.stop(now + 1.2);
 }
 
 
@@ -2505,6 +2517,7 @@ function updatePrismGlow(segments) {
 
 
 
+
 const pool = [];
 let enemyGroup = null;
 const shipTextures = {};
@@ -2811,10 +2824,19 @@ function updateEnemies(dt) {
     // Zeus charring: deferred kill stage (electric arcs then heat)
     if (e.zeusCharring > 0) {
       e.zeusCharring -= dt;
-      // Visual: white tint during charring
-      e.spriteMat.color.setRGB(2, 2, 2); // overbright white
+      // Visual: electric white-blue flicker during charring
+      const flicker = Math.random() > 0.5 ? 2.5 : 1.2;
+      e.spriteMat.color.setRGB(flicker, flicker, flicker * 1.2); // slight blue tint
+      // Electric arc sparks around the hull
+      const ww2 = getWorldWidth();
+      const lw2 = ww2 / ENEMY_LANE_COUNT;
+      const ex2 = -ww2 / 2 + lw2 * (e.lane + 0.5) + (e.driftX || 0) + (e.pullX || 0);
+      if (Math.random() < 0.6) {
+        spawnSparks(ex2, e.y, 0x88ccff, 2); // blue-white electric sparks
+      }
       if (e.zeusCharring <= 0 && e.zeusPendingHeat) {
-        // Apply the deferred heat now
+        // Apply the deferred heat now — bright electric burst on death
+        spawnContactGlow(ex2, e.y, 0xaaddff, 80);
         e.heat += e.zeusPendingHeat;
         e.zeusPendingHeat = 0;
         e.spriteMat.color.setRGB(1, 1, 1); // reset tint
@@ -3185,19 +3207,26 @@ function initFoundries() {
 
     // --- Label ---
     const lCanvas = document.createElement('canvas');
-    lCanvas.width = 64; lCanvas.height = 20;
+    lCanvas.width = 96; lCanvas.height = 24;
     const lCtx = lCanvas.getContext('2d');
-    lCtx.fillStyle = '#ffffff';
-    lCtx.font = 'bold 10px monospace';
+    // Dark outline for legibility over any background
+    lCtx.strokeStyle = '#000000';
+    lCtx.lineWidth = 3;
+    lCtx.font = 'bold 12px monospace';
     lCtx.textAlign = 'center';
-    lCtx.fillText(def.type.toUpperCase(), 32, 14);
+    lCtx.textBaseline = 'middle';
+    lCtx.strokeText(def.type.toUpperCase(), 48, 12);
+    lCtx.fillStyle = '#ffffff';
+    lCtx.fillText(def.type.toUpperCase(), 48, 12);
     const lTex = new THREE.CanvasTexture(lCanvas);
     lTex.minFilter = THREE.LinearFilter;
-    const lGeo = new THREE.PlaneGeometry(6, 2);
-    const lMat = new THREE.MeshBasicMaterial({ map: lTex, transparent: true, depthWrite: false });
+    lTex.premultiplyAlpha = false;
+    const lGeo = new THREE.PlaneGeometry(7, 1.8);
+    const lMat = new THREE.MeshBasicMaterial({ map: lTex, transparent: true, alphaTest: 0.05, depthWrite: false });
     const labelMesh = new THREE.Mesh(lGeo, lMat);
+    // Place in overlay scene so mirrors never cover the labels
     labelMesh.position.set(def.x, def.y + ALTAR_HH + 1.5, 0.2);
-    scene.add(labelMesh);
+    getOverlayScene().add(labelMesh);
 
     // --- Overheat arc (RingGeometry with partial theta) ---
     const arcRadius = Math.max(ALTAR_HW, ALTAR_HH) * 1.1;
@@ -3498,14 +3527,22 @@ function updateCraftingTray() {
     trayCtx.lineWidth = zeusGlow ? 3 : (pulsing ? 2.5 : (affordable ? 1.5 : 0.5));
     trayCtx.strokeRect(x + 1, 1, btnW - 2, 38);
 
+    // Clip text to this button cell so labels can never bleed into neighbours
+    trayCtx.save();
+    trayCtx.beginPath();
+    trayCtx.rect(x + 1, 1, btnW - 2, 38);
+    trayCtx.clip();
+
     trayCtx.fillStyle = (affordable || zeusGlow) ? '#ffffff' : '#777777';
-    trayCtx.font = 'bold 9px monospace';
+    trayCtx.font = 'bold 8px monospace';
     trayCtx.textAlign = 'center';
-    trayCtx.fillText(item.label, x + btnW / 2, 14);
+    trayCtx.fillText(item.label, x + btnW / 2, 13);
 
     trayCtx.font = '7px monospace';
     trayCtx.fillStyle = (affordable || zeusGlow) ? '#cccccc' : '#555555';
-    trayCtx.fillText(costStr(cost), x + btnW / 2, 28);
+    trayCtx.fillText(costStr(cost), x + btnW / 2, 27);
+
+    trayCtx.restore();
 
     // Radial cooldown overlay for god powers
     let cooldownFrac = 0;
@@ -3749,9 +3786,10 @@ function spawnSparks(x, y, colour, count) {
 }
 
 // Destruction sequence: flash + debris + audio
-function spawnDestruction(x, y) {
+// heavy=true for flagship/large ships → deeper bass + bigger flash
+function spawnDestruction(x, y, heavy) {
   // Flash (large bright glow)
-  spawnContactGlow(x, y, 0xffffff, 100);
+  spawnContactGlow(x, y, 0xffffff, heavy ? 160 : 100);
   // Debris particles
   for (let i = 0; i < 8; i++) {
     for (const d of debrisPool) {
@@ -3769,8 +3807,8 @@ function spawnDestruction(x, y) {
       }
     }
   }
-  // Audio: wood crack + thump
-  playDestructionSound();
+  // Audio: wood crack + thump (+ sub-bass for heavy ships)
+  playDestructionSound(heavy);
 }
 
 // --- WebAudio synthesis ---
@@ -3782,19 +3820,19 @@ function ensureAudio() {
   return audioCtx;
 }
 
-function playDestructionSound() {
+function playDestructionSound(heavy) {
   const ctx = ensureAudio();
   if (!ctx) return;
   const now = ctx.currentTime;
   // Wood crack: short noise burst
-  const noiseLen = 0.08;
+  const noiseLen = heavy ? 0.14 : 0.08;
   const noiseBuf = ctx.createBuffer(1, ctx.sampleRate * noiseLen, ctx.sampleRate);
   const data = noiseBuf.getChannelData(0);
   for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
   const noise = ctx.createBufferSource();
   noise.buffer = noiseBuf;
   const noiseGain = ctx.createGain();
-  noiseGain.gain.setValueAtTime(0.3, now);
+  noiseGain.gain.setValueAtTime(heavy ? 0.4 : 0.3, now);
   noiseGain.gain.exponentialRampToValueAtTime(0.01, now + noiseLen);
   noise.connect(noiseGain).connect(ctx.destination);
   noise.start(now);
@@ -3808,6 +3846,19 @@ function playDestructionSound() {
   osc.connect(oscGain).connect(ctx.destination);
   osc.start(now);
   osc.stop(now + 0.2);
+  // Heavy ships: deep sub-bass explosion (rumbling drop from 40Hz -> 22Hz)
+  if (heavy) {
+    const sub = ctx.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(40, now);
+    sub.frequency.exponentialRampToValueAtTime(22, now + 0.45);
+    const subGain = ctx.createGain();
+    subGain.gain.setValueAtTime(0.6, now);
+    subGain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+    sub.connect(subGain).connect(ctx.destination);
+    sub.start(now);
+    sub.stop(now + 0.55);
+  }
 }
 
 function resetEffects() {
@@ -4334,7 +4385,8 @@ function updateDamage(dt) {
         addSlagDirect(reward);
         totalKills++;
         const ex = -worldWidth / 2 + laneWidth * (enemy.lane + 0.5);
-        spawnDestruction(ex, enemy.y);
+        const heavy = (enemy.type === 'flagship' || enemy.type === 'quadrireme');
+        spawnDestruction(ex, enemy.y, heavy);
         // Sinking glug plays after the explosion (200ms delay)
         setTimeout(playSinkGlug, 200);
         triggerKillEffect(enemy, reward);

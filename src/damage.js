@@ -143,7 +143,8 @@ export function updateDamage(dt) {
         addSlagDirect(reward);
         totalKills++;
         const ex = -worldWidth / 2 + laneWidth * (enemy.lane + 0.5);
-        spawnDestruction(ex, enemy.y);
+        const heavy = (enemy.type === 'flagship' || enemy.type === 'quadrireme');
+        spawnDestruction(ex, enemy.y, heavy);
         // Sinking glug plays after the explosion (200ms delay)
         setTimeout(playSinkGlug, 200);
         triggerKillEffect(enemy, reward);
