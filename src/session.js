@@ -152,7 +152,7 @@ function triggerWin() {
   onEndState();
   // Play win cinematic, then show overlay
   if (typeof window !== 'undefined' && window.playWinCinematic) {
-    window.playWinCinematic(function() { showOverlay(MSG_WIN); });
+    window.playWinCinematic(function() { if (gameOver) showOverlay(MSG_WIN); });
   } else {
     showOverlay(MSG_WIN);
   }
@@ -164,7 +164,7 @@ function triggerLose() {
   onEndState();
   // Play defeat cinematic (once per session), then show overlay
   if (typeof window !== 'undefined' && window.playDefeatCinematic) {
-    window.playDefeatCinematic(function() { showOverlay(MSG_LOSE); });
+    window.playDefeatCinematic(function() { if (gameOver) showOverlay(MSG_LOSE); });
   } else {
     showOverlay(MSG_LOSE);
   }
@@ -281,6 +281,11 @@ function showOverlay(text) {
 function hideOverlay() {
   if (overlayMesh) overlayMesh.visible = false;
   if (dimMesh) dimMesh.visible = false;
+  // Clear the canvas to prevent ghost images if visible is somehow restored
+  if (overlayCtx && overlayCanvas) {
+    overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+    if (overlayTexture) overlayTexture.needsUpdate = true;
+  }
 }
 
 export function handleRestartTap() {
