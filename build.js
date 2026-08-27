@@ -68,11 +68,11 @@ canvas { display: block; width: 100%; height: 100%; }
          style="max-width:100%;max-height:100%;object-fit:contain;"></video>
   <div id="intro-tap" style="position:absolute;bottom:15%;color:#fff;font:bold 16px monospace;opacity:0.8;pointer-events:none;">Tap to begin</div>
 </div>
-<div id="defeat-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:99998;background:#000;display:none;align-items:center;justify-content:center;">
+<div id="defeat-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:99998;background:#000;display:none;pointer-events:none;align-items:center;justify-content:center;">
   <video id="defeat-video" playsinline webkit-playsinline preload="none"
          style="max-width:100%;max-height:100%;object-fit:contain;"></video>
 </div>
-<div id="win-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:99998;background:#000;display:none;align-items:center;justify-content:center;">
+<div id="win-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:99998;background:#000;display:none;pointer-events:none;align-items:center;justify-content:center;">
   <video id="win-video" playsinline webkit-playsinline preload="none"
          style="max-width:100%;max-height:100%;object-fit:contain;"></video>
 </div>
@@ -211,6 +211,7 @@ canvas { display: block; width: 100%; height: 100%; }
       try { sessionStorage.setItem('defeatPlayed', '1'); } catch(e) {}
       defeatVideo.pause();
       defeatLayer.style.display = 'none';
+      defeatLayer.style.pointerEvents = 'none'; // stop intercepting taps
       onDone();
     };
 
@@ -220,8 +221,9 @@ canvas { display: block; width: 100%; height: 100%; }
       return;
     }
 
-    // Show layer and play
+    // Show layer and play (enable pointer-events only while playing, for skip tap)
     defeatLayer.style.display = 'flex';
+    defeatLayer.style.pointerEvents = 'auto';
     defeatLayer.style.background = '#000';
     var playPromise = defeatVideo.play();
     if (playPromise && playPromise.then) {
@@ -282,6 +284,7 @@ canvas { display: block; width: 100%; height: 100%; }
       winDone = true;
       winVideo.pause();
       winLayer.style.display = 'none';
+      winLayer.style.pointerEvents = 'none'; // stop intercepting taps
       winActive = false;
       onDone();
     };
@@ -292,8 +295,9 @@ canvas { display: block; width: 100%; height: 100%; }
       return;
     }
 
-    // Show layer and play
+    // Show layer and play (enable pointer-events only while playing, for skip tap)
     winLayer.style.display = 'flex';
+    winLayer.style.pointerEvents = 'auto';
     winLayer.style.background = '#000';
     winVideo.muted = true;
     var playPromise = winVideo.play();
