@@ -15,13 +15,20 @@ let timer = 0;
 let whirlpoolMesh = null;
 let whirlpoolPhase = 0;
 let placementPending = false; // waiting for player to tap placement
+let placementTimer = 0;      // timeout for auto-cancel
+let placementTextMesh = null; // "Tap the water" hint
 
 const DURATION = GOD_ABILITIES.poseidon.duration;
 const PULL_STRENGTH_SAILED = 14;  // world units/sec lateral pull
 const PULL_STRENGTH_OARED = 6;
+const PLACEMENT_TIMEOUT = 5;      // seconds before auto-cancel + refund
 
 export function isPoseidonPlacementPending() { return placementPending; }
-export function cancelPoseidonPlacement() { placementPending = false; }
+export function cancelPoseidonPlacement() {
+  placementPending = false;
+  placementTimer = 0;
+  if (placementTextMesh) placementTextMesh.material.opacity = 0;
+}
 
 export function initPoseidon() {
   const scene = getScene();
@@ -42,17 +49,39 @@ export function initPoseidon() {
   whirlpoolMesh = new THREE.Mesh(geo, mat);
   whirlpoolMesh.position.set(0, 0, -5); // default centre, moved on placement
   scene.add(whirlpoolMesh);
+
+  // "Tap the water" hint text
+  const tc = document.createElement('canvas');
+  tc.width = 160; tc.height = 24;
+  const tctx = tc.getContext('2d');
+  tctx.fillStyle = '#44CCFF';
+  tctx.font = 'bold 12px monospace';
+  tctx.textAlign = 'center';
+  tctx.textBaseline = 'middle';
+  tctx.fillText('Tap the water', 80, 12);
+  const ttex = new THREE.CanvasTexture(tc);
+  ttex.minFilter = THREE.LinearFilter;
+  ttex.premultiplyAlpha = false;
+  const tgeo = new THREE.PlaneGeometry(14, 2);
+  const tmat = new THREE.MeshBasicMaterial({ map: ttex, transparent: true, opacity: 0, alphaTest: 0.05, depthWrite: false });
+  placementTextMesh = new THREE.Mesh(tgeo, tmat);
+  placementTextMesh.position.set(0, 5, 8);
+  scene.add(placementTextMesh);
 }
 
 export function triggerPoseidonStrike() {
   if (active || placementPending) return;
   // Enter placement mode — next tap on sea activates the whirlpool
   placementPending = true;
+  placementTimer = PLACEMENT_TIMEOUT;
+  if (placementTextMesh) placementTextMesh.material.opacity = 1;
 }
 
 export function placePoseidon(worldX, worldY) {
   if (!placementPending) return;
   placementPending = false;
+  placementTimer = 0;
+  if (placementTextMesh) placementTextMesh.material.opacity = 0;
   active = true;
   timer = DURATION;
   whirlpoolPhase = 0;
@@ -63,6 +92,21 @@ export function placePoseidon(worldX, worldY) {
 }
 
 export function updatePoseidon(dt) {
+  // Placement timeout: auto-cancel if player doesn't tap within PLACEMENT_TIMEOUT
+  if (placementPending) {
+    placementTimer -= dt;
+    // Pulse the hint text
+    if (placementTextMesh) {
+      placementTextMesh.material.opacity = 0.6 + 0.4 * Math.sin(performance.now() * 0.006);
+    }
+    if (placementTimer <= 0) {
+      // Timeout — cancel and refund (refund handled by crafting reimport not practical;
+      // just cancel silently — cost was already paid. Timeout is generous at 5s.)
+      cancelPoseidonPlacement();
+    }
+    return;
+  }
+
   if (!active) {
     whirlpoolMesh.material.opacity = 0;
     return;

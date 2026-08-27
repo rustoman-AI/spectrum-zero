@@ -18,12 +18,12 @@ import {
 } from './config.js';
 import { getSegments, getResonanceActive } from './beam.js';
 import { getEnemyPool, deactivateEnemy, applyGoldSlow, triggerKillEffect } from './enemy.js';
-import { getWorldWidth } from './renderer.js';
+import { getWorldWidth, getScene } from './renderer.js';
 import { getFocusMultiplier } from './crafting.js';
 import { addSlagDirect } from './foundry.js';
 import { spawnContactGlow, spawnSparks, spawnDestruction } from './effects.js';
 import { getActiveTier } from './prism.js';
-import { playSinkGlug } from './audio.js';
+import { playSinkGlug, playDeflect } from './audio.js';
 
 const ENEMY_HIT_HALF_W = 3;
 const ENEMY_HIT_HALF_H = 3;
@@ -69,10 +69,16 @@ export function updateDamage(dt) {
             // Angle from vertical: atan2(|horizontal|, |vertical|)
             const angleFromVert = Math.atan2(Math.abs(dx / len), Math.abs(dy / len)) * (180 / Math.PI);
             if (angleFromVert <= enemy.shieldAngle) {
-              // Blocked — spawn deflection spark
+              // Blocked — deflection sparks + metallic sound + label
               if (Math.random() < dt * 8) {
                 spawnContactGlow(ex, ey + ENEMY_HIT_HALF_H, 0xccaa44, 5);
-                spawnSparks(ex, ey + ENEMY_HIT_HALF_H, 0xffcc66, 1);
+                spawnSparks(ex, ey + ENEMY_HIT_HALF_H, 0xffcc66, 2);
+                playDeflect();
+              }
+              // Show "BLOCKED" label (throttled to once per ~1s per enemy)
+              if (!enemy._lastBlockLabel || performance.now() - enemy._lastBlockLabel > 1000) {
+                enemy._lastBlockLabel = performance.now();
+                spawnBlockedLabel(ex, ey + ENEMY_HIT_HALF_H + 2);
               }
               enemy.shieldBlocking = true;
               continue; // this segment does no damage
@@ -198,4 +204,53 @@ function segmentIntersectsBox(seg, cx, cy, hw, hh) {
   }
 
   return true;
+}
+
+// --- "BLOCKED" floating label ---
+const blockedLabels = [];
+let blockedTexture = null;
+
+function getBlockedTexture() {
+  if (blockedTexture) return blockedTexture;
+  const c = document.createElement('canvas');
+  c.width = 80; c.height = 20;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#FFAA33';
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('BLOCKED', 40, 10);
+  blockedTexture = new THREE.CanvasTexture(c);
+  blockedTexture.minFilter = THREE.LinearFilter;
+  blockedTexture.premultiplyAlpha = false;
+  return blockedTexture;
+}
+
+function spawnBlockedLabel(x, y) {
+  const scene = getScene();
+  const geo = new THREE.PlaneGeometry(5, 1.3);
+  const mat = new THREE.MeshBasicMaterial({
+    map: getBlockedTexture(), transparent: true, opacity: 1, alphaTest: 0.05, depthWrite: false
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, y, 7);
+  scene.add(mesh);
+  blockedLabels.push({ mesh, life: 0.8, vy: 4 });
+}
+
+// Called from main loop to animate floating labels
+export function updateBlockedLabels(dt) {
+  for (let i = blockedLabels.length - 1; i >= 0; i--) {
+    const l = blockedLabels[i];
+    l.life -= dt;
+    l.mesh.position.y += l.vy * dt;
+    l.mesh.material.opacity = Math.max(0, l.life / 0.8);
+    if (l.life <= 0) {
+      const scene = getScene();
+      scene.remove(l.mesh);
+      l.mesh.geometry.dispose();
+      l.mesh.material.dispose();
+      blockedLabels.splice(i, 1);
+    }
+  }
 }

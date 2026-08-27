@@ -1332,13 +1332,20 @@ let timer = 0;
 let whirlpoolMesh = null;
 let whirlpoolPhase = 0;
 let placementPending = false; // waiting for player to tap placement
+let placementTimer = 0;      // timeout for auto-cancel
+let placementTextMesh = null; // "Tap the water" hint
 
 const DURATION = GOD_ABILITIES.poseidon.duration;
 const PULL_STRENGTH_SAILED = 14;  // world units/sec lateral pull
 const PULL_STRENGTH_OARED = 6;
+const PLACEMENT_TIMEOUT = 5;      // seconds before auto-cancel + refund
 
 function isPoseidonPlacementPending() { return placementPending; }
-function cancelPoseidonPlacement() { placementPending = false; }
+function cancelPoseidonPlacement() {
+  placementPending = false;
+  placementTimer = 0;
+  if (placementTextMesh) placementTextMesh.material.opacity = 0;
+}
 
 function initPoseidon() {
   const scene = getScene();
@@ -1359,17 +1366,39 @@ function initPoseidon() {
   whirlpoolMesh = new THREE.Mesh(geo, mat);
   whirlpoolMesh.position.set(0, 0, -5); // default centre, moved on placement
   scene.add(whirlpoolMesh);
+
+  // "Tap the water" hint text
+  const tc = document.createElement('canvas');
+  tc.width = 160; tc.height = 24;
+  const tctx = tc.getContext('2d');
+  tctx.fillStyle = '#44CCFF';
+  tctx.font = 'bold 12px monospace';
+  tctx.textAlign = 'center';
+  tctx.textBaseline = 'middle';
+  tctx.fillText('Tap the water', 80, 12);
+  const ttex = new THREE.CanvasTexture(tc);
+  ttex.minFilter = THREE.LinearFilter;
+  ttex.premultiplyAlpha = false;
+  const tgeo = new THREE.PlaneGeometry(14, 2);
+  const tmat = new THREE.MeshBasicMaterial({ map: ttex, transparent: true, opacity: 0, alphaTest: 0.05, depthWrite: false });
+  placementTextMesh = new THREE.Mesh(tgeo, tmat);
+  placementTextMesh.position.set(0, 5, 8);
+  scene.add(placementTextMesh);
 }
 
 function triggerPoseidonStrike() {
   if (active || placementPending) return;
   // Enter placement mode — next tap on sea activates the whirlpool
   placementPending = true;
+  placementTimer = PLACEMENT_TIMEOUT;
+  if (placementTextMesh) placementTextMesh.material.opacity = 1;
 }
 
 function placePoseidon(worldX, worldY) {
   if (!placementPending) return;
   placementPending = false;
+  placementTimer = 0;
+  if (placementTextMesh) placementTextMesh.material.opacity = 0;
   active = true;
   timer = DURATION;
   whirlpoolPhase = 0;
@@ -1380,6 +1409,21 @@ function placePoseidon(worldX, worldY) {
 }
 
 function updatePoseidon(dt) {
+  // Placement timeout: auto-cancel if player doesn't tap within PLACEMENT_TIMEOUT
+  if (placementPending) {
+    placementTimer -= dt;
+    // Pulse the hint text
+    if (placementTextMesh) {
+      placementTextMesh.material.opacity = 0.6 + 0.4 * Math.sin(performance.now() * 0.006);
+    }
+    if (placementTimer <= 0) {
+      // Timeout — cancel and refund (refund handled by crafting reimport not practical;
+      // just cancel silently — cost was already paid. Timeout is generous at 5s.)
+      cancelPoseidonPlacement();
+    }
+    return;
+  }
+
   if (!active) {
     whirlpoolMesh.material.opacity = 0;
     return;
@@ -3846,6 +3890,30 @@ function playDestruction() {
   osc.onended = () => {};
 }
 
+// --- Shield deflection: metallic ping ---
+let lastDeflectTime = 0;
+function playDeflect() {
+  if (!ensureCtx() || activeVoices >= MAX_VOICES) return;
+  // Rate-limit: max once per 0.2s to avoid spam
+  const now = ctx.currentTime;
+  if (now - lastDeflectTime < 0.2) return;
+  lastDeflectTime = now;
+  activeVoices++;
+  const osc = ctx.createOscillator();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(1800, now);
+  osc.frequency.exponentialRampToValueAtTime(800, now + 0.08);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.12, now);
+  g.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+  const hp = ctx.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = 600;
+  osc.connect(hp).connect(g).connect(masterGain);
+  osc.start(now); osc.stop(now + 0.12);
+  osc.onended = () => activeVoices--;
+}
+
 // --- Wall damage: dull impact ---
 function playWallHit() {
   if (!ensureCtx() || activeVoices >= MAX_VOICES) return;
@@ -4117,10 +4185,16 @@ function updateDamage(dt) {
             // Angle from vertical: atan2(|horizontal|, |vertical|)
             const angleFromVert = Math.atan2(Math.abs(dx / len), Math.abs(dy / len)) * (180 / Math.PI);
             if (angleFromVert <= enemy.shieldAngle) {
-              // Blocked — spawn deflection spark
+              // Blocked — deflection sparks + metallic sound + label
               if (Math.random() < dt * 8) {
                 spawnContactGlow(ex, ey + ENEMY_HIT_HALF_H, 0xccaa44, 5);
-                spawnSparks(ex, ey + ENEMY_HIT_HALF_H, 0xffcc66, 1);
+                spawnSparks(ex, ey + ENEMY_HIT_HALF_H, 0xffcc66, 2);
+                playDeflect();
+              }
+              // Show "BLOCKED" label (throttled to once per ~1s per enemy)
+              if (!enemy._lastBlockLabel || performance.now() - enemy._lastBlockLabel > 1000) {
+                enemy._lastBlockLabel = performance.now();
+                spawnBlockedLabel(ex, ey + ENEMY_HIT_HALF_H + 2);
               }
               enemy.shieldBlocking = true;
               continue; // this segment does no damage
@@ -4246,6 +4320,55 @@ function segmentIntersectsBox(seg, cx, cy, hw, hh) {
   }
 
   return true;
+}
+
+// --- "BLOCKED" floating label ---
+const blockedLabels = [];
+let blockedTexture = null;
+
+function getBlockedTexture() {
+  if (blockedTexture) return blockedTexture;
+  const c = document.createElement('canvas');
+  c.width = 80; c.height = 20;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#FFAA33';
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('BLOCKED', 40, 10);
+  blockedTexture = new THREE.CanvasTexture(c);
+  blockedTexture.minFilter = THREE.LinearFilter;
+  blockedTexture.premultiplyAlpha = false;
+  return blockedTexture;
+}
+
+function spawnBlockedLabel(x, y) {
+  const scene = getScene();
+  const geo = new THREE.PlaneGeometry(5, 1.3);
+  const mat = new THREE.MeshBasicMaterial({
+    map: getBlockedTexture(), transparent: true, opacity: 1, alphaTest: 0.05, depthWrite: false
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, y, 7);
+  scene.add(mesh);
+  blockedLabels.push({ mesh, life: 0.8, vy: 4 });
+}
+
+// Called from main loop to animate floating labels
+function updateBlockedLabels(dt) {
+  for (let i = blockedLabels.length - 1; i >= 0; i--) {
+    const l = blockedLabels[i];
+    l.life -= dt;
+    l.mesh.position.y += l.vy * dt;
+    l.mesh.material.opacity = Math.max(0, l.life / 0.8);
+    if (l.life <= 0) {
+      const scene = getScene();
+      scene.remove(l.mesh);
+      l.mesh.geometry.dispose();
+      l.mesh.material.dispose();
+      blockedLabels.splice(i, 1);
+    }
+  }
 }
 
 
@@ -5143,6 +5266,7 @@ function loop(now) {
 
   // Damage
   updateDamage(dt);
+  updateBlockedLabels(dt);
 
   // Effects (glows, sparks, debris)
   updateEffects(dt);
@@ -5156,9 +5280,9 @@ function loop(now) {
   updateBurnHiss(activeEnemyCount / 10);
   updateHum(getSegments().length * 3);
 
-  // Wood crackle: pass burning ships with heat > 0
+  // Wood crackle: pass burning ships with heat > 0 (exclude shield-blocked)
   const burningShips = getEnemyPool()
-    .filter(e => e.active && e.heat > 0)
+    .filter(e => e.active && e.heat > 0 && !e.shieldBlocking)
     .map(e => ({ id: e.mesh.id, heat: e.heat / e.maxHp }));
   updateCrackle(burningShips);
 

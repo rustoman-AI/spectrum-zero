@@ -11,7 +11,7 @@ import { initPrisms, getPrisms, updatePrismGlow } from './prism.js';
 import { initInput, tickDebug } from './input.js';
 import { initEnemies, updateEnemies, applySlowStates, getEnemyPool } from './enemy.js';
 import { updateSpawner, resetSpawner } from './enemy-spawner.js';
-import { updateDamage } from './damage.js';
+import { updateDamage, getKillCount, updateBlockedLabels } from './damage.js';
 import { initSession, updateSession, addBreaches, isGameOver, getElapsed, updateHud, handleRestartTap, decayWallFlash, getWallHitFlash } from './session.js';
 import { initFoundries, updateFoundries, getFoundryColliders, getAltarAudioState } from './foundry.js';
 import { initFortress, updateFortress, triggerBreachShake } from './fortress.js';
@@ -114,6 +114,7 @@ function loop(now) {
 
   // Damage
   updateDamage(dt);
+  updateBlockedLabels(dt);
 
   // Effects (glows, sparks, debris)
   updateEffects(dt);
@@ -127,9 +128,9 @@ function loop(now) {
   updateBurnHiss(activeEnemyCount / 10);
   updateHum(getSegments().length * 3);
 
-  // Wood crackle: pass burning ships with heat > 0
+  // Wood crackle: pass burning ships with heat > 0 (exclude shield-blocked)
   const burningShips = getEnemyPool()
-    .filter(e => e.active && e.heat > 0)
+    .filter(e => e.active && e.heat > 0 && !e.shieldBlocking)
     .map(e => ({ id: e.mesh.id, heat: e.heat / e.maxHp }));
   updateCrackle(burningShips);
 

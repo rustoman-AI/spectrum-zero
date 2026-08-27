@@ -145,6 +145,30 @@ export function playDestruction() {
   osc.onended = () => {};
 }
 
+// --- Shield deflection: metallic ping ---
+let lastDeflectTime = 0;
+export function playDeflect() {
+  if (!ensureCtx() || activeVoices >= MAX_VOICES) return;
+  // Rate-limit: max once per 0.2s to avoid spam
+  const now = ctx.currentTime;
+  if (now - lastDeflectTime < 0.2) return;
+  lastDeflectTime = now;
+  activeVoices++;
+  const osc = ctx.createOscillator();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(1800, now);
+  osc.frequency.exponentialRampToValueAtTime(800, now + 0.08);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.12, now);
+  g.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+  const hp = ctx.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = 600;
+  osc.connect(hp).connect(g).connect(masterGain);
+  osc.start(now); osc.stop(now + 0.12);
+  osc.onended = () => activeVoices--;
+}
+
 // --- Wall damage: dull impact ---
 export function playWallHit() {
   if (!ensureCtx() || activeVoices >= MAX_VOICES) return;
