@@ -274,14 +274,22 @@ function showOverlay(text) {
   overlayCtx.fillText('Tap to try again', w / 2, 105);
 
   overlayTexture.needsUpdate = true;
+  const oScene = getOverlayScene();
+  if (overlayMesh.parent !== oScene) oScene.add(overlayMesh);
+  if (dimMesh.parent !== oScene) oScene.add(dimMesh);
   overlayMesh.visible = true;
   dimMesh.visible = true;
 }
 
 function hideOverlay() {
-  if (overlayMesh) overlayMesh.visible = false;
-  if (dimMesh) dimMesh.visible = false;
-  // Clear the canvas to prevent ghost images if visible is somehow restored
+  if (overlayMesh) {
+    overlayMesh.visible = false;
+    overlayMesh.removeFromParent();
+  }
+  if (dimMesh) {
+    dimMesh.visible = false;
+    dimMesh.removeFromParent();
+  }
   if (overlayCtx && overlayCanvas) {
     overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
     if (overlayTexture) overlayTexture.needsUpdate = true;
