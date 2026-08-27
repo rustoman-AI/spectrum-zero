@@ -194,13 +194,34 @@ export function initEnemies() {
     barFill.scale.x = 0;
     mesh.add(barFill);
 
-    // Shield plate (visible only on shield-bearer type)
+    // Shield plate (3-band armour, visible only on shield-bearer type)
+    const shieldCanvas = document.createElement('canvas');
+    shieldCanvas.width = 64; shieldCanvas.height = 32;
+    const shCtx = shieldCanvas.getContext('2d');
+    // Draw 3 overlapping curved plates in different metal tones
+    const bandColors = ['#AA7733', '#CC9944', '#DDBB55'];
+    for (let b = 0; b < 3; b++) {
+      const by = 4 + b * 9;
+      shCtx.fillStyle = bandColors[b];
+      shCtx.beginPath();
+      shCtx.ellipse(32, by + 5, 28, 7, 0, Math.PI, 0); // curved band
+      shCtx.fill();
+      // Highlight edge
+      shCtx.strokeStyle = '#EEDD88';
+      shCtx.lineWidth = 0.8;
+      shCtx.beginPath();
+      shCtx.ellipse(32, by + 5, 28, 7, 0, Math.PI + 0.3, -0.3);
+      shCtx.stroke();
+    }
+    const shTex = new THREE.CanvasTexture(shieldCanvas);
+    shTex.minFilter = THREE.LinearFilter;
+    shTex.premultiplyAlpha = false;
     const shieldPlate = new THREE.Mesh(
-      new THREE.PlaneGeometry(4.5, 1.2),
-      new THREE.MeshBasicMaterial({ color: 0xCC8844, transparent: true, opacity: 0.9 })
+      new THREE.PlaneGeometry(5, 2.5),
+      new THREE.MeshBasicMaterial({ map: shTex, transparent: true, alphaTest: 0.05, depthWrite: false })
     );
-    shieldPlate.position.y = 2.8;
-    shieldPlate.position.z = 0.06;
+    shieldPlate.position.y = 2.5;
+    shieldPlate.position.z = 0.08;
     shieldPlate.visible = false;
     mesh.add(shieldPlate);
 
@@ -410,8 +431,16 @@ function updateEnemyVisual(e) {
   const sizes = { skiff: 2.5, trireme: 3.5, quadrireme: 4.5, shieldbearer: 4.0, flagship: 8 };
   const s = sizes[e.type] || 3;
   e.mesh.scale.set(s/3, s/3, 1);
-  // Shield plate visibility
-  if (e.shieldPlate) e.shieldPlate.visible = (e.type === 'shieldbearer');
+  // Shield plate visibility + glint
+  if (e.shieldPlate) {
+    const isShield = (e.type === 'shieldbearer');
+    e.shieldPlate.visible = isShield;
+    if (isShield) {
+      // Subtle glint: opacity pulse
+      const glint = 0.85 + 0.15 * Math.sin(performance.now() * 0.004 + e.oarPhase);
+      e.shieldPlate.material.opacity = glint;
+    }
+  }
 
   // Oar animation (oared ships only)
   if (e.oarMeshes) {
