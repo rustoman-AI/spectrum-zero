@@ -349,17 +349,25 @@ const ALTAR_HH = 2.5;
 
 // --- Shop prices ---
 const SHOP = {
-  mirror:    { brass: 100, scaling: 50 },  // +50 per additional mirror
-  prism3:    { bronze: 150 },
-  prism4:    { bronze: 300 },
-  prism5:    { silver: 200 },
-  prism6:    { silver: 400 },
-  priest:    { silver: 100 },  // generates 1 Faith/sec
+  mirror:    { brass: 50, scaling: 25 },   // 50 + 25 per additional mirror
+  prism4:    { bronze: 80 },
+  prism5:    { silver: 120 },
+  prism6:    { silver: 200 },
+  priest:    { silver: 60 },   // generates 1 Faith/sec
 };
 
-// --- God altars (require Faith + Gold) ---
+// --- God abilities (escalating cost per activation) ---
 const GOD_ABILITIES = {
-  zeus:     { faith: 100, gold: 10, name: 'Thunderstorm', duration: 5 },
+  zeus: {
+    name: 'Thunderstorm',
+    duration: 5,
+    costs: [
+      { brass: 30 },                  // #1: ~30s passive, ~10s with altar
+      { faith: 40, gold: 10 },        // #2: requires priest
+      { faith: 100, gold: 20 },       // #3: serious
+      { faith: 180, gold: 40 },       // #4: endgame
+    ]
+  },
   poseidon: { faith: 100, gold: 15, name: 'Maelstrom', duration: 8 },
   helios:   { faith: 100, gold: 20, name: 'Scorching Sun', duration: 10 },
 };
@@ -1123,9 +1131,9 @@ function initZeus() {
 }
 
 // Called each frame from main loop
-function updateZeus(dt, faith, faithThreshold) {
+function updateZeus(dt, affordable) {
   const wasReady = zeusReady;
-  zeusReady = faith >= faithThreshold;
+  zeusReady = affordable;
 
   // Notify on crossing threshold
   if (zeusReady && !readyNotified) {
@@ -3113,6 +3121,7 @@ let trayWidth = 0;
 const trayHeight = 5;
 let mirrorsBought = 0;
 let focusCount = 0;
+let zeusCount = 0;
 const prevAffordable = [];  // track per-button affordability for pulse
 const pulseTimes = [];      // countdown for 300ms pulse animation
 
@@ -3123,7 +3132,10 @@ const SHOP_ITEMS = [
   { id: 'prism5', label: '5-Prism', getCost: () => SHOP.prism5 },
   { id: 'prism6', label: '6-Prism', getCost: () => SHOP.prism6 },
   { id: 'priest', label: 'Priest', getCost: () => SHOP.priest },
-  { id: 'zeus',   label: 'Zeus', getCost: () => ({ faith: GOD_ABILITIES.zeus.faith, gold: GOD_ABILITIES.zeus.gold }) },
+  { id: 'zeus',   label: 'Zeus', getCost: () => {
+    const costs = GOD_ABILITIES.zeus.costs;
+    return costs[Math.min(zeusCount, costs.length - 1)];
+  } },
 ];
 
 function getFocusMultiplier() { return 1 + focusCount * 0.15; }
@@ -3229,6 +3241,7 @@ function handleCraftTap(worldX, worldY) {
 function resetCrafting() {
   mirrorsBought = 0;
   focusCount = 0;
+  zeusCount = 0;
   if (typeof resetTier === 'function') resetTier();
 }
 
@@ -3252,15 +3265,9 @@ function attemptPurchase(item) {
     case 'prism5': setTier(5); markDirty(); break;
     case 'prism6': setTier(6); markDirty(); break;
     case 'priest': addPriest(); break;
-    case 'zeus': triggerGodAbility('zeus'); break;
+    case 'zeus': zeusCount++; triggerZeusStrike(); break;
   }
   return true;
-}
-
-function triggerGodAbility(god) {
-  if (god === 'zeus') {
-    triggerZeusStrike();
-  }
 }
 
 function canAffordCombined(cost, res, faith) {
@@ -3271,10 +3278,19 @@ function canAffordCombined(cost, res, faith) {
   return true;
 }
 
+function isZeusAffordable() {
+  const res = getResources();
+  const faith = getFaith();
+  const costs = GOD_ABILITIES.zeus.costs;
+  const cost = costs[Math.min(zeusCount, costs.length - 1)];
+  return canAffordCombined(cost, res, faith);
+}
+
 function costStr(cost) {
+  const labels = { brass: 'Br', bronze: 'Bz', silver: 'Si', gold: 'Au', faith: 'Fa' };
   const parts = [];
   for (const k in cost) {
-    parts.push(cost[k] + k[0].toUpperCase());
+    parts.push(cost[k] + (labels[k] || k[0]));
   }
   return parts.join(' ');
 }
@@ -4951,7 +4967,7 @@ function loop(now) {
   updateAltarTone(altarAudio.litCount, altarAudio.anyOverheated);
 
   // Zeus ultimate (ready state + strike animation)
-  updateZeus(dt, getFaith(), GOD_ABILITIES.zeus.faith);
+  updateZeus(dt, isZeusAffordable());
 
   // HUD + crafting tray
   updateHud();

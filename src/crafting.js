@@ -20,6 +20,7 @@ let trayWidth = 0;
 const trayHeight = 5;
 let mirrorsBought = 0;
 let focusCount = 0;
+let zeusCount = 0;
 const prevAffordable = [];  // track per-button affordability for pulse
 const pulseTimes = [];      // countdown for 300ms pulse animation
 
@@ -30,7 +31,10 @@ const SHOP_ITEMS = [
   { id: 'prism5', label: '5-Prism', getCost: () => SHOP.prism5 },
   { id: 'prism6', label: '6-Prism', getCost: () => SHOP.prism6 },
   { id: 'priest', label: 'Priest', getCost: () => SHOP.priest },
-  { id: 'zeus',   label: 'Zeus', getCost: () => ({ faith: GOD_ABILITIES.zeus.faith, gold: GOD_ABILITIES.zeus.gold }) },
+  { id: 'zeus',   label: 'Zeus', getCost: () => {
+    const costs = GOD_ABILITIES.zeus.costs;
+    return costs[Math.min(zeusCount, costs.length - 1)];
+  } },
 ];
 
 export function getFocusMultiplier() { return 1 + focusCount * 0.15; }
@@ -136,6 +140,7 @@ export function handleCraftTap(worldX, worldY) {
 export function resetCrafting() {
   mirrorsBought = 0;
   focusCount = 0;
+  zeusCount = 0;
   if (typeof resetTier === 'function') resetTier();
 }
 
@@ -159,15 +164,9 @@ function attemptPurchase(item) {
     case 'prism5': setTier(5); markDirty(); break;
     case 'prism6': setTier(6); markDirty(); break;
     case 'priest': addPriest(); break;
-    case 'zeus': triggerGodAbility('zeus'); break;
+    case 'zeus': zeusCount++; triggerZeusStrike(); break;
   }
   return true;
-}
-
-function triggerGodAbility(god) {
-  if (god === 'zeus') {
-    triggerZeusStrike();
-  }
 }
 
 function canAffordCombined(cost, res, faith) {
@@ -178,10 +177,19 @@ function canAffordCombined(cost, res, faith) {
   return true;
 }
 
+export function isZeusAffordable() {
+  const res = getResources();
+  const faith = getFaith();
+  const costs = GOD_ABILITIES.zeus.costs;
+  const cost = costs[Math.min(zeusCount, costs.length - 1)];
+  return canAffordCombined(cost, res, faith);
+}
+
 function costStr(cost) {
+  const labels = { brass: 'Br', bronze: 'Bz', silver: 'Si', gold: 'Au', faith: 'Fa' };
   const parts = [];
   for (const k in cost) {
-    parts.push(cost[k] + k[0].toUpperCase());
+    parts.push(cost[k] + (labels[k] || k[0]));
   }
   return parts.join(' ');
 }

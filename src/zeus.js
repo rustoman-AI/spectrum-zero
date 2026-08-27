@@ -58,9 +58,9 @@ export function initZeus() {
 }
 
 // Called each frame from main loop
-export function updateZeus(dt, faith, faithThreshold) {
+export function updateZeus(dt, affordable) {
   const wasReady = zeusReady;
-  zeusReady = faith >= faithThreshold;
+  zeusReady = affordable;
 
   // Notify on crossing threshold
   if (zeusReady && !readyNotified) {

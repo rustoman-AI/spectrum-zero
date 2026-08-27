@@ -80,17 +80,25 @@ export const ALTAR_HH = 2.5;
 
 // --- Shop prices ---
 export const SHOP = {
-  mirror:    { brass: 100, scaling: 50 },  // +50 per additional mirror
-  prism3:    { bronze: 150 },
-  prism4:    { bronze: 300 },
-  prism5:    { silver: 200 },
-  prism6:    { silver: 400 },
-  priest:    { silver: 100 },  // generates 1 Faith/sec
+  mirror:    { brass: 50, scaling: 25 },   // 50 + 25 per additional mirror
+  prism4:    { bronze: 80 },
+  prism5:    { silver: 120 },
+  prism6:    { silver: 200 },
+  priest:    { silver: 60 },   // generates 1 Faith/sec
 };
 
-// --- God altars (require Faith + Gold) ---
+// --- God abilities (escalating cost per activation) ---
 export const GOD_ABILITIES = {
-  zeus:     { faith: 100, gold: 10, name: 'Thunderstorm', duration: 5 },
+  zeus: {
+    name: 'Thunderstorm',
+    duration: 5,
+    costs: [
+      { brass: 30 },                  // #1: ~30s passive, ~10s with altar
+      { faith: 40, gold: 10 },        // #2: requires priest
+      { faith: 100, gold: 20 },       // #3: serious
+      { faith: 180, gold: 40 },       // #4: endgame
+    ]
+  },
   poseidon: { faith: 100, gold: 15, name: 'Maelstrom', duration: 8 },
   helios:   { faith: 100, gold: 20, name: 'Scorching Sun', duration: 10 },
 };
