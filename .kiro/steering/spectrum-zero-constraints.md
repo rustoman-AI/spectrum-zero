@@ -2,7 +2,7 @@
 inclusion: auto
 ---
 
-# Spectrum Zero - Hard Constraints & Tech Decisions
+# Burning Glass - Hard Constraints & Tech Decisions
 
 These rules are NON-NEGOTIABLE across every session. Treat any violation as a build failure.
 

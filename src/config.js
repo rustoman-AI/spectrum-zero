@@ -1,6 +1,6 @@
 // ============================================================
 // src/config.js — All balance numbers and world dimensions
-// Solar Siege: Reversed layout (sun top, ships descend, mirrors bottom)
+// Burning Glass: Reversed layout (sun top, ships descend, mirrors bottom)
 // ============================================================
 
 // --- World ---

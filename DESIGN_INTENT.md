@@ -1,4 +1,4 @@
-Solar Siege is a single-player survival game about splitting and routing a beam of sunlight through mirrors to burn an advancing fleet while simultaneously feeding three altars that produce the resources needed to survive.
+Burning Glass is a single-player survival game about splitting and routing a beam of sunlight through mirrors to burn an advancing fleet while simultaneously feeding three altars that produce the resources needed to survive.
 
 The player is Archimedes defending Syracuse. One beam of sunlight falls from the top of the screen. A crystal lens splits it into three coloured bands. Four mirrors, freely placeable anywhere on the battlement, redirect those bands toward Roman ships rising from the sea below. The ships advance steadily toward a wall at the bottom of the defended zone. If they reach it, the wall takes damage proportional to how much heat the player failed to deliver. Wall integrity starts at one hundred and the run ends when it reaches zero.
 

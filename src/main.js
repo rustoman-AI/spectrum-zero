@@ -31,7 +31,7 @@ let lastTime = 0;
 const MAX_DT = 1 / 30;
 
 export function init() {
-  console.log('[Solar Siege] init starting');
+  console.log('[Burning Glass] init starting');
   initRenderer();
   initBackground();
   initFortress();
@@ -57,7 +57,7 @@ export function init() {
 
   lastTime = performance.now();
   requestAnimationFrame(loop);
-  console.log('[Solar Siege] init complete, loop running');
+  console.log('[Burning Glass] init complete, loop running');
 
   // DEV marker: visible red label if any dev flag is on
   if (Object.values(DEV).some(v => v)) {

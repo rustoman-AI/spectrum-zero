@@ -1,11 +1,11 @@
 // ============================================================
 // src/strings.js — All player-facing text (single source of truth)
 //
-// Game: Solar Siege (Archimedes defending Syracuse)
+// Game: Burning Glass (Archimedes defending Syracuse)
 // ============================================================
 
 // --- Game title ---
-export const TITLE = 'Solar Siege';
+export const TITLE = 'Burning Glass';
 
 // --- Source / beam ---
 export const SOURCE_NAME = 'Helios';

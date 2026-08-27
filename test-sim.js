@@ -501,7 +501,7 @@ try {
 
   const out = testFn();
 
-  console.log('=== Spectrum Zero M2 Simulation Tests ===');
+  console.log('=== Burning Glass M2 Simulation Tests ===');
   console.log('');
 
   for (const [name, observed, expected, tol] of out.results) {

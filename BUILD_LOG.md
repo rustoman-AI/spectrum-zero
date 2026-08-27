@@ -1,4 +1,6 @@
-# BUILD LOG — Solar Siege
+# BUILD LOG — Burning Glass
+
+(Formerly "Solar Siege", renamed 2026-08-25.)
 
 An honest record of development including wrong turns, corrections, and the reasoning behind each decision. Written for the Meta Horizon Creator Competition judges to demonstrate that an AI assistant performed the implementation work, including the mistakes.
 
