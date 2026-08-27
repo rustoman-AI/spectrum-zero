@@ -10,6 +10,7 @@ import { markDirty } from './beam.js';
 import { setTier } from './prism.js';
 import { addMirror } from './mirror.js';
 import { triggerZeusStrike, isZeusReady } from './zeus.js';
+import { triggerPoseidonStrike } from './poseidon.js';
 
 let trayMesh = null;
 let trayCanvas = null;
@@ -21,6 +22,7 @@ const trayHeight = 5;
 let mirrorsBought = 0;
 let focusCount = 0;
 let zeusCount = 0;
+let poseidonCount = 0;
 const prevAffordable = [];  // track per-button affordability for pulse
 const pulseTimes = [];      // countdown for 300ms pulse animation
 
@@ -34,6 +36,10 @@ const SHOP_ITEMS = [
   { id: 'zeus',   label: 'Zeus', getCost: () => {
     const costs = GOD_ABILITIES.zeus.costs;
     return costs[Math.min(zeusCount, costs.length - 1)];
+  } },
+  { id: 'poseidon', label: 'Poseidon', getCost: () => {
+    const costs = GOD_ABILITIES.poseidon.costs;
+    return costs[Math.min(poseidonCount, costs.length - 1)];
   } },
 ];
 
@@ -141,6 +147,7 @@ export function resetCrafting() {
   mirrorsBought = 0;
   focusCount = 0;
   zeusCount = 0;
+  poseidonCount = 0;
   if (typeof resetTier === 'function') resetTier();
 }
 
@@ -165,6 +172,7 @@ function attemptPurchase(item) {
     case 'prism6': setTier(6); markDirty(); break;
     case 'priest': addPriest(); break;
     case 'zeus': zeusCount++; triggerZeusStrike(); break;
+    case 'poseidon': poseidonCount++; triggerPoseidonStrike(); break;
   }
   return true;
 }

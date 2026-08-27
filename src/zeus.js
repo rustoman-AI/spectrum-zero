@@ -111,9 +111,11 @@ export function triggerZeusStrike() {
     const ex = -ww / 2 + laneWidth * (enemy.lane + 0.5);
     const ey = enemy.y;
 
-    // Massive damage (kills skiffs/triremes outright, heavily damages quadriremes)
-    enemy.hp -= 300;
-    enemy.heat = Math.min(enemy.maxHp, enemy.heat + 200);
+    // Massive damage: kill light ships (skiff/trireme), halve heavy ships
+    // Uses heat (the actual kill mechanism), not hp
+    const isLight = (enemy.type === 'skiff' || enemy.type === 'trireme');
+    const zeusHeat = isLight ? enemy.maxHp * 1.5 : enemy.maxHp * 0.5;
+    enemy.heat += zeusHeat;
     // Stun: stop for 3 seconds
     enemy.stunTimer = 3.0;
 

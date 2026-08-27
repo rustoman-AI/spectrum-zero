@@ -99,7 +99,16 @@ export const GOD_ABILITIES = {
       { faith: 180, gold: 40 },       // #4: endgame
     ]
   },
-  poseidon: { faith: 100, gold: 15, name: 'Maelstrom', duration: 8 },
+  poseidon: {
+    name: 'Maelstrom',
+    duration: 6,
+    costs: [
+      { brass: 60 },                  // #1: more than Zeus, still early-reachable
+      { faith: 60, gold: 15 },        // #2
+      { faith: 140, gold: 30 },       // #3
+      { faith: 220, gold: 50 },       // #4
+    ]
+  },
   helios:   { faith: 100, gold: 20, name: 'Scorching Sun', duration: 10 },
 };
 
