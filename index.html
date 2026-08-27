@@ -4575,21 +4575,23 @@ function updateHud() {
 }
 
 function resetSession() {
+  // Hide overlay FIRST — before any reset that could throw and abort the chain
+  hideOverlay();
   elapsed = 0;
   wallIntegrity = WALL_MAX_HP;
   gameOver = false;
   gameWon = false;
   devourerKilled = false;
-  resetEnemies();
-  resetSpawner();
-  resetDamage();
-  resetFoundries();
-  resetCrafting();
-  resetMirrors();
-  resetPrisms();
-  resetTier();
+  // Each reset wrapped so one failure can't leave the overlay stuck
+  try { resetEnemies(); } catch (e) { console.error('resetEnemies', e); }
+  try { resetSpawner(); } catch (e) { console.error('resetSpawner', e); }
+  try { resetDamage(); } catch (e) { console.error('resetDamage', e); }
+  try { resetFoundries(); } catch (e) { console.error('resetFoundries', e); }
+  try { resetCrafting(); } catch (e) { console.error('resetCrafting', e); }
+  try { resetMirrors(); } catch (e) { console.error('resetMirrors', e); }
+  try { resetPrisms(); } catch (e) { console.error('resetPrisms', e); }
+  try { resetTier(); } catch (e) { console.error('resetTier', e); }
   markDirty();
-  hideOverlay();
   // Restore visibility hidden on end state
   if (typeof setBeamsVisible === 'function') setBeamsVisible(true);
   if (trayMesh) trayMesh.visible = true;
