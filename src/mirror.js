@@ -81,10 +81,11 @@ function createMirror(socketIndex) {
   drawMirrorSprite(ctx, texSize);
   const tex = new THREE.CanvasTexture(c);
   tex.minFilter = THREE.LinearFilter;
+  tex.premultiplyAlpha = false;
 
   const spriteSize = MIRROR_LENGTH + 2; // slightly larger for the cart frame
   const geo = new THREE.PlaneGeometry(spriteSize, spriteSize);
-  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false });
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.05, depthWrite: false });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.set(sx, sy, 0);
   mesh.rotation.z = angle;

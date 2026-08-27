@@ -1847,10 +1847,11 @@ function createMirror(socketIndex) {
   drawMirrorSprite(ctx, texSize);
   const tex = new THREE.CanvasTexture(c);
   tex.minFilter = THREE.LinearFilter;
+  tex.premultiplyAlpha = false;
 
   const spriteSize = MIRROR_LENGTH + 2; // slightly larger for the cart frame
   const geo = new THREE.PlaneGeometry(spriteSize, spriteSize);
-  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false });
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.05, depthWrite: false });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.set(sx, sy, 0);
   mesh.rotation.z = angle;
@@ -2286,6 +2287,7 @@ function generateShipTextures() {
     const tex = new THREE.CanvasTexture(c);
     tex.minFilter = THREE.LinearFilter;
     tex.magFilter = THREE.LinearFilter;
+    tex.premultiplyAlpha = false;
     shipTextures[type] = tex;
   }
 }
@@ -2312,92 +2314,102 @@ function drawShip(ctx, sz, type) {
   const sailW = cfg.sailW * sz;
   const sailH = cfg.sailH * sz;
 
-  // Hull (pointed prow at top, flat stern at bottom)
-  const hullTop = cy - hullH * 0.3;
-  const hullBot = cy + hullH * 0.7;
-  const prowTip = hullTop - prowLen;
+  // Ship travels downward on screen. Prow (pointed) faces DOWN (toward wall).
+  // Stern (flat/raised) at top. Hull is a long HORIZONTAL wedge, wider than tall.
+  const hullCenterY = cy + 4; // hull slightly below centre (mast/sail above)
+  const hullLeft = cx - hullW / 2;
+  const hullRight = cx + hullW / 2;
+  const prowTipY = hullCenterY + hullH * 0.5 + prowLen; // pointed tip below
+  const sternY = hullCenterY - hullH * 0.5; // flat stern above
 
   ctx.save();
 
-  // Hull body with carved prow
+  // Hull body: flat-bottomed wedge shape
   ctx.beginPath();
-  ctx.moveTo(cx, prowTip);                          // prow tip (top centre)
-  ctx.quadraticCurveTo(cx + hullW * 0.3, hullTop, cx + hullW / 2, hullTop + hullH * 0.3); // right bow curve
-  ctx.lineTo(cx + hullW / 2, hullBot - 4);         // right side
-  ctx.quadraticCurveTo(cx + hullW * 0.4, hullBot, cx, hullBot); // stern curve right
-  ctx.quadraticCurveTo(cx - hullW * 0.4, hullBot, cx - hullW / 2, hullBot - 4); // stern curve left
-  ctx.lineTo(cx - hullW / 2, hullTop + hullH * 0.3); // left side
-  ctx.quadraticCurveTo(cx - hullW * 0.3, hullTop, cx, prowTip); // left bow curve
+  ctx.moveTo(cx, prowTipY);                                    // prow tip (bottom centre)
+  ctx.lineTo(hullRight - 2, hullCenterY + hullH * 0.3);       // right bow
+  ctx.lineTo(hullRight, hullCenterY - hullH * 0.2);           // right waist
+  ctx.lineTo(hullRight - 3, sternY);                           // right stern
+  ctx.lineTo(hullLeft + 3, sternY);                            // left stern (flat top)
+  ctx.lineTo(hullLeft, hullCenterY - hullH * 0.2);            // left waist
+  ctx.lineTo(hullLeft + 2, hullCenterY + hullH * 0.3);        // left bow
   ctx.closePath();
   ctx.fillStyle = cfg.hullCol;
   ctx.fill();
 
-  // Deck (lighter inner area)
-  ctx.beginPath();
-  const deckInset = 4;
-  ctx.ellipse(cx, cy + 2, hullW / 2 - deckInset, hullH * 0.5, 0, 0, Math.PI * 2);
+  // Deck stripe (lighter horizontal band across the hull)
   ctx.fillStyle = cfg.deckCol;
-  ctx.fill();
+  ctx.fillRect(hullLeft + 4, hullCenterY - 3, hullW - 8, 5);
 
-  // Painted stripe along the hull sides
+  // Painted stripe along waterline
   ctx.strokeStyle = cfg.stripe;
-  ctx.lineWidth = 2.5;
+  ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(cx - hullW / 2 + 3, cy);
-  ctx.lineTo(cx - hullW * 0.2, hullTop + 6);
+  ctx.moveTo(hullLeft + 4, hullCenterY + hullH * 0.15);
+  ctx.lineTo(cx, prowTipY - 4);
   ctx.stroke();
   ctx.beginPath();
-  ctx.moveTo(cx + hullW / 2 - 3, cy);
-  ctx.lineTo(cx + hullW * 0.2, hullTop + 6);
+  ctx.moveTo(hullRight - 4, hullCenterY + hullH * 0.15);
+  ctx.lineTo(cx, prowTipY - 4);
   ctx.stroke();
 
-  // Oar strokes along sides
-  ctx.strokeStyle = 'rgba(90, 60, 30, 0.7)';
-  ctx.lineWidth = 1;
-  const oarStartY = cy - hullH * 0.1;
-  const oarEndY = cy + hullH * 0.5;
-  const oarSpacing = (oarEndY - oarStartY) / (cfg.oars + 1);
-  for (let i = 1; i <= cfg.oars; i++) {
-    const oy = oarStartY + i * oarSpacing;
-    // Left oar
+  // Oar strokes: angle DOWNWARD from hull toward water (below hull line)
+  if (cfg.oars > 0) {
+    ctx.strokeStyle = 'rgba(80, 50, 25, 0.8)';
+    ctx.lineWidth = 1.5;
+    const oarRegionTop = hullCenterY - hullH * 0.15;
+    const oarRegionBot = hullCenterY + hullH * 0.2;
+    const oarSpacing = (oarRegionBot - oarRegionTop) / (cfg.oars + 1);
+    for (let i = 1; i <= cfg.oars; i++) {
+      const oy = oarRegionTop + i * oarSpacing;
+      // Left oar: angled downward-left
+      ctx.beginPath();
+      ctx.moveTo(hullLeft + 1, oy);
+      ctx.lineTo(hullLeft - 10, oy + 6);
+      ctx.stroke();
+      // Right oar: angled downward-right
+      ctx.beginPath();
+      ctx.moveTo(hullRight - 1, oy);
+      ctx.lineTo(hullRight + 10, oy + 6);
+      ctx.stroke();
+    }
+  }
+
+  // Stern ornament (raised transom)
+  ctx.fillStyle = '#3D2010';
+  ctx.fillRect(cx - hullW * 0.15, sternY - 4, hullW * 0.3, 5);
+
+  // Mast (vertical, above hull centre)
+  ctx.fillStyle = '#3D2010';
+  ctx.fillRect(cx - 1.5, hullCenterY - mastH - hullH * 0.3, 3, mastH);
+
+  // Sail (trapezoid, clearly above hull)
+  if (sailW > 0 && sailH > 0) {
+    const sailTop = hullCenterY - mastH - hullH * 0.3 + 4;
+    const sailBot = sailTop + sailH;
+    ctx.fillStyle = 'rgba(230, 215, 190, 0.85)';
     ctx.beginPath();
-    ctx.moveTo(cx - hullW / 2, oy);
-    ctx.lineTo(cx - hullW / 2 - 8, oy + 3);
-    ctx.stroke();
-    // Right oar
+    ctx.moveTo(cx - sailW / 2, sailBot);
+    ctx.lineTo(cx + sailW / 2, sailBot);
+    ctx.lineTo(cx + sailW * 0.35, sailTop);
+    ctx.lineTo(cx - sailW * 0.35, sailTop);
+    ctx.closePath();
+    ctx.fill();
+    // Cross-bar
+    ctx.strokeStyle = '#3D2010';
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(cx + hullW / 2, oy);
-    ctx.lineTo(cx + hullW / 2 + 8, oy + 3);
+    ctx.moveTo(cx - sailW / 2, sailBot);
+    ctx.lineTo(cx + sailW / 2, sailBot);
     ctx.stroke();
   }
 
-  // Mast
-  ctx.fillStyle = '#3D2010';
-  ctx.fillRect(cx - 1.5, cy - mastH, 3, mastH * 0.9);
-
-  // Sail (trapezoid/triangle)
-  ctx.fillStyle = 'rgba(230, 215, 190, 0.85)';
+  // Prow ram ornament
+  ctx.fillStyle = '#1A0A00';
   ctx.beginPath();
-  ctx.moveTo(cx - sailW / 2, cy - mastH * 0.2);
-  ctx.lineTo(cx + sailW / 2, cy - mastH * 0.2);
-  ctx.lineTo(cx + sailW * 0.3, cy - mastH * 0.85);
-  ctx.lineTo(cx - sailW * 0.3, cy - mastH * 0.85);
-  ctx.closePath();
-  ctx.fill();
-  // Sail cross-bar
-  ctx.strokeStyle = '#3D2010';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(cx - sailW / 2, cy - mastH * 0.2);
-  ctx.lineTo(cx + sailW / 2, cy - mastH * 0.2);
-  ctx.stroke();
-
-  // Prow ornament (small ram/beak)
-  ctx.fillStyle = '#2A1500';
-  ctx.beginPath();
-  ctx.moveTo(cx, prowTip - 3);
-  ctx.lineTo(cx - 3, prowTip + 4);
-  ctx.lineTo(cx + 3, prowTip + 4);
+  ctx.moveTo(cx, prowTipY + 2);
+  ctx.lineTo(cx - 3, prowTipY - 5);
+  ctx.lineTo(cx + 3, prowTipY - 5);
   ctx.closePath();
   ctx.fill();
 
@@ -2419,7 +2431,7 @@ function initEnemies() {
     // Ship sprite (canvas-drawn, swapped per type)
     const spriteGeo = new THREE.PlaneGeometry(6, 6);
     const spriteMat = new THREE.MeshBasicMaterial({
-      map: shipTextures.skiff, transparent: true, depthWrite: false
+      map: shipTextures.skiff, transparent: true, alphaTest: 0.05, depthWrite: false
     });
     const spriteMesh = new THREE.Mesh(spriteGeo, spriteMat);
     spriteMesh.position.z = 0.01;
@@ -2462,11 +2474,11 @@ function initEnemies() {
       for (let oi = 0; oi < OAR_COUNT; oi++) {
         const oarGeo = new THREE.PlaneGeometry(0.2, 1.6);
         const oar = new THREE.Mesh(oarGeo, oarMat);
-        // Position: along hull sides, spread vertically
-        oar.position.x = side * 2.2;
-        oar.position.y = oi * 0.8 - (OAR_COUNT * 0.8) / 2;
+        // Position: along hull sides, angled downward toward water
+        oar.position.x = side * 2.0;
+        oar.position.y = oi * 0.7 - (OAR_COUNT * 0.7) / 2 + 0.5;
         oar.position.z = -0.02; // BEHIND the hull sprite
-        oar.rotation.z = side * 0.3; // angled outward
+        oar.rotation.z = side * 0.6; // angled downward-outward (~35 degrees)
         oar.visible = false;
         mesh.add(oar);
         oarMeshes.push({ mesh: oar, side, index: oi });
@@ -2653,9 +2665,10 @@ function updateEnemyVisual(e) {
     for (const oarObj of e.oarMeshes) {
       oarObj.mesh.visible = isOared;
       if (isOared) {
-        // Synchronized rowing stroke: rotate oars in unison
-        const stroke = Math.sin(e.oarPhase + oarObj.index * 0.3);
-        oarObj.mesh.rotation.z = oarObj.side * (0.3 + stroke * 0.4);
+        // Rowing stroke: sweep in a shallow arc below the hull
+        // Base angle is downward-outward (0.6 rad), stroke adds ±0.3 rad
+        const stroke = Math.sin(e.oarPhase + oarObj.index * 0.4);
+        oarObj.mesh.rotation.z = oarObj.side * (0.6 + stroke * 0.25);
       }
     }
   }
