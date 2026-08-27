@@ -213,13 +213,17 @@ let blockedTexture = null;
 function getBlockedTexture() {
   if (blockedTexture) return blockedTexture;
   const c = document.createElement('canvas');
-  c.width = 80; c.height = 20;
+  c.width = 128; c.height = 32;
   const ctx = c.getContext('2d');
-  ctx.fillStyle = '#FFAA33';
-  ctx.font = 'bold 10px monospace';
+  // Bright white text with orange stroke for maximum contrast
+  ctx.strokeStyle = '#FF6600';
+  ctx.lineWidth = 3;
+  ctx.font = 'bold 18px monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('BLOCKED', 40, 10);
+  ctx.strokeText('BLOCKED', 64, 16);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillText('BLOCKED', 64, 16);
   blockedTexture = new THREE.CanvasTexture(c);
   blockedTexture.minFilter = THREE.LinearFilter;
   blockedTexture.premultiplyAlpha = false;
@@ -228,14 +232,14 @@ function getBlockedTexture() {
 
 function spawnBlockedLabel(x, y) {
   const scene = getScene();
-  const geo = new THREE.PlaneGeometry(5, 1.3);
+  const geo = new THREE.PlaneGeometry(7, 2);
   const mat = new THREE.MeshBasicMaterial({
     map: getBlockedTexture(), transparent: true, opacity: 1, alphaTest: 0.05, depthWrite: false
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.set(x, y, 7);
   scene.add(mesh);
-  blockedLabels.push({ mesh, life: 0.8, vy: 4 });
+  blockedLabels.push({ mesh, life: 1.0, vy: 5 });
 }
 
 // Called from main loop to animate floating labels

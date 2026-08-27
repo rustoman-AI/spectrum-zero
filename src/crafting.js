@@ -23,6 +23,10 @@ let mirrorsBought = 0;
 let focusCount = 0;
 let zeusCount = 0;
 let poseidonCount = 0;
+let zeusCooldown = 0;       // seconds remaining (drawn as radial wipe)
+let poseidonCooldown = 0;
+const ZEUS_COOLDOWN_TIME = 8;     // seconds
+const POSEIDON_COOLDOWN_TIME = 10;
 const prevAffordable = [];  // track per-button affordability for pulse
 const pulseTimes = [];      // countdown for 300ms pulse animation
 
@@ -72,6 +76,10 @@ export function initCrafting() {
 
 export function updateCraftingTray() {
   if (!trayCtx) return;
+  // Tick cooldowns (approx 1 frame at 60fps)
+  const cdt = 0.016;
+  if (zeusCooldown > 0) zeusCooldown -= cdt;
+  if (poseidonCooldown > 0) poseidonCooldown -= cdt;
   const res = getResources();
   const faith = getFaith();
 
@@ -126,6 +134,32 @@ export function updateCraftingTray() {
     trayCtx.font = '7px monospace';
     trayCtx.fillStyle = (affordable || zeusGlow) ? '#cccccc' : '#555555';
     trayCtx.fillText(costStr(cost), x + btnW / 2, 28);
+
+    // Radial cooldown overlay for god powers
+    let cooldownFrac = 0;
+    if (item.id === 'zeus' && zeusCooldown > 0) cooldownFrac = zeusCooldown / ZEUS_COOLDOWN_TIME;
+    if (item.id === 'poseidon' && poseidonCooldown > 0) cooldownFrac = poseidonCooldown / POSEIDON_COOLDOWN_TIME;
+    if (cooldownFrac > 0) {
+      // Dark radial wipe (pie slice from top, clockwise)
+      const cx = x + btnW / 2;
+      const cy = 20;
+      const r = 18;
+      trayCtx.save();
+      trayCtx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+      trayCtx.beginPath();
+      trayCtx.moveTo(cx, cy);
+      const startAngle = -Math.PI / 2;
+      const endAngle = startAngle + cooldownFrac * Math.PI * 2;
+      trayCtx.arc(cx, cy, r, startAngle, endAngle);
+      trayCtx.closePath();
+      trayCtx.fill();
+      // Cooldown seconds text
+      trayCtx.fillStyle = '#ffffff';
+      trayCtx.font = 'bold 10px monospace';
+      trayCtx.textAlign = 'center';
+      trayCtx.fillText(Math.ceil(cooldownFrac * (item.id === 'zeus' ? ZEUS_COOLDOWN_TIME : POSEIDON_COOLDOWN_TIME)) + 's', cx, 23);
+      trayCtx.restore();
+    }
   }
   trayTexture.needsUpdate = true;
 }
@@ -152,6 +186,9 @@ export function resetCrafting() {
 }
 
 function attemptPurchase(item) {
+  // Block god powers during cooldown
+  if (item.id === 'zeus' && zeusCooldown > 0) return false;
+  if (item.id === 'poseidon' && poseidonCooldown > 0) return false;
   const res = getResources();
   const faith = getFaith();
   const cost = item.getCost();
@@ -171,8 +208,8 @@ function attemptPurchase(item) {
     case 'prism5': setTier(5); markDirty(); break;
     case 'prism6': setTier(6); markDirty(); break;
     case 'priest': addPriest(); break;
-    case 'zeus': zeusCount++; triggerZeusStrike(); break;
-    case 'poseidon': poseidonCount++; triggerPoseidonStrike(); break;
+    case 'zeus': zeusCount++; zeusCooldown = ZEUS_COOLDOWN_TIME; triggerZeusStrike(); break;
+    case 'poseidon': poseidonCount++; poseidonCooldown = POSEIDON_COOLDOWN_TIME; triggerPoseidonStrike(); break;
   }
   return true;
 }

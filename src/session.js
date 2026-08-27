@@ -9,7 +9,7 @@ import { SESSION_DURATION, WORLD_HEIGHT, WALL_Y, DEV, WALL_MAX_HP } from './conf
 import { getScene, getWorldWidth, getOverlayScene } from './renderer.js';
 import { resetEnemies } from './enemy.js';
 import { resetSpawner } from './enemy-spawner.js';
-import { resetDamage } from './damage.js';
+import { resetDamage, getKillCount } from './damage.js';
 import { markDirty } from './beam.js';
 import { getResources, resetFoundries, getFaith } from './foundry.js';
 import { resetCrafting } from './crafting.js';
@@ -243,14 +243,36 @@ function createOverlay() {
 }
 
 function showOverlay(text) {
-  overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  const w = overlayCanvas.width;  // 256
+  const h = overlayCanvas.height; // 128
+  overlayCtx.clearRect(0, 0, w, h);
+
+  // Title
   overlayCtx.fillStyle = gameWon ? '#00ff88' : '#ff4444';
-  overlayCtx.font = 'bold 22px monospace';
+  overlayCtx.font = 'bold 18px monospace';
   overlayCtx.textAlign = 'center';
-  const lines = text.split('\n');
-  for (let i = 0; i < lines.length; i++) {
-    overlayCtx.fillText(lines[i], 128, 40 + i * 28);
-  }
+  const title = gameWon ? 'THE FLEET BURNS' : 'SYRACUSE HAS FALLEN';
+  overlayCtx.fillText(title, w / 2, 24);
+
+  // Stats
+  const mins = Math.floor(elapsed / 60);
+  const secs = Math.floor(elapsed % 60);
+  const timeStr = mins + ':' + (secs < 10 ? '0' : '') + secs;
+  const kills = getKillCount();
+  const res = getResources();
+  const goldEarned = Math.floor(res.gold);
+
+  overlayCtx.fillStyle = '#cccccc';
+  overlayCtx.font = '11px monospace';
+  overlayCtx.fillText('Time: ' + timeStr, w / 2, 48);
+  overlayCtx.fillText('Ships Sunk: ' + kills, w / 2, 63);
+  overlayCtx.fillText('Gold Earned: ' + goldEarned, w / 2, 78);
+
+  // Tap to restart
+  overlayCtx.fillStyle = '#ffffff';
+  overlayCtx.font = 'bold 13px monospace';
+  overlayCtx.fillText('Tap to try again', w / 2, 105);
+
   overlayTexture.needsUpdate = true;
   overlayMesh.visible = true;
   dimMesh.visible = true;
