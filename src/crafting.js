@@ -190,6 +190,8 @@ export function resetCrafting() {
   focusCount = 0;
   zeusCount = 0;
   poseidonCount = 0;
+  zeusCooldown = 0;
+  poseidonCooldown = 0;
   if (typeof resetTier === 'function') resetTier();
 }
 

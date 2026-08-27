@@ -203,3 +203,22 @@ All procedural canvas drawing at load time — zero image files, zip size unchan
 **Note on the shop "overlap":** The first read of the code showed the grid was already correct. Rather than rewrite the layout, the fix targeted the actual visible symptom (label bleed), which is the smaller and safer change.
 
 **Verified:** `node build.js` → 179.3 KB, exit 0 (its strict-mode lint confirms the new cross-module refs resolve). `node test_rotation.js` 11/11, `node test_smoke.js` 29/29. Audio changes are synthesis-only and not covered by the headless tests; they were reasoned about by frequency/gain, not heard in this environment.
+
+---
+
+## 2026-08-25 — Restart State Leak Fix
+
+**Asked:** After tapping "Try Again", lots of state carried over from the previous run — most visibly an extra (purchased) mirror stayed on the field, and the mirror selection ring stayed lit.
+
+**Root cause:** `resetSession()` only reset a subset of subsystems, and several reset functions were incomplete:
+- `resetMirrors()` looped over the *current* `mirrors` array (which had grown when the player bought mirrors) and indexed `DEFAULT_MIRROR_SOCKETS` by position. Bought mirrors landed on undefined sockets and their meshes were never removed — they stayed in the scene.
+- `resetCrafting()` reset the purchase counters but not `zeusCooldown` / `poseidonCooldown`, so restarting mid-cooldown left the god buttons greyed out.
+- `resetSession()` never called effect, audio, Zeus, Poseidon, or input resets at all. Leftover sparks/debris, the hum drone, an active whirlpool (plus its wind flag on enemies), in-flight lightning bolts, and the input selection highlight ring could all survive a restart.
+
+**Generated:**
+- Rewrote `resetMirrors()` to fully tear down every mirror mesh (dispose geometry/material/texture, remove from group), clear all socket occupancy, then rebuild exactly `MIRROR_COUNT_START` starting mirrors — the same construction `initMirrors` uses. Nothing purchased can survive.
+- `resetCrafting()` now zeroes `zeusCooldown` and `poseidonCooldown`.
+- Added `resetZeus()` (clears bolts + disposes their meshes, flash, shake, ready flag), `resetPoseidon()` (stops whirlpool, hides hint, `setWindActive(false)`), and `resetInput()` (deselect, clear drag + both pointer trackers, hide highlight/drop rings).
+- Wired `resetEffects`, `resetAudio`, `resetZeus`, `resetPoseidon`, and `resetInput` into `resetSession()`, each in its own try/catch so one failure can't abort the chain or leave the overlay stuck.
+
+**Verified:** `node build.js` → 181.5 KB, exit 0 (strict-mode lint confirms the five new cross-module reset refs resolve). `test_rotation.js` 11/11, `test_smoke.js` 29/29. The restart behaviour itself is not covered by the headless tests — it was fixed by tracing which module-level state each subsystem owns and ensuring every owner has a reset that `resetSession` calls. Worth one manual restart-after-purchase check on-device to confirm the extra mirror and selection ring are both gone.

@@ -69,6 +69,18 @@ export function initPoseidon() {
   scene.add(placementTextMesh);
 }
 
+// Reset all Poseidon state on session restart — stop whirlpool, clear wind/pull
+export function resetPoseidon() {
+  active = false;
+  timer = 0;
+  whirlpoolPhase = 0;
+  placementPending = false;
+  placementTimer = 0;
+  if (whirlpoolMesh) whirlpoolMesh.material.opacity = 0;
+  if (placementTextMesh) placementTextMesh.material.opacity = 0;
+  setWindActive(false);
+}
+
 export function triggerPoseidonStrike() {
   if (active || placementPending) return;
   // Enter placement mode — next tap on sea activates the whirlpool

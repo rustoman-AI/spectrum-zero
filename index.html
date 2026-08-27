@@ -1131,6 +1131,26 @@ function initZeus() {
 }
 
 // Called each frame from main loop
+// Reset all Zeus state on session restart — clear bolts, flash, shake, strike
+function resetZeus() {
+  const scene = getScene();
+  for (const bolt of strikeBolts) {
+    if (bolt.mesh) {
+      scene.remove(bolt.mesh);
+      if (bolt.mesh.geometry) bolt.mesh.geometry.dispose();
+      if (bolt.mesh.material) bolt.mesh.material.dispose();
+    }
+  }
+  strikeBolts = [];
+  strikeActive = false;
+  strikeTimer = 0;
+  flashAlpha = 0;
+  zeusShakeTimer = 0;
+  zeusShakeIntensity = 0;
+  zeusReady = false;
+  readyNotified = false;
+}
+
 function updateZeus(dt, affordable) {
   const wasReady = zeusReady;
   zeusReady = affordable;
@@ -1405,6 +1425,18 @@ function initPoseidon() {
   placementTextMesh = new THREE.Mesh(tgeo, tmat);
   placementTextMesh.position.set(0, 5, 8);
   scene.add(placementTextMesh);
+}
+
+// Reset all Poseidon state on session restart — stop whirlpool, clear wind/pull
+function resetPoseidon() {
+  active = false;
+  timer = 0;
+  whirlpoolPhase = 0;
+  placementPending = false;
+  placementTimer = 0;
+  if (whirlpoolMesh) whirlpoolMesh.material.opacity = 0;
+  if (placementTextMesh) placementTextMesh.material.opacity = 0;
+  setWindActive(false);
 }
 
 function triggerPoseidonStrike() {
@@ -2368,32 +2400,40 @@ function updateAllMirrorGeometries() {
   }
 }
 
-// Reset all mirrors to default positions, angles, and states
+// Reset all mirrors to default positions, angles, and states.
+// Destroys every mirror (including ones bought during the run) and rebuilds
+// the starting set, so nothing purchased survives a restart.
 function resetMirrors() {
+  // Tear down all existing mirror meshes and clear socket occupancy
   for (let i = 0; i < mirrors.length; i++) {
-    const mirror = mirrors[i];
+    const m = mirrors[i];
+    if (m.mesh) {
+      if (mirrorMeshGroup) mirrorMeshGroup.remove(m.mesh);
+      if (m.mesh.geometry) m.mesh.geometry.dispose();
+      if (m.mesh.material) {
+        if (m.mesh.material.map) m.mesh.material.map.dispose();
+        m.mesh.material.dispose();
+      }
+    }
+  }
+  mirrors.length = 0;
+  tweens.length = 0;
+  for (let i = 0; i < sockets.length; i++) {
+    sockets[i].type = null;
+    sockets[i].objectRef = null;
+  }
+
+  // Rebuild the starting mirrors (mirrors default state, same as initMirrors)
+  for (let i = 0; i < MIRROR_COUNT_START; i++) {
     const socketIdx = DEFAULT_MIRROR_SOCKETS[i];
-    const [sx, sy] = SOCKET_POSITIONS[socketIdx];
-    // Reset socket occupancy
-    sockets[mirror.socketIndex].type = null;
-    sockets[mirror.socketIndex].objectRef = null;
-    // Restore to default socket
-    mirror.socketIndex = socketIdx;
-    mirror.freeX = sx;
-    mirror.freeY = sy;
-    mirror.angle = (i === 1) ? Math.PI / 2 : 0; // flanks horizontal, centre vertical
-    mirror.hits = 0;
-    mirror.shattered = false;
-    mirror.reinforced = false;
-    mirror.anchored = false;
-    mirror.mesh.material.color.setHex(0x8888cc);
-    mirror.mesh.material.opacity = 1.0;
-    mirror.mesh.material.transparent = false;
-    mirror.mesh.visible = true;
+    const mirror = createMirror(socketIdx);
+    mirror.angle = (i === 1) ? Math.PI / 2 : 0; // centre vertical, flanks horizontal
+    updateMirrorGeometry(mirror);
+    mirrors.push(mirror);
     sockets[socketIdx].type = 'mirror';
     sockets[socketIdx].objectRef = mirror;
-    updateMirrorGeometry(mirror);
   }
+  markDirty();
 }
 
 
@@ -3591,6 +3631,8 @@ function resetCrafting() {
   focusCount = 0;
   zeusCount = 0;
   poseidonCount = 0;
+  zeusCooldown = 0;
+  poseidonCooldown = 0;
   if (typeof resetTier === 'function') resetTier();
 }
 
@@ -4523,6 +4565,11 @@ function updateBlockedLabels(dt) {
 
 
 
+
+
+
+
+
 let elapsed = 0;
 let wallIntegrity = 100; // wall HP, starts at 100
 let gameOver = false;
@@ -4647,6 +4694,11 @@ function resetSession() {
   try { resetMirrors(); } catch (e) { console.error('resetMirrors', e); }
   try { resetPrisms(); } catch (e) { console.error('resetPrisms', e); }
   try { resetTier(); } catch (e) { console.error('resetTier', e); }
+  try { resetEffects(); } catch (e) { console.error('resetEffects', e); }
+  try { resetAudio(); } catch (e) { console.error('resetAudio', e); }
+  try { resetZeus(); } catch (e) { console.error('resetZeus', e); }
+  try { resetPoseidon(); } catch (e) { console.error('resetPoseidon', e); }
+  try { resetInput(); } catch (e) { console.error('resetInput', e); }
   markDirty();
   // Restore visibility hidden on end state
   if (typeof setBeamsVisible === 'function') setBeamsVisible(true);
@@ -4923,6 +4975,21 @@ function deselect() {
   selectedType = null;
   state = STATE_IDLE;
   hideHighlight();
+}
+// Reset all input state on session restart — clears selection highlight,
+// drag state, and both pointer trackers so nothing carries into the new run.
+function resetInput() {
+  deselect();
+  dragObject = null;
+  dragType = null;
+  pointerStart = null;
+  pointerDownOnObject = null;
+  pointerDownType = null;
+  prevPointerWorld = null;
+  primaryPointerId = null;
+  secondPointer = { id: null, mirror: null, targetAngle: 0, prevWorld: null, active: false };
+  if (highlight2Mesh) highlight2Mesh.visible = false;
+  if (dropTargetMesh) dropTargetMesh.visible = false;
 }
 // --- Pointer handlers ---
 function onPointerDown(e) {

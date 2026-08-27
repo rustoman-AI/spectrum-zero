@@ -15,6 +15,11 @@ import { getResources, resetFoundries, getFaith } from './foundry.js';
 import { resetCrafting } from './crafting.js';
 import { resetMirrors } from './mirror.js';
 import { resetPrisms, resetTier } from './prism.js';
+import { resetEffects } from './effects.js';
+import { resetAudio } from './audio.js';
+import { resetZeus } from './zeus.js';
+import { resetPoseidon } from './poseidon.js';
+import { resetInput } from './input.js';
 import { MSG_LOSE, MSG_WIN, RES_SLAG_SHORT, RES_INSIGHT_SHORT, RES_RECOMBO_SHORT } from './strings.js';
 
 let elapsed = 0;
@@ -141,6 +146,11 @@ export function resetSession() {
   try { resetMirrors(); } catch (e) { console.error('resetMirrors', e); }
   try { resetPrisms(); } catch (e) { console.error('resetPrisms', e); }
   try { resetTier(); } catch (e) { console.error('resetTier', e); }
+  try { resetEffects(); } catch (e) { console.error('resetEffects', e); }
+  try { resetAudio(); } catch (e) { console.error('resetAudio', e); }
+  try { resetZeus(); } catch (e) { console.error('resetZeus', e); }
+  try { resetPoseidon(); } catch (e) { console.error('resetPoseidon', e); }
+  try { resetInput(); } catch (e) { console.error('resetInput', e); }
   markDirty();
   // Restore visibility hidden on end state
   if (typeof setBeamsVisible === 'function') setBeamsVisible(true);

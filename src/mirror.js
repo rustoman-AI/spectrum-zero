@@ -356,30 +356,38 @@ export function updateAllMirrorGeometries() {
   }
 }
 
-// Reset all mirrors to default positions, angles, and states
+// Reset all mirrors to default positions, angles, and states.
+// Destroys every mirror (including ones bought during the run) and rebuilds
+// the starting set, so nothing purchased survives a restart.
 export function resetMirrors() {
+  // Tear down all existing mirror meshes and clear socket occupancy
   for (let i = 0; i < mirrors.length; i++) {
-    const mirror = mirrors[i];
+    const m = mirrors[i];
+    if (m.mesh) {
+      if (mirrorMeshGroup) mirrorMeshGroup.remove(m.mesh);
+      if (m.mesh.geometry) m.mesh.geometry.dispose();
+      if (m.mesh.material) {
+        if (m.mesh.material.map) m.mesh.material.map.dispose();
+        m.mesh.material.dispose();
+      }
+    }
+  }
+  mirrors.length = 0;
+  tweens.length = 0;
+  for (let i = 0; i < sockets.length; i++) {
+    sockets[i].type = null;
+    sockets[i].objectRef = null;
+  }
+
+  // Rebuild the starting mirrors (mirrors default state, same as initMirrors)
+  for (let i = 0; i < MIRROR_COUNT_START; i++) {
     const socketIdx = DEFAULT_MIRROR_SOCKETS[i];
-    const [sx, sy] = SOCKET_POSITIONS[socketIdx];
-    // Reset socket occupancy
-    sockets[mirror.socketIndex].type = null;
-    sockets[mirror.socketIndex].objectRef = null;
-    // Restore to default socket
-    mirror.socketIndex = socketIdx;
-    mirror.freeX = sx;
-    mirror.freeY = sy;
-    mirror.angle = (i === 1) ? Math.PI / 2 : 0; // flanks horizontal, centre vertical
-    mirror.hits = 0;
-    mirror.shattered = false;
-    mirror.reinforced = false;
-    mirror.anchored = false;
-    mirror.mesh.material.color.setHex(0x8888cc);
-    mirror.mesh.material.opacity = 1.0;
-    mirror.mesh.material.transparent = false;
-    mirror.mesh.visible = true;
+    const mirror = createMirror(socketIdx);
+    mirror.angle = (i === 1) ? Math.PI / 2 : 0; // centre vertical, flanks horizontal
+    updateMirrorGeometry(mirror);
+    mirrors.push(mirror);
     sockets[socketIdx].type = 'mirror';
     sockets[socketIdx].objectRef = mirror;
-    updateMirrorGeometry(mirror);
   }
+  markDirty();
 }

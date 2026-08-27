@@ -110,6 +110,21 @@ function deselect() {
   state = STATE_IDLE;
   hideHighlight();
 }
+// Reset all input state on session restart — clears selection highlight,
+// drag state, and both pointer trackers so nothing carries into the new run.
+export function resetInput() {
+  deselect();
+  dragObject = null;
+  dragType = null;
+  pointerStart = null;
+  pointerDownOnObject = null;
+  pointerDownType = null;
+  prevPointerWorld = null;
+  primaryPointerId = null;
+  secondPointer = { id: null, mirror: null, targetAngle: 0, prevWorld: null, active: false };
+  if (highlight2Mesh) highlight2Mesh.visible = false;
+  if (dropTargetMesh) dropTargetMesh.visible = false;
+}
 // --- Pointer handlers ---
 function onPointerDown(e) {
   e.preventDefault();

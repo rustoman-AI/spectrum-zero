@@ -40,6 +40,26 @@ export function initZeus() {
 }
 
 // Called each frame from main loop
+// Reset all Zeus state on session restart — clear bolts, flash, shake, strike
+export function resetZeus() {
+  const scene = getScene();
+  for (const bolt of strikeBolts) {
+    if (bolt.mesh) {
+      scene.remove(bolt.mesh);
+      if (bolt.mesh.geometry) bolt.mesh.geometry.dispose();
+      if (bolt.mesh.material) bolt.mesh.material.dispose();
+    }
+  }
+  strikeBolts = [];
+  strikeActive = false;
+  strikeTimer = 0;
+  flashAlpha = 0;
+  zeusShakeTimer = 0;
+  zeusShakeIntensity = 0;
+  zeusReady = false;
+  readyNotified = false;
+}
+
 export function updateZeus(dt, affordable) {
   const wasReady = zeusReady;
   zeusReady = affordable;
