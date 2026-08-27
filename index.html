@@ -362,7 +362,6 @@ const SHOP = {
   prism4:    { bronze: 80 },
   prism5:    { silver: 120 },
   prism6:    { silver: 200 },
-  priest:    { silver: 60 },   // generates 1 Faith/sec
 };
 
 // --- God abilities (escalating cost per activation) ---
@@ -372,7 +371,7 @@ const GOD_ABILITIES = {
     duration: 5,
     costs: [
       { brass: 30 },                  // #1: ~30s passive, ~10s with altar
-      { faith: 40, gold: 10 },        // #2: requires priest
+      { faith: 40, gold: 10 },        // #2: needs Faith (from Helios casts)
       { faith: 100, gold: 20 },       // #3: serious
       { faith: 180, gold: 40 },       // #4: endgame
     ]
@@ -387,7 +386,21 @@ const GOD_ABILITIES = {
       { faith: 220, gold: 50 },       // #4
     ]
   },
-  helios:   { faith: 100, gold: 20, name: 'Scorching Sun', duration: 10 },
+  // Helios: active Solar Overcharge. Generates Faith (the fuel for Zeus/Poseidon
+  // repeat casts), stuns the fleet, and burns through shield plates for 5s.
+  // Paid in Silver/Bronze so it is reachable without needing Faith first.
+  helios: {
+    name: 'Solar Overcharge',
+    duration: 5,           // flare lasts 5s
+    faithGain: 15,         // +15 Faith over the 5s flare (+3/sec)
+    stunDuration: 4,       // ships frozen (speed 0) for 4s
+    costs: [
+      { silver: 40 },                 // #1: early-reachable
+      { silver: 80, bronze: 40 },     // #2
+      { silver: 140, bronze: 80 },    // #3
+      { silver: 220, bronze: 120 },   // #4
+    ]
+  },
 };
 
 // --- Phase timings (seconds) ---
@@ -1598,6 +1611,172 @@ function playWhirlpoolSound() {
   nSrc.connect(nLp).connect(nG).connect(ctx.destination);
   nSrc.start(now);
   nSrc.stop(now + DURATION + 0.1);
+}
+
+
+// === src/helios.js ===
+// ============================================================
+// src/helios.js — Helios ultimate: Solar Overcharge
+//
+// Active ability (replaces the old passive Priest). On cast:
+//   - Full-screen warm solar bloom overlay for `duration` seconds.
+//   - Generates `faithGain` Faith spread evenly across the flare
+//     (the fuel for repeat Zeus/Poseidon casts).
+//   - Stuns every ship on screen (speed 0) for `stunDuration` seconds.
+//   - Disables Shield-Bearer deflection while the flare is active, so
+//     beams deal full direct damage straight through the shields.
+//   - Rising solar hum + bright chime SFX.
+// ============================================================
+
+
+
+
+
+
+const CFG = GOD_ABILITIES.helios;
+
+let heliosActive = false;
+let heliosTimer = 0;              // seconds remaining in the flare
+let heliosFaithRemaining = 0;     // faith still to be granted this flare
+let bloomMesh = null;
+let heliosACtx = null;
+let heliosHumOsc = null;
+let heliosHumGain = null;
+
+function isHeliosActive() { return heliosActive; }
+// While the flare burns, shield plates are overpowered by the sun.
+function isShieldDisabled() { return heliosActive; }
+
+function initHelios() {
+  const oScene = getOverlayScene();
+  const worldWidth = getWorldWidth();
+  // Full-screen warm bloom: a plane covering the whole viewport in the overlay
+  // scene, additive so it reads as blinding light rather than a flat tint.
+  const geo = new THREE.PlaneGeometry(worldWidth * 1.2, WORLD_HEIGHT * 1.2);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xffdd88, transparent: true, opacity: 0,
+    blending: THREE.AdditiveBlending, depthWrite: false
+  });
+  bloomMesh = new THREE.Mesh(geo, mat);
+  bloomMesh.position.set(0, 0, 20); // in front of everything in the overlay scene
+  bloomMesh.visible = false;
+  oScene.add(bloomMesh);
+}
+
+// Called from crafting.js when Helios is purchased.
+function triggerHelios() {
+  heliosActive = true;
+  heliosTimer = CFG.duration;
+  heliosFaithRemaining = CFG.faithGain;
+  if (bloomMesh) bloomMesh.visible = true;
+
+  // Stun every ship currently on screen.
+  const pool = getEnemyPool();
+  for (const e of pool) {
+    if (e.active) e.stunTimer = Math.max(e.stunTimer || 0, CFG.stunDuration);
+  }
+
+  playSolarHum();
+}
+
+function updateHelios(dt) {
+  if (!heliosActive) return;
+
+  heliosTimer -= dt;
+
+  // Drip the faith evenly across the flare duration.
+  if (heliosFaithRemaining > 0) {
+    const rate = CFG.faithGain / CFG.duration; // faith per second
+    const grant = Math.min(heliosFaithRemaining, rate * dt);
+    gainFaith(grant);
+    heliosFaithRemaining -= grant;
+  }
+
+  // Bloom opacity: quick rise, hold bright, fade out at the end.
+  const elapsed = CFG.duration - heliosTimer;
+  const fadeIn = Math.min(1, elapsed * 4);        // ~0.25s rise
+  const fadeOut = Math.min(1, heliosTimer * 2);   // ~0.5s tail
+  const pulse = 0.85 + 0.15 * Math.sin(elapsed * 12); // subtle shimmer
+  if (bloomMesh) {
+    bloomMesh.material.opacity = 0.55 * fadeIn * fadeOut * pulse;
+  }
+
+  if (heliosTimer <= 0) {
+    endFlare();
+  }
+}
+
+function endFlare() {
+  heliosActive = false;
+  heliosTimer = 0;
+  heliosFaithRemaining = 0;
+  if (bloomMesh) {
+    bloomMesh.material.opacity = 0;
+    bloomMesh.visible = false;
+  }
+  stopSolarHum();
+}
+
+function resetHelios() {
+  endFlare();
+}
+
+// --- Audio: rising solar hum + bright chime ---
+function getHeliosCtx() {
+  if (heliosACtx) return heliosACtx;
+  try { heliosACtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+  return heliosACtx;
+}
+
+function playSolarHum() {
+  const ctx = getHeliosCtx();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+
+  // Bright chime up front (two stacked sines, quick bell)
+  for (const [freq, delay] of [[1320, 0], [1760, 0.06]]) {
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, now + delay);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0, now + delay);
+    g.gain.linearRampToValueAtTime(0.18, now + delay + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.7);
+    osc.connect(g).connect(ctx.destination);
+    osc.start(now + delay);
+    osc.stop(now + delay + 0.75);
+  }
+
+  // Rising solar hum: sawtooth swept up through a lowpass over the flare.
+  stopSolarHum(); // ensure no overlap if recast fast
+  heliosHumOsc = ctx.createOscillator();
+  heliosHumOsc.type = 'sawtooth';
+  heliosHumOsc.frequency.setValueAtTime(180, now);
+  heliosHumOsc.frequency.linearRampToValueAtTime(420, now + CFG.duration);
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(400, now);
+  lp.frequency.linearRampToValueAtTime(1600, now + CFG.duration);
+  heliosHumGain = ctx.createGain();
+  heliosHumGain.gain.setValueAtTime(0.0, now);
+  heliosHumGain.gain.linearRampToValueAtTime(0.14, now + 0.3);       // swell in
+  heliosHumGain.gain.setValueAtTime(0.14, now + CFG.duration - 0.5);
+  heliosHumGain.gain.exponentialRampToValueAtTime(0.001, now + CFG.duration); // fade out
+  heliosHumOsc.connect(lp).connect(heliosHumGain).connect(ctx.destination);
+  heliosHumOsc.start(now);
+  heliosHumOsc.stop(now + CFG.duration + 0.05);
+}
+
+function stopSolarHum() {
+  if (heliosHumOsc) {
+    try { heliosHumOsc.stop(); } catch (_) {}
+    try { heliosHumOsc.disconnect(); } catch (_) {}
+    heliosHumOsc = null;
+  }
+  if (heliosHumGain) {
+    try { heliosHumGain.disconnect(); } catch (_) {}
+    heliosHumGain = null;
+  }
 }
 
 
@@ -3199,13 +3378,11 @@ function doSpawn() {
 
 let resources = { brass: 0, bronze: 0, silver: 0, gold: 0 };
 let faith = 0;
-let priestCount = 0;
 const altars = [];
 
 function getResources() { return resources; }
 function getFaith() { return faith; }
-function getPriestCount() { return priestCount; }
-function addPriest() { priestCount++; }
+function gainFaith(amount) { faith += amount; }
 
 function canAfford(cost) {
   if (!cost) return false;
@@ -3227,7 +3404,6 @@ function addKillReward(reward) {
 function resetFoundries() {
   resources = { brass: 0, bronze: 0, silver: 0, gold: 0 };
   faith = 0;
-  priestCount = 0;
   for (const a of altars) { a.litTime = 0; a.overheated = false; a.cooldown = 0; a.everLit = false; }
 }
 
@@ -3405,8 +3581,7 @@ function updateFoundries(dt) {
     }
   }
 
-  // Priests generate faith
-  faith += priestCount * dt;
+  // Faith is now generated by the Helios ability (see helios.js), not passively.
 }
 
 // Segment-vs-AABB intersection test
@@ -3458,9 +3633,10 @@ function getAltarAudioState() {
 
 // === src/crafting.js ===
 // ============================================================
-// src/crafting.js — Shop UI: mirrors, prisms, priests, god abilities
+// src/crafting.js — Shop UI: mirrors, prisms, god abilities (Helios/Zeus/Poseidon)
 // Rendered as in-scene canvas texture at bottom of playfield.
 // ============================================================
+
 
 
 
@@ -3482,29 +3658,49 @@ let mirrorsBought = 0;
 let focusCount = 0;
 let zeusCount = 0;
 let poseidonCount = 0;
+let heliosCount = 0;
 let zeusCooldown = 0;       // seconds remaining (drawn as radial wipe)
 let poseidonCooldown = 0;
+let heliosCooldown = 0;
 const ZEUS_COOLDOWN_TIME = 8;     // seconds
 const POSEIDON_COOLDOWN_TIME = 10;
+const HELIOS_COOLDOWN_TIME = 12;
 const prevAffordable = [];  // track per-button affordability for pulse
 const pulseTimes = [];      // countdown for 300ms pulse animation
 
-// Shop items displayed in the tray
-const SHOP_ITEMS = [
-  { id: 'mirror', label: 'Mirror', getCost: () => ({ brass: SHOP.mirror.brass + mirrorsBought * SHOP.mirror.scaling }) },
-  { id: 'prism4', label: '4-Prism', getCost: () => SHOP.prism4 },
-  { id: 'prism5', label: '5-Prism', getCost: () => SHOP.prism5 },
-  { id: 'prism6', label: '6-Prism', getCost: () => SHOP.prism6 },
-  { id: 'priest', label: 'Priest', getCost: () => SHOP.priest },
-  { id: 'zeus',   label: 'Zeus', getCost: () => {
-    const costs = GOD_ABILITIES.zeus.costs;
-    return costs[Math.min(zeusCount, costs.length - 1)];
-  } },
-  { id: 'poseidon', label: 'Poseidon', getCost: () => {
-    const costs = GOD_ABILITIES.poseidon.costs;
-    return costs[Math.min(poseidonCount, costs.length - 1)];
-  } },
-];
+// The prism upgrade is a single slot that advances 4 -> 5 -> 6 and then
+// disappears once tier 6 is owned. Owned tiers can never be repurchased.
+const PRISM_UPGRADES = {
+  3: { id: 'prism4', label: '4-Prism', tier: 4, getCost: () => SHOP.prism4 },
+  4: { id: 'prism5', label: '5-Prism', tier: 5, getCost: () => SHOP.prism5 },
+  5: { id: 'prism6', label: '6-Prism', tier: 6, getCost: () => SHOP.prism6 },
+};
+
+// Build the visible shop list for the current frame. The prism slot reflects
+// the next tier the player can buy (or is omitted entirely at max tier), so the
+// layout stays a fixed, non-overlapping grid that shrinks as tiers max out.
+function buildShopItems() {
+  const items = [
+    { id: 'mirror', label: 'Mirror', getCost: () => ({ brass: SHOP.mirror.brass + mirrorsBought * SHOP.mirror.scaling }) },
+  ];
+  const upgrade = PRISM_UPGRADES[getActiveTier()];
+  if (upgrade) items.push(upgrade);
+  items.push(
+    { id: 'helios', label: 'Helios', getCost: () => {
+      const costs = GOD_ABILITIES.helios.costs;
+      return costs[Math.min(heliosCount, costs.length - 1)];
+    } },
+    { id: 'zeus', label: 'Zeus', getCost: () => {
+      const costs = GOD_ABILITIES.zeus.costs;
+      return costs[Math.min(zeusCount, costs.length - 1)];
+    } },
+    { id: 'poseidon', label: 'Poseidon', getCost: () => {
+      const costs = GOD_ABILITIES.poseidon.costs;
+      return costs[Math.min(poseidonCount, costs.length - 1)];
+    } },
+  );
+  return items;
+}
 
 function getFocusMultiplier() { return 1 + focusCount * 0.15; }
 
@@ -3539,6 +3735,7 @@ function updateCraftingTray() {
   const cdt = 0.016;
   if (zeusCooldown > 0) zeusCooldown -= cdt;
   if (poseidonCooldown > 0) poseidonCooldown -= cdt;
+  if (heliosCooldown > 0) heliosCooldown -= cdt;
   const res = getResources();
   const faith = getFaith();
 
@@ -3546,9 +3743,10 @@ function updateCraftingTray() {
   trayCtx.fillStyle = 'rgba(0,0,0,0.7)';
   trayCtx.fillRect(0, 0, 512, 40);
 
-  const btnW = 512 / SHOP_ITEMS.length;
-  for (let i = 0; i < SHOP_ITEMS.length; i++) {
-    const item = SHOP_ITEMS[i];
+  const shopItems = buildShopItems();
+  const btnW = 512 / shopItems.length;
+  for (let i = 0; i < shopItems.length; i++) {
+    const item = shopItems[i];
     const cost = item.getCost();
     const affordable = canAffordCombined(cost, res, faith);
     const x = i * btnW;
@@ -3604,8 +3802,10 @@ function updateCraftingTray() {
 
     // Radial cooldown overlay for god powers
     let cooldownFrac = 0;
-    if (item.id === 'zeus' && zeusCooldown > 0) cooldownFrac = zeusCooldown / ZEUS_COOLDOWN_TIME;
-    if (item.id === 'poseidon' && poseidonCooldown > 0) cooldownFrac = poseidonCooldown / POSEIDON_COOLDOWN_TIME;
+    let cooldownTotal = 0;
+    if (item.id === 'zeus' && zeusCooldown > 0) { cooldownFrac = zeusCooldown / ZEUS_COOLDOWN_TIME; cooldownTotal = ZEUS_COOLDOWN_TIME; }
+    if (item.id === 'poseidon' && poseidonCooldown > 0) { cooldownFrac = poseidonCooldown / POSEIDON_COOLDOWN_TIME; cooldownTotal = POSEIDON_COOLDOWN_TIME; }
+    if (item.id === 'helios' && heliosCooldown > 0) { cooldownFrac = heliosCooldown / HELIOS_COOLDOWN_TIME; cooldownTotal = HELIOS_COOLDOWN_TIME; }
     if (cooldownFrac > 0) {
       // Dark radial wipe (pie slice from top, clockwise)
       const cx = x + btnW / 2;
@@ -3624,7 +3824,7 @@ function updateCraftingTray() {
       trayCtx.fillStyle = '#ffffff';
       trayCtx.font = 'bold 10px monospace';
       trayCtx.textAlign = 'center';
-      trayCtx.fillText(Math.ceil(cooldownFrac * (item.id === 'zeus' ? ZEUS_COOLDOWN_TIME : POSEIDON_COOLDOWN_TIME)) + 's', cx, 23);
+      trayCtx.fillText(Math.ceil(cooldownFrac * cooldownTotal) + 's', cx, 23);
       trayCtx.restore();
     }
   }
@@ -3637,11 +3837,12 @@ function handleCraftTap(worldX, worldY) {
   if (worldY < trayY - halfH || worldY > trayY + halfH) return false;
   if (worldX < -halfW || worldX > halfW) return false;
 
+  const shopItems = buildShopItems();
   const normX = (worldX + halfW) / trayWidth;
-  const btnIndex = Math.floor(normX * SHOP_ITEMS.length);
-  if (btnIndex < 0 || btnIndex >= SHOP_ITEMS.length) return false;
+  const btnIndex = Math.floor(normX * shopItems.length);
+  if (btnIndex < 0 || btnIndex >= shopItems.length) return false;
 
-  return attemptPurchase(SHOP_ITEMS[btnIndex]);
+  return attemptPurchase(shopItems[btnIndex]);
 }
 
 function resetCrafting() {
@@ -3649,8 +3850,10 @@ function resetCrafting() {
   focusCount = 0;
   zeusCount = 0;
   poseidonCount = 0;
+  heliosCount = 0;
   zeusCooldown = 0;
   poseidonCooldown = 0;
+  heliosCooldown = 0;
   if (typeof resetTier === 'function') resetTier();
 }
 
@@ -3658,6 +3861,9 @@ function attemptPurchase(item) {
   // Block god powers during cooldown
   if (item.id === 'zeus' && zeusCooldown > 0) return false;
   if (item.id === 'poseidon' && poseidonCooldown > 0) return false;
+  if (item.id === 'helios' && heliosCooldown > 0) return false;
+  // Guard: never allow buying a prism tier at or below the one already owned.
+  if (item.tier && getActiveTier() >= item.tier) return false;
   const res = getResources();
   const faith = getFaith();
   const cost = item.getCost();
@@ -3676,7 +3882,7 @@ function attemptPurchase(item) {
     case 'prism4': setTier(4); markDirty(); break;
     case 'prism5': setTier(5); markDirty(); break;
     case 'prism6': setTier(6); markDirty(); break;
-    case 'priest': addPriest(); break;
+    case 'helios': heliosCount++; heliosCooldown = HELIOS_COOLDOWN_TIME; triggerHelios(); break;
     case 'zeus': zeusCount++; zeusCooldown = ZEUS_COOLDOWN_TIME; triggerZeusStrike(); break;
     case 'poseidon': poseidonCount++; poseidonCooldown = POSEIDON_COOLDOWN_TIME; triggerPoseidonStrike(); break;
   }
@@ -4134,10 +4340,16 @@ function updateAltarTone(litCount, anyOverheated) {
 }
 
 function resetAudio() {
+  silenceBattleAudio();
+}
+
+// Immediately silence all continuous battle loops (beam hum, burn hiss, altar
+// tone, wood crackle). Used on game over so only the defeat sound is left.
+// One-shot voices already in flight (destruction, gong) are unaffected.
+function silenceBattleAudio() {
   if (humGain) humGain.gain.value = 0;
   if (burnGain) burnGain.gain.value = 0;
   if (altarGain) altarGain.gain.value = 0;
-  // Stop all crackle voices
   for (const cv of crackleVoices) { stopCrackleVoice(cv); }
   crackleVoices.length = 0;
 }
@@ -4327,6 +4539,7 @@ function playSinkGlug() {
 
 
 
+
 const ENEMY_HIT_HALF_W = 3;
 const ENEMY_HIT_HALF_H = 3;
 let totalKills = 0;
@@ -4356,14 +4569,17 @@ function updateDamage(dt) {
     let goldHitting = false;
     let hitColour = 0;
     let totalBeamsHitting = 0;
+    let contactX = ex, contactY = ey; // exact beam-hull contact point (first hit)
+    let haveContact = false;
 
     for (let s = 0; s < segments.length; s++) {
       const seg = segments[s];
       // Pre-split beam (raw sun column) does no damage
       if (seg.preSplit) continue;
       if (segmentIntersectsBox(seg, ex, ey, ENEMY_HIT_HALF_W, ENEMY_HIT_HALF_H)) {
-        // Shield-bearer check: block beams within shieldAngle degrees of vertical
-        if (enemy.shieldAngle > 0) {
+        // Shield-bearer check: block beams within shieldAngle degrees of vertical.
+        // Helios flare overpowers the plates — beams pass straight through.
+        if (enemy.shieldAngle > 0 && !isShieldDisabled()) {
           const dx = seg.end.x - seg.start.x;
           const dy = seg.end.y - seg.start.y;
           const len = Math.sqrt(dx * dx + dy * dy);
@@ -4371,10 +4587,14 @@ function updateDamage(dt) {
             // Angle from vertical: atan2(|horizontal|, |vertical|)
             const angleFromVert = Math.atan2(Math.abs(dx / len), Math.abs(dy / len)) * (180 / Math.PI);
             if (angleFromVert <= enemy.shieldAngle) {
-              // Blocked — deflection sparks + metallic sound + label
+              // Blocked — deflection sparks + metallic sound + label, at the
+              // exact point where the beam meets the shield plate.
+              const cp = segmentBoxEntry(seg, ex, ey, ENEMY_HIT_HALF_W, ENEMY_HIT_HALF_H);
+              const bx = cp ? cp.x : ex;
+              const by = cp ? cp.y : ey + ENEMY_HIT_HALF_H;
               if (Math.random() < dt * 8) {
-                spawnContactGlow(ex, ey + ENEMY_HIT_HALF_H, 0xccaa44, 5);
-                spawnSparks(ex, ey + ENEMY_HIT_HALF_H, 0xffcc66, 2);
+                spawnContactGlow(bx, by, 0xccaa44, 5);
+                spawnSparks(bx, by, 0xffcc66, 3);
                 playDeflect();
               }
               // Show "BLOCKED" label (throttled to once per ~1s per enemy)
@@ -4389,6 +4609,10 @@ function updateDamage(dt) {
         }
         totalBeamsHitting++;
         hitColour = seg.colour;
+        if (!haveContact) {
+          const cp = segmentBoxEntry(seg, ex, ey, ENEMY_HIT_HALF_W, ENEMY_HIT_HALF_H);
+          if (cp) { contactX = cp.x; contactY = cp.y; haveContact = true; }
+        }
         if (seg.colour === COLOUR_GOLD) goldHitting = true;
         if (seg.intensity >= 1.0) {
           fullBands++;
@@ -4432,11 +4656,12 @@ function updateDamage(dt) {
       enemy.heat += dmg * dt;
       enemy.burn = enemy.heat / enemy.maxHp;
 
-      // Contact glow + sparks (throttled: every ~0.1s)
-      if (Math.random() < dt * 10) {
-        const ex = -worldWidth / 2 + laneWidth * (enemy.lane + 0.5);
-        spawnContactGlow(ex, enemy.y, hitColour || 0xffaa00, raw);
-        spawnSparks(ex, enemy.y, hitColour || 0xffaa00, 2);
+      // Intense contact FX at the exact beam-hull contact point.
+      // A bright white-hot core glow every frame plus throttled sparks.
+      spawnContactGlow(contactX, contactY, 0xffffff, raw * 1.5);
+      if (Math.random() < dt * 20) {
+        spawnContactGlow(contactX, contactY, hitColour || 0xffaa00, raw);
+        spawnSparks(contactX, contactY, hitColour || 0xffcc66, 3);
       }
 
       if (enemy.heat >= enemy.maxHp) {
@@ -4509,6 +4734,34 @@ function segmentIntersectsBox(seg, cx, cy, hw, hh) {
   return true;
 }
 
+// Return the exact point where a beam segment enters the enemy hitbox,
+// i.e. the contact point on the hull/shield. Returns null if no intersection.
+function segmentBoxEntry(seg, cx, cy, hw, hh) {
+  const sx = seg.start.x, sy = seg.start.y;
+  const dx = seg.end.x - sx, dy = seg.end.y - sy;
+  const xmin = cx - hw, xmax = cx + hw;
+  const ymin = cy - hh, ymax = cy + hh;
+  let tmin = 0, tmax = 1;
+  if (Math.abs(dx) < 1e-8) {
+    if (sx < xmin || sx > xmax) return null;
+  } else {
+    let t1 = (xmin - sx) / dx, t2 = (xmax - sx) / dx;
+    if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
+    tmin = Math.max(tmin, t1); tmax = Math.min(tmax, t2);
+    if (tmin > tmax) return null;
+  }
+  if (Math.abs(dy) < 1e-8) {
+    if (sy < ymin || sy > ymax) return null;
+  } else {
+    let t1 = (ymin - sy) / dy, t2 = (ymax - sy) / dy;
+    if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
+    tmin = Math.max(tmin, t1); tmax = Math.min(tmax, t2);
+    if (tmin > tmax) return null;
+  }
+  // tmin is the entry parameter (clamped to segment start at 0)
+  return { x: sx + dx * tmin, y: sy + dy * tmin };
+}
+
 // --- "BLOCKED" floating label ---
 const blockedLabels = [];
 let blockedTexture = null;
@@ -4570,6 +4823,7 @@ function updateBlockedLabels(dt) {
 // Win: Recombination >= 100% at 15:00, OR Devourer killed.
 // Lose: 3 breaches, OR 15:00 with Devourer alive + Recombination < 100%.
 // ============================================================
+
 
 
 
@@ -4716,6 +4970,7 @@ function resetSession() {
   try { resetAudio(); } catch (e) { console.error('resetAudio', e); }
   try { resetZeus(); } catch (e) { console.error('resetZeus', e); }
   try { resetPoseidon(); } catch (e) { console.error('resetPoseidon', e); }
+  try { resetHelios(); } catch (e) { console.error('resetHelios', e); }
   try { resetInput(); } catch (e) { console.error('resetInput', e); }
   markDirty();
   // Restore visibility hidden on end state
@@ -4748,11 +5003,14 @@ function triggerLose() {
   }
 }
 
-// Called when game ends — hide beams, craft tray
+// Called when game ends — hide beams, craft tray, cut battle audio loops
 function onEndState() {
   if (typeof setBeamsVisible === 'function') setBeamsVisible(false);
   if (trayMesh) trayMesh.visible = false;
   if (hudMesh) hudMesh.visible = false;
+  // Immediately silence beam hum / burn hiss / altar tone / crackle so only
+  // the defeat (or win) sound is heard the instant the wall falls.
+  try { silenceBattleAudio(); } catch (e) { console.error('silenceBattleAudio', e); }
 }
 
 // --- HUD ---
@@ -5427,6 +5685,7 @@ function updateRotationSmoothing(dt) {
 
 
 
+
 // --- Source state ---
 let sourceX = 0;
 let sourceY = SUN_Y;
@@ -5442,6 +5701,7 @@ function init() {
   initFortress();
   initZeus();
   initPoseidon();
+  initHelios();
   initSockets();
   initMirrors();
   updateAllMirrorGeometries();
@@ -5551,6 +5811,9 @@ function loop(now) {
 
   // Poseidon whirlpool (lateral pull + slow)
   updatePoseidon(dt);
+
+  // Helios solar overcharge (bloom + faith drip + stun/shield-disable window)
+  updateHelios(dt);
 
   // HUD + crafting tray
   updateHud();

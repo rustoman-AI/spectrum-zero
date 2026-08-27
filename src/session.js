@@ -16,9 +16,10 @@ import { resetCrafting } from './crafting.js';
 import { resetMirrors } from './mirror.js';
 import { resetPrisms, resetTier } from './prism.js';
 import { resetEffects } from './effects.js';
-import { resetAudio } from './audio.js';
+import { resetAudio, silenceBattleAudio } from './audio.js';
 import { resetZeus } from './zeus.js';
 import { resetPoseidon } from './poseidon.js';
+import { resetHelios } from './helios.js';
 import { resetInput } from './input.js';
 import { MSG_LOSE, MSG_WIN, RES_SLAG_SHORT, RES_INSIGHT_SHORT, RES_RECOMBO_SHORT } from './strings.js';
 
@@ -150,6 +151,7 @@ export function resetSession() {
   try { resetAudio(); } catch (e) { console.error('resetAudio', e); }
   try { resetZeus(); } catch (e) { console.error('resetZeus', e); }
   try { resetPoseidon(); } catch (e) { console.error('resetPoseidon', e); }
+  try { resetHelios(); } catch (e) { console.error('resetHelios', e); }
   try { resetInput(); } catch (e) { console.error('resetInput', e); }
   markDirty();
   // Restore visibility hidden on end state
@@ -182,11 +184,14 @@ function triggerLose() {
   }
 }
 
-// Called when game ends — hide beams, craft tray
+// Called when game ends — hide beams, craft tray, cut battle audio loops
 function onEndState() {
   if (typeof setBeamsVisible === 'function') setBeamsVisible(false);
   if (trayMesh) trayMesh.visible = false;
   if (hudMesh) hudMesh.visible = false;
+  // Immediately silence beam hum / burn hiss / altar tone / crackle so only
+  // the defeat (or win) sound is heard the instant the wall falls.
+  try { silenceBattleAudio(); } catch (e) { console.error('silenceBattleAudio', e); }
 }
 
 // --- HUD ---

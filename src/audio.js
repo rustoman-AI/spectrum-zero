@@ -203,10 +203,16 @@ export function updateAltarTone(litCount, anyOverheated) {
 }
 
 export function resetAudio() {
+  silenceBattleAudio();
+}
+
+// Immediately silence all continuous battle loops (beam hum, burn hiss, altar
+// tone, wood crackle). Used on game over so only the defeat sound is left.
+// One-shot voices already in flight (destruction, gong) are unaffected.
+export function silenceBattleAudio() {
   if (humGain) humGain.gain.value = 0;
   if (burnGain) burnGain.gain.value = 0;
   if (altarGain) altarGain.gain.value = 0;
-  // Stop all crackle voices
   for (const cv of crackleVoices) { stopCrackleVoice(cv); }
   crackleVoices.length = 0;
 }

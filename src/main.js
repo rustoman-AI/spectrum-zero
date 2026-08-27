@@ -21,6 +21,7 @@ import { initEffects, updateEffects } from './effects.js';
 import { initAudio, updateHum, updateBurnHiss, updateAltarTone, updateCrackle, playWallHit, playSinkGlug, resetAudio } from './audio.js';
 import { initZeus, updateZeus, getZeusFlash, getZeusShake, isZeusReady } from './zeus.js';
 import { initPoseidon, updatePoseidon } from './poseidon.js';
+import { initHelios, updateHelios } from './helios.js';
 
 // --- Source state ---
 let sourceX = 0;
@@ -37,6 +38,7 @@ export function init() {
   initFortress();
   initZeus();
   initPoseidon();
+  initHelios();
   initSockets();
   initMirrors();
   updateAllMirrorGeometries();
@@ -146,6 +148,9 @@ function loop(now) {
 
   // Poseidon whirlpool (lateral pull + slow)
   updatePoseidon(dt);
+
+  // Helios solar overcharge (bloom + faith drip + stun/shield-disable window)
+  updateHelios(dt);
 
   // HUD + crafting tray
   updateHud();

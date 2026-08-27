@@ -24,6 +24,7 @@ import { addSlagDirect } from './foundry.js';
 import { spawnContactGlow, spawnSparks, spawnDestruction } from './effects.js';
 import { getActiveTier } from './prism.js';
 import { playSinkGlug, playDeflect } from './audio.js';
+import { isShieldDisabled } from './helios.js';
 
 const ENEMY_HIT_HALF_W = 3;
 const ENEMY_HIT_HALF_H = 3;
@@ -54,14 +55,17 @@ export function updateDamage(dt) {
     let goldHitting = false;
     let hitColour = 0;
     let totalBeamsHitting = 0;
+    let contactX = ex, contactY = ey; // exact beam-hull contact point (first hit)
+    let haveContact = false;
 
     for (let s = 0; s < segments.length; s++) {
       const seg = segments[s];
       // Pre-split beam (raw sun column) does no damage
       if (seg.preSplit) continue;
       if (segmentIntersectsBox(seg, ex, ey, ENEMY_HIT_HALF_W, ENEMY_HIT_HALF_H)) {
-        // Shield-bearer check: block beams within shieldAngle degrees of vertical
-        if (enemy.shieldAngle > 0) {
+        // Shield-bearer check: block beams within shieldAngle degrees of vertical.
+        // Helios flare overpowers the plates — beams pass straight through.
+        if (enemy.shieldAngle > 0 && !isShieldDisabled()) {
           const dx = seg.end.x - seg.start.x;
           const dy = seg.end.y - seg.start.y;
           const len = Math.sqrt(dx * dx + dy * dy);
@@ -69,10 +73,14 @@ export function updateDamage(dt) {
             // Angle from vertical: atan2(|horizontal|, |vertical|)
             const angleFromVert = Math.atan2(Math.abs(dx / len), Math.abs(dy / len)) * (180 / Math.PI);
             if (angleFromVert <= enemy.shieldAngle) {
-              // Blocked — deflection sparks + metallic sound + label
+              // Blocked — deflection sparks + metallic sound + label, at the
+              // exact point where the beam meets the shield plate.
+              const cp = segmentBoxEntry(seg, ex, ey, ENEMY_HIT_HALF_W, ENEMY_HIT_HALF_H);
+              const bx = cp ? cp.x : ex;
+              const by = cp ? cp.y : ey + ENEMY_HIT_HALF_H;
               if (Math.random() < dt * 8) {
-                spawnContactGlow(ex, ey + ENEMY_HIT_HALF_H, 0xccaa44, 5);
-                spawnSparks(ex, ey + ENEMY_HIT_HALF_H, 0xffcc66, 2);
+                spawnContactGlow(bx, by, 0xccaa44, 5);
+                spawnSparks(bx, by, 0xffcc66, 3);
                 playDeflect();
               }
               // Show "BLOCKED" label (throttled to once per ~1s per enemy)
@@ -87,6 +95,10 @@ export function updateDamage(dt) {
         }
         totalBeamsHitting++;
         hitColour = seg.colour;
+        if (!haveContact) {
+          const cp = segmentBoxEntry(seg, ex, ey, ENEMY_HIT_HALF_W, ENEMY_HIT_HALF_H);
+          if (cp) { contactX = cp.x; contactY = cp.y; haveContact = true; }
+        }
         if (seg.colour === COLOUR_GOLD) goldHitting = true;
         if (seg.intensity >= 1.0) {
           fullBands++;
@@ -130,11 +142,12 @@ export function updateDamage(dt) {
       enemy.heat += dmg * dt;
       enemy.burn = enemy.heat / enemy.maxHp;
 
-      // Contact glow + sparks (throttled: every ~0.1s)
-      if (Math.random() < dt * 10) {
-        const ex = -worldWidth / 2 + laneWidth * (enemy.lane + 0.5);
-        spawnContactGlow(ex, enemy.y, hitColour || 0xffaa00, raw);
-        spawnSparks(ex, enemy.y, hitColour || 0xffaa00, 2);
+      // Intense contact FX at the exact beam-hull contact point.
+      // A bright white-hot core glow every frame plus throttled sparks.
+      spawnContactGlow(contactX, contactY, 0xffffff, raw * 1.5);
+      if (Math.random() < dt * 20) {
+        spawnContactGlow(contactX, contactY, hitColour || 0xffaa00, raw);
+        spawnSparks(contactX, contactY, hitColour || 0xffcc66, 3);
       }
 
       if (enemy.heat >= enemy.maxHp) {
@@ -205,6 +218,34 @@ function segmentIntersectsBox(seg, cx, cy, hw, hh) {
   }
 
   return true;
+}
+
+// Return the exact point where a beam segment enters the enemy hitbox,
+// i.e. the contact point on the hull/shield. Returns null if no intersection.
+function segmentBoxEntry(seg, cx, cy, hw, hh) {
+  const sx = seg.start.x, sy = seg.start.y;
+  const dx = seg.end.x - sx, dy = seg.end.y - sy;
+  const xmin = cx - hw, xmax = cx + hw;
+  const ymin = cy - hh, ymax = cy + hh;
+  let tmin = 0, tmax = 1;
+  if (Math.abs(dx) < 1e-8) {
+    if (sx < xmin || sx > xmax) return null;
+  } else {
+    let t1 = (xmin - sx) / dx, t2 = (xmax - sx) / dx;
+    if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
+    tmin = Math.max(tmin, t1); tmax = Math.min(tmax, t2);
+    if (tmin > tmax) return null;
+  }
+  if (Math.abs(dy) < 1e-8) {
+    if (sy < ymin || sy > ymax) return null;
+  } else {
+    let t1 = (ymin - sy) / dy, t2 = (ymax - sy) / dy;
+    if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
+    tmin = Math.max(tmin, t1); tmax = Math.min(tmax, t2);
+    if (tmin > tmax) return null;
+  }
+  // tmin is the entry parameter (clamped to segment start at 0)
+  return { x: sx + dx * tmin, y: sy + dy * tmin };
 }
 
 // --- "BLOCKED" floating label ---

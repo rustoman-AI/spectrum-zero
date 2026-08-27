@@ -84,7 +84,6 @@ export const SHOP = {
   prism4:    { bronze: 80 },
   prism5:    { silver: 120 },
   prism6:    { silver: 200 },
-  priest:    { silver: 60 },   // generates 1 Faith/sec
 };
 
 // --- God abilities (escalating cost per activation) ---
@@ -94,7 +93,7 @@ export const GOD_ABILITIES = {
     duration: 5,
     costs: [
       { brass: 30 },                  // #1: ~30s passive, ~10s with altar
-      { faith: 40, gold: 10 },        // #2: requires priest
+      { faith: 40, gold: 10 },        // #2: needs Faith (from Helios casts)
       { faith: 100, gold: 20 },       // #3: serious
       { faith: 180, gold: 40 },       // #4: endgame
     ]
@@ -109,7 +108,21 @@ export const GOD_ABILITIES = {
       { faith: 220, gold: 50 },       // #4
     ]
   },
-  helios:   { faith: 100, gold: 20, name: 'Scorching Sun', duration: 10 },
+  // Helios: active Solar Overcharge. Generates Faith (the fuel for Zeus/Poseidon
+  // repeat casts), stuns the fleet, and burns through shield plates for 5s.
+  // Paid in Silver/Bronze so it is reachable without needing Faith first.
+  helios: {
+    name: 'Solar Overcharge',
+    duration: 5,           // flare lasts 5s
+    faithGain: 15,         // +15 Faith over the 5s flare (+3/sec)
+    stunDuration: 4,       // ships frozen (speed 0) for 4s
+    costs: [
+      { silver: 40 },                 // #1: early-reachable
+      { silver: 80, bronze: 40 },     // #2
+      { silver: 140, bronze: 80 },    // #3
+      { silver: 220, bronze: 120 },   // #4
+    ]
+  },
 };
 
 // --- Phase timings (seconds) ---

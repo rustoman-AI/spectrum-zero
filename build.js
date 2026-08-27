@@ -18,6 +18,7 @@ const SOURCE_FILES = [
   'src/fortress.js',
   'src/zeus.js',
   'src/poseidon.js',
+  'src/helios.js',
   'src/beam.js',
   'src/beam-render.js',
   'src/mirror.js',
