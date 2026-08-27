@@ -14,12 +14,14 @@ let active = false;
 let timer = 0;
 let whirlpoolMesh = null;
 let whirlpoolPhase = 0;
+let placementPending = false; // waiting for player to tap placement
 
 const DURATION = GOD_ABILITIES.poseidon.duration;
-const PULL_STRENGTH_SAILED = 12;  // world units/sec lateral pull
-const PULL_STRENGTH_OARED = 5;
-const WHIRLPOOL_X = 0;            // centre of field
-const WHIRLPOOL_Y = 0;            // mid-sea
+const PULL_STRENGTH_SAILED = 14;  // world units/sec lateral pull
+const PULL_STRENGTH_OARED = 6;
+
+export function isPoseidonPlacementPending() { return placementPending; }
+export function cancelPoseidonPlacement() { placementPending = false; }
 
 export function initPoseidon() {
   const scene = getScene();
@@ -38,15 +40,24 @@ export function initPoseidon() {
     blending: THREE.AdditiveBlending
   });
   whirlpoolMesh = new THREE.Mesh(geo, mat);
-  whirlpoolMesh.position.set(WHIRLPOOL_X, WHIRLPOOL_Y, -5);
+  whirlpoolMesh.position.set(0, 0, -5); // default centre, moved on placement
   scene.add(whirlpoolMesh);
 }
 
 export function triggerPoseidonStrike() {
-  if (active) return;
+  if (active || placementPending) return;
+  // Enter placement mode — next tap on sea activates the whirlpool
+  placementPending = true;
+}
+
+export function placePoseidon(worldX, worldY) {
+  if (!placementPending) return;
+  placementPending = false;
   active = true;
   timer = DURATION;
   whirlpoolPhase = 0;
+  whirlpoolMesh.position.x = worldX;
+  whirlpoolMesh.position.y = worldY;
   setWindActive(true);
   playWhirlpoolSound();
 }
@@ -73,30 +84,30 @@ export function updatePoseidon(dt) {
     const e = pool[i];
     if (!e.active) continue;
 
-    // Lateral pull toward WHIRLPOOL_X
+    // Lateral pull toward whirlpool position
     const laneWidth = ww / 5;
-    const shipX = -ww / 2 + laneWidth * (e.lane + 0.5);
-    const dx = WHIRLPOOL_X - shipX;
+    const shipX = -ww / 2 + laneWidth * (e.lane + 0.5) + (e.pullX || 0);
+    const targetX = whirlpoolMesh.position.x;
+    const dx = targetX - shipX;
     const pullStrength = e.propulsion === 'sailed' ? PULL_STRENGTH_SAILED : PULL_STRENGTH_OARED;
 
-    // Apply as drift offset (visual pull)
-    e.driftX += Math.sign(dx) * pullStrength * dt * fadeIn * fadeOut;
-    // Clamp drift to prevent going past centre
-    if (Math.abs(e.driftX) > Math.abs(dx)) e.driftX = dx * 0.8;
+    // Accumulate pull (uses pullX, not driftX — won't be overwritten by animation)
+    const pull = Math.sign(dx) * Math.min(Math.abs(dx), pullStrength * dt * fadeIn * fadeOut);
+    e.pullX = (e.pullX || 0) + pull;
 
     // Tilt ship toward centre (visual feedback)
-    const tiltTarget = Math.sign(dx) * 0.08 * fadeIn;
-    e.mesh.rotation.z = e.mesh.rotation.z * 0.9 + tiltTarget * 0.1;
+    const tiltTarget = Math.sign(dx) * 0.12 * fadeIn;
+    e.mesh.rotation.z = e.mesh.rotation.z * 0.85 + tiltTarget * 0.15;
   }
 
   // End
   if (timer <= 0) {
     active = false;
     setWindActive(false);
-    // Reset drifts gradually (enemies will reset on next frame via normal positioning)
+    // Gradually release pull
     const pool2 = getEnemyPool();
     for (const e of pool2) {
-      if (e.active) e.driftX *= 0.3; // snap most of the way back
+      if (e.active) e.pullX = 0; // release instantly (ships snap back to lanes)
     }
   }
 }

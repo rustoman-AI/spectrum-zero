@@ -255,6 +255,9 @@ export function spawnEnemy(type, lane, hpMultiplier, yOffset) {
       e.propulsion = template.propulsion || 'oared';
       e.oarPhase = Math.random() * Math.PI * 2; // random start phase
       e.driftX = 0;
+      e.pullX = 0; // Poseidon whirlpool pull (separate from animation drift)
+      e.zeusCharring = 0; // charring stage before death (0 = not charring)
+      e.zeusPendingHeat = 0;
       e.lane = lane;
       e.y = SHIP_SPAWN_Y + (yOffset || 0);
       e.speed = template.speed;
@@ -286,6 +289,19 @@ export function updateEnemies(dt) {
       e.stunTimer -= dt;
     } else {
       e.y -= e.speed * dt; // descend
+    }
+
+    // Zeus charring: deferred kill stage (electric arcs then heat)
+    if (e.zeusCharring > 0) {
+      e.zeusCharring -= dt;
+      // Visual: white tint during charring
+      e.spriteMat.color.setRGB(2, 2, 2); // overbright white
+      if (e.zeusCharring <= 0 && e.zeusPendingHeat) {
+        // Apply the deferred heat now
+        e.heat += e.zeusPendingHeat;
+        e.zeusPendingHeat = 0;
+        e.spriteMat.color.setRGB(1, 1, 1); // reset tint
+      }
     }
 
     // Propulsion animation
@@ -362,7 +378,7 @@ function positionEnemy(e) {
   const worldWidth = getWorldWidth();
   const laneWidth = worldWidth / ENEMY_LANE_COUNT;
   const x = -worldWidth / 2 + laneWidth * (e.lane + 0.5);
-  e.mesh.position.x = x + (e.driftX || 0);
+  e.mesh.position.x = x + (e.driftX || 0) + (e.pullX || 0);
   e.mesh.position.y = e.y;
 }
 

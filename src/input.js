@@ -7,6 +7,7 @@ import { getMirrors, moveMirrorToSocket, rotateMirror, getSockets, updateMirrorG
 import { getSegments, getBeamDiag } from './beam.js';
 import { isGameOver, handleRestartTap, getElapsed, getBreaches } from './session.js';
 import { handleCraftTap } from './crafting.js';
+import { isPoseidonPlacementPending, placePoseidon } from './poseidon.js';
 import { getSpawnCount, getCurrentInterval } from './enemy-spawner.js';
 import { getKillCount } from './damage.js';
 import { getInsightLog } from './foundry.js';
@@ -280,8 +281,11 @@ function onPointerUp(e) {
         selectObject(hit.object, hit.type);
       }
     } else {
-      // Tap on empty space — check crafting tray first
-      if (!handleCraftTap(world.x, world.y)) {
+      // Tap on empty space
+      if (isPoseidonPlacementPending()) {
+        // Place whirlpool at tap position
+        placePoseidon(world.x, world.y);
+      } else if (!handleCraftTap(world.x, world.y)) {
         deselect();
       }
     }

@@ -1193,11 +1193,10 @@ function triggerZeusStrike() {
     const ex = -ww / 2 + laneWidth * (enemy.lane + 0.5);
     const ey = enemy.y;
 
-    // Massive damage: kill light ships (skiff/trireme), halve heavy ships
-    // Uses heat (the actual kill mechanism), not hp
-    const isLight = (enemy.type === 'skiff' || enemy.type === 'trireme');
-    const zeusHeat = isLight ? enemy.maxHp * 1.5 : enemy.maxHp * 0.5;
-    enemy.heat += zeusHeat;
+    // Mark for Zeus kill — defer heat application by 0.2s for charring visual
+    // Store the pending heat to be applied after charring stage
+    enemy.zeusPendingHeat = isLight ? enemy.maxHp * 1.5 : enemy.maxHp * 0.5;
+    enemy.zeusCharring = 0.25; // 0.25s charring before heat hits
     // Stun: stop for 3 seconds
     enemy.stunTimer = 3.0;
 
@@ -1359,12 +1358,14 @@ let active = false;
 let timer = 0;
 let whirlpoolMesh = null;
 let whirlpoolPhase = 0;
+let placementPending = false; // waiting for player to tap placement
 
 const DURATION = GOD_ABILITIES.poseidon.duration;
-const PULL_STRENGTH_SAILED = 12;  // world units/sec lateral pull
-const PULL_STRENGTH_OARED = 5;
-const WHIRLPOOL_X = 0;            // centre of field
-const WHIRLPOOL_Y = 0;            // mid-sea
+const PULL_STRENGTH_SAILED = 14;  // world units/sec lateral pull
+const PULL_STRENGTH_OARED = 6;
+
+function isPoseidonPlacementPending() { return placementPending; }
+function cancelPoseidonPlacement() { placementPending = false; }
 
 function initPoseidon() {
   const scene = getScene();
@@ -1383,15 +1384,24 @@ function initPoseidon() {
     blending: THREE.AdditiveBlending
   });
   whirlpoolMesh = new THREE.Mesh(geo, mat);
-  whirlpoolMesh.position.set(WHIRLPOOL_X, WHIRLPOOL_Y, -5);
+  whirlpoolMesh.position.set(0, 0, -5); // default centre, moved on placement
   scene.add(whirlpoolMesh);
 }
 
 function triggerPoseidonStrike() {
-  if (active) return;
+  if (active || placementPending) return;
+  // Enter placement mode — next tap on sea activates the whirlpool
+  placementPending = true;
+}
+
+function placePoseidon(worldX, worldY) {
+  if (!placementPending) return;
+  placementPending = false;
   active = true;
   timer = DURATION;
   whirlpoolPhase = 0;
+  whirlpoolMesh.position.x = worldX;
+  whirlpoolMesh.position.y = worldY;
   setWindActive(true);
   playWhirlpoolSound();
 }
@@ -1418,30 +1428,30 @@ function updatePoseidon(dt) {
     const e = pool[i];
     if (!e.active) continue;
 
-    // Lateral pull toward WHIRLPOOL_X
+    // Lateral pull toward whirlpool position
     const laneWidth = ww / 5;
-    const shipX = -ww / 2 + laneWidth * (e.lane + 0.5);
-    const dx = WHIRLPOOL_X - shipX;
+    const shipX = -ww / 2 + laneWidth * (e.lane + 0.5) + (e.pullX || 0);
+    const targetX = whirlpoolMesh.position.x;
+    const dx = targetX - shipX;
     const pullStrength = e.propulsion === 'sailed' ? PULL_STRENGTH_SAILED : PULL_STRENGTH_OARED;
 
-    // Apply as drift offset (visual pull)
-    e.driftX += Math.sign(dx) * pullStrength * dt * fadeIn * fadeOut;
-    // Clamp drift to prevent going past centre
-    if (Math.abs(e.driftX) > Math.abs(dx)) e.driftX = dx * 0.8;
+    // Accumulate pull (uses pullX, not driftX — won't be overwritten by animation)
+    const pull = Math.sign(dx) * Math.min(Math.abs(dx), pullStrength * dt * fadeIn * fadeOut);
+    e.pullX = (e.pullX || 0) + pull;
 
     // Tilt ship toward centre (visual feedback)
-    const tiltTarget = Math.sign(dx) * 0.08 * fadeIn;
-    e.mesh.rotation.z = e.mesh.rotation.z * 0.9 + tiltTarget * 0.1;
+    const tiltTarget = Math.sign(dx) * 0.12 * fadeIn;
+    e.mesh.rotation.z = e.mesh.rotation.z * 0.85 + tiltTarget * 0.15;
   }
 
   // End
   if (timer <= 0) {
     active = false;
     setWindActive(false);
-    // Reset drifts gradually (enemies will reset on next frame via normal positioning)
+    // Gradually release pull
     const pool2 = getEnemyPool();
     for (const e of pool2) {
-      if (e.active) e.driftX *= 0.3; // snap most of the way back
+      if (e.active) e.pullX = 0; // release instantly (ships snap back to lanes)
     }
   }
 }
@@ -2715,6 +2725,9 @@ function spawnEnemy(type, lane, hpMultiplier, yOffset) {
       e.propulsion = template.propulsion || 'oared';
       e.oarPhase = Math.random() * Math.PI * 2; // random start phase
       e.driftX = 0;
+      e.pullX = 0; // Poseidon whirlpool pull (separate from animation drift)
+      e.zeusCharring = 0; // charring stage before death (0 = not charring)
+      e.zeusPendingHeat = 0;
       e.lane = lane;
       e.y = SHIP_SPAWN_Y + (yOffset || 0);
       e.speed = template.speed;
@@ -2746,6 +2759,19 @@ function updateEnemies(dt) {
       e.stunTimer -= dt;
     } else {
       e.y -= e.speed * dt; // descend
+    }
+
+    // Zeus charring: deferred kill stage (electric arcs then heat)
+    if (e.zeusCharring > 0) {
+      e.zeusCharring -= dt;
+      // Visual: white tint during charring
+      e.spriteMat.color.setRGB(2, 2, 2); // overbright white
+      if (e.zeusCharring <= 0 && e.zeusPendingHeat) {
+        // Apply the deferred heat now
+        e.heat += e.zeusPendingHeat;
+        e.zeusPendingHeat = 0;
+        e.spriteMat.color.setRGB(1, 1, 1); // reset tint
+      }
     }
 
     // Propulsion animation
@@ -2822,7 +2848,7 @@ function positionEnemy(e) {
   const worldWidth = getWorldWidth();
   const laneWidth = worldWidth / ENEMY_LANE_COUNT;
   const x = -worldWidth / 2 + laneWidth * (e.lane + 0.5);
-  e.mesh.position.x = x + (e.driftX || 0);
+  e.mesh.position.x = x + (e.driftX || 0) + (e.pullX || 0);
   e.mesh.position.y = e.y;
 }
 
@@ -4534,6 +4560,7 @@ function handleRestartTap() {
 
 
 
+
 const STATE_IDLE = 0;
 const STATE_SELECTED = 1;
 const STATE_DRAG = 2;
@@ -4804,8 +4831,11 @@ function onPointerUp(e) {
         selectObject(hit.object, hit.type);
       }
     } else {
-      // Tap on empty space — check crafting tray first
-      if (!handleCraftTap(world.x, world.y)) {
+      // Tap on empty space
+      if (isPoseidonPlacementPending()) {
+        // Place whirlpool at tap position
+        placePoseidon(world.x, world.y);
+      } else if (!handleCraftTap(world.x, world.y)) {
         deselect();
       }
     }
