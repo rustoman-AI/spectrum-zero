@@ -123,10 +123,28 @@ export function addMirror() {
   mirror.angle = 0; // horizontal — immediately useful (reflects beams upward)
 
   if (FREE_PLACEMENT) {
-    // Place in the middle of the mirror field, slightly offset so it doesn't overlap existing
-    const offsetX = (Math.random() - 0.5) * 10;
-    mirror.freeX = offsetX;
-    mirror.freeY = (MIRROR_FIELD_TOP + MIRROR_FIELD_BOT) / 2;
+    // Spread new mirrors across the field: pick the candidate x-slot that is
+    // furthest from every existing mirror, so they never pile up in the centre.
+    const halfW = Math.min(ww / 2 - 6, 26); // keep clear of the screen edges
+    const rowY = [-20, -28]; // two stagger rows so near-x mirrors don't overlap
+    let best = { x: 0, y: rowY[0], score: -Infinity };
+    const STEPS = 9; // candidate columns across the width
+    for (let r = 0; r < rowY.length; r++) {
+      for (let s = 0; s < STEPS; s++) {
+        const cx = -halfW + (2 * halfW) * (s / (STEPS - 1));
+        const cy = rowY[r];
+        // Score = distance to the nearest existing mirror (bigger = emptier spot)
+        let nearest = Infinity;
+        for (const m of mirrors) {
+          const mx = m.freeX, my = m.freeY;
+          const d = Math.hypot(cx - mx, cy - my);
+          if (d < nearest) nearest = d;
+        }
+        if (nearest > best.score) best = { x: cx, y: cy, score: nearest };
+      }
+    }
+    mirror.freeX = best.x;
+    mirror.freeY = best.y;
   }
 
   updateMirrorGeometry(mirror);
