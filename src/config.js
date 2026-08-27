@@ -128,7 +128,7 @@ export const BREACH_DAMAGE = { skiff: 5, trireme: 15, quadrireme: 25, shieldbear
 // --- Mirror ---
 export const MIRROR_MAX_HITS = 3;
 export const MIRROR_COUNT_START = 3;
-export const MIRROR_LENGTH = 8;
+export const MIRROR_LENGTH = 10;
 export const ROTATION_SENSITIVITY = 1.0;
 export const FREE_PLACEMENT = true;
 
