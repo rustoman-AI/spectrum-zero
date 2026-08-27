@@ -126,13 +126,13 @@ canvas { display: block; width: 100%; height: 100%; }
       // Older browser, no promise — just unmute
       video.muted = false;
     }
-    // 14-second failsafe (intro is 10.6s — this is emergency only)
+    // 5-second failsafe — if video doesn't play, start the game
     setTimeout(function() {
       if (!gameStarted) {
-        updateDebugInfo('FAILSAFE 14s');
+        updateDebugInfo('FAILSAFE 5s');
         startGame();
       }
-    }, 14000);
+    }, 5000);
   });
 
   video.addEventListener('ended', startGame);
@@ -141,6 +141,11 @@ canvas { display: block; width: 100%; height: 100%; }
   video.addEventListener('error', function() {
     updateDebugInfo('video error');
     startGame();
+  });
+  // If video stalls for too long, start the game
+  video.addEventListener('stalled', function() {
+    updateDebugInfo('video stalled');
+    setTimeout(function() { if (!gameStarted) startGame(); }, 3000);
   });
 
   // Skip by tapping during playback
