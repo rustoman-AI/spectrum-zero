@@ -364,41 +364,35 @@ const SHOP = {
   prism6:    { silver: 200 },
 };
 
-// --- God abilities (escalating cost per activation) ---
+// --- God abilities (constant cost so they can be cycled during a run) ---
+// The shop uses costs[min(castCount, costs.length-1)], so [first, repeat]
+// means the first cast has one price and every cast after is a flat repeat.
 const GOD_ABILITIES = {
   zeus: {
     name: 'Thunderstorm',
     duration: 5,
     costs: [
-      { brass: 30 },                  // #1: ~30s passive, ~10s with altar
-      { faith: 40, gold: 10 },        // #2: needs Faith (from Helios casts)
-      { faith: 100, gold: 20 },       // #3: serious
-      { faith: 180, gold: 40 },       // #4: endgame
+      { brass: 25 },                  // #1: cheap opener
+      { faith: 15, gold: 5 },         // #2+: constant (does not escalate)
     ]
   },
   poseidon: {
     name: 'Maelstrom',
     duration: 6,
     costs: [
-      { brass: 60 },                  // #1: more than Zeus, still early-reachable
-      { faith: 60, gold: 15 },        // #2
-      { faith: 140, gold: 30 },       // #3
-      { faith: 220, gold: 50 },       // #4
+      { brass: 40 },                  // #1: cheap opener
+      { faith: 20, gold: 8 },         // #2+: constant
     ]
   },
   // Helios: active Solar Overcharge. Generates Faith (the fuel for Zeus/Poseidon
   // repeat casts), stuns the fleet, and burns through shield plates for 5s.
-  // Paid in Silver/Bronze so it is reachable without needing Faith first.
   helios: {
     name: 'Solar Overcharge',
     duration: 5,           // flare lasts 5s
     faithGain: 15,         // +15 Faith over the 5s flare (+3/sec)
     stunDuration: 4,       // ships frozen (speed 0) for 4s
     costs: [
-      { silver: 40 },                 // #1: early-reachable
-      { silver: 80, bronze: 40 },     // #2
-      { silver: 140, bronze: 80 },    // #3
-      { silver: 220, bronze: 120 },   // #4
+      { silver: 15, bronze: 20 },     // flat cost, never scales
     ]
   },
 };
@@ -3748,7 +3742,15 @@ function updateCraftingTray() {
   for (let i = 0; i < shopItems.length; i++) {
     const item = shopItems[i];
     const cost = item.getCost();
-    const affordable = canAffordCombined(cost, res, faith);
+    // A god power on cooldown cannot be bought yet, so it should not read as
+    // "ready" even if the player can afford it. The instant the cooldown hits
+    // 0 (recomputed every frame) the button lights up with its real state.
+    const onCooldown =
+      (item.id === 'zeus' && zeusCooldown > 0) ||
+      (item.id === 'poseidon' && poseidonCooldown > 0) ||
+      (item.id === 'helios' && heliosCooldown > 0);
+    const canAfford = canAffordCombined(cost, res, faith);
+    const affordable = canAfford && !onCooldown;
     const x = i * btnW;
 
     // Detect affordability crossing → trigger 300ms pulse
@@ -3794,9 +3796,9 @@ function updateCraftingTray() {
     trayCtx.textAlign = 'center';
     trayCtx.fillText(item.label, x + btnW / 2, 13);
 
-    trayCtx.font = '7px monospace';
-    trayCtx.fillStyle = (affordable || zeusGlow) ? '#cccccc' : '#555555';
-    trayCtx.fillText(costStr(cost), x + btnW / 2, 27);
+    // Cost: draw each currency token separately so the ones the player can't
+    // afford show in red (immediate "why can't I buy this" feedback).
+    drawCostTokens(cost, res, faith, x + btnW / 2, 27, btnW);
 
     trayCtx.restore();
 
@@ -3912,6 +3914,42 @@ function costStr(cost) {
     parts.push(cost[k] + (labels[k] || k[0]));
   }
   return parts.join(' ');
+}
+
+// Draw the cost as separate tokens, centred at (centreX, y). Tokens the player
+// can afford render light; tokens they can't afford render red so it's obvious
+// which currency is short.
+const COST_LABELS = { brass: 'Br', bronze: 'Bz', silver: 'Si', gold: 'Au', faith: 'Fa' };
+function drawCostTokens(cost, res, faith, centreX, y, btnW) {
+  trayCtx.font = '7px monospace';
+  const sep = ' ';
+  const tokens = [];
+  for (const k in cost) {
+    const have = (k === 'faith') ? faith : (res[k] || 0);
+    tokens.push({
+      text: cost[k] + (COST_LABELS[k] || k[0]),
+      ok: have >= cost[k],
+    });
+  }
+  if (tokens.length === 0) return;
+
+  // Measure total width (tokens + separators) to centre the row.
+  const sepW = trayCtx.measureText(sep).width;
+  let totalW = 0;
+  for (let t = 0; t < tokens.length; t++) {
+    totalW += trayCtx.measureText(tokens[t].text).width;
+    if (t < tokens.length - 1) totalW += sepW;
+  }
+
+  trayCtx.textAlign = 'left';
+  let cx = centreX - totalW / 2;
+  for (let t = 0; t < tokens.length; t++) {
+    trayCtx.fillStyle = tokens[t].ok ? '#cccccc' : '#ff5555';
+    trayCtx.fillText(tokens[t].text, cx, y);
+    cx += trayCtx.measureText(tokens[t].text).width;
+    if (t < tokens.length - 1) cx += sepW;
+  }
+  trayCtx.textAlign = 'center'; // restore for subsequent draws
 }
 
 

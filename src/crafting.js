@@ -114,7 +114,15 @@ export function updateCraftingTray() {
   for (let i = 0; i < shopItems.length; i++) {
     const item = shopItems[i];
     const cost = item.getCost();
-    const affordable = canAffordCombined(cost, res, faith);
+    // A god power on cooldown cannot be bought yet, so it should not read as
+    // "ready" even if the player can afford it. The instant the cooldown hits
+    // 0 (recomputed every frame) the button lights up with its real state.
+    const onCooldown =
+      (item.id === 'zeus' && zeusCooldown > 0) ||
+      (item.id === 'poseidon' && poseidonCooldown > 0) ||
+      (item.id === 'helios' && heliosCooldown > 0);
+    const canAfford = canAffordCombined(cost, res, faith);
+    const affordable = canAfford && !onCooldown;
     const x = i * btnW;
 
     // Detect affordability crossing → trigger 300ms pulse
@@ -160,9 +168,9 @@ export function updateCraftingTray() {
     trayCtx.textAlign = 'center';
     trayCtx.fillText(item.label, x + btnW / 2, 13);
 
-    trayCtx.font = '7px monospace';
-    trayCtx.fillStyle = (affordable || zeusGlow) ? '#cccccc' : '#555555';
-    trayCtx.fillText(costStr(cost), x + btnW / 2, 27);
+    // Cost: draw each currency token separately so the ones the player can't
+    // afford show in red (immediate "why can't I buy this" feedback).
+    drawCostTokens(cost, res, faith, x + btnW / 2, 27, btnW);
 
     trayCtx.restore();
 
@@ -278,4 +286,40 @@ function costStr(cost) {
     parts.push(cost[k] + (labels[k] || k[0]));
   }
   return parts.join(' ');
+}
+
+// Draw the cost as separate tokens, centred at (centreX, y). Tokens the player
+// can afford render light; tokens they can't afford render red so it's obvious
+// which currency is short.
+const COST_LABELS = { brass: 'Br', bronze: 'Bz', silver: 'Si', gold: 'Au', faith: 'Fa' };
+function drawCostTokens(cost, res, faith, centreX, y, btnW) {
+  trayCtx.font = '7px monospace';
+  const sep = ' ';
+  const tokens = [];
+  for (const k in cost) {
+    const have = (k === 'faith') ? faith : (res[k] || 0);
+    tokens.push({
+      text: cost[k] + (COST_LABELS[k] || k[0]),
+      ok: have >= cost[k],
+    });
+  }
+  if (tokens.length === 0) return;
+
+  // Measure total width (tokens + separators) to centre the row.
+  const sepW = trayCtx.measureText(sep).width;
+  let totalW = 0;
+  for (let t = 0; t < tokens.length; t++) {
+    totalW += trayCtx.measureText(tokens[t].text).width;
+    if (t < tokens.length - 1) totalW += sepW;
+  }
+
+  trayCtx.textAlign = 'left';
+  let cx = centreX - totalW / 2;
+  for (let t = 0; t < tokens.length; t++) {
+    trayCtx.fillStyle = tokens[t].ok ? '#cccccc' : '#ff5555';
+    trayCtx.fillText(tokens[t].text, cx, y);
+    cx += trayCtx.measureText(tokens[t].text).width;
+    if (t < tokens.length - 1) cx += sepW;
+  }
+  trayCtx.textAlign = 'center'; // restore for subsequent draws
 }

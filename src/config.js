@@ -86,41 +86,35 @@ export const SHOP = {
   prism6:    { silver: 200 },
 };
 
-// --- God abilities (escalating cost per activation) ---
+// --- God abilities (constant cost so they can be cycled during a run) ---
+// The shop uses costs[min(castCount, costs.length-1)], so [first, repeat]
+// means the first cast has one price and every cast after is a flat repeat.
 export const GOD_ABILITIES = {
   zeus: {
     name: 'Thunderstorm',
     duration: 5,
     costs: [
-      { brass: 30 },                  // #1: ~30s passive, ~10s with altar
-      { faith: 40, gold: 10 },        // #2: needs Faith (from Helios casts)
-      { faith: 100, gold: 20 },       // #3: serious
-      { faith: 180, gold: 40 },       // #4: endgame
+      { brass: 25 },                  // #1: cheap opener
+      { faith: 15, gold: 5 },         // #2+: constant (does not escalate)
     ]
   },
   poseidon: {
     name: 'Maelstrom',
     duration: 6,
     costs: [
-      { brass: 60 },                  // #1: more than Zeus, still early-reachable
-      { faith: 60, gold: 15 },        // #2
-      { faith: 140, gold: 30 },       // #3
-      { faith: 220, gold: 50 },       // #4
+      { brass: 40 },                  // #1: cheap opener
+      { faith: 20, gold: 8 },         // #2+: constant
     ]
   },
   // Helios: active Solar Overcharge. Generates Faith (the fuel for Zeus/Poseidon
   // repeat casts), stuns the fleet, and burns through shield plates for 5s.
-  // Paid in Silver/Bronze so it is reachable without needing Faith first.
   helios: {
     name: 'Solar Overcharge',
     duration: 5,           // flare lasts 5s
     faithGain: 15,         // +15 Faith over the 5s flare (+3/sec)
     stunDuration: 4,       // ships frozen (speed 0) for 4s
     costs: [
-      { silver: 40 },                 // #1: early-reachable
-      { silver: 80, bronze: 40 },     // #2
-      { silver: 140, bronze: 80 },    // #3
-      { silver: 220, bronze: 120 },   // #4
+      { silver: 15, bronze: 20 },     // flat cost, never scales
     ]
   },
 };

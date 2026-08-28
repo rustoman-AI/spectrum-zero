@@ -255,3 +255,16 @@ All procedural canvas drawing at load time — zero image files, zip size unchan
 - `damage.js` no longer spawns a glow every frame — the contact glow/sparks are throttled (~18/s) with a modest fixed DPS, so it reads as a lively spark rather than a persistent flash.
 
 **Verified:** `node build.js` -> 192.7 KB, exit 0. Rotation 11/11, smoke 29/29. Scale math checked numerically: contact spark = 2.0u (0.25x-0.8x ship size across all types), absolute max glow = 3.9u (1.0-1.2x a mid ship) even for destruction/huge DPS. Not yet eyeballed on-device.
+
+---
+
+## 2026-08-25 — God Cost Rebalance + Per-Currency Cost Readability
+
+**Asked:** (1) Kill the escalating repeat-cast costs so abilities can be cycled during a run — Helios flat 15 Si + 20 Bz; Zeus #1 = 25 Brass, #2+ = 15 Faith + 5 Gold (constant); Poseidon #1 = 40 Brass, #2+ = 20 Faith + 8 Gold (constant). (2) When a cooldown ends, the button must immediately show the real cost and affordability; and any currency the player is short on should render in red so it's obvious why the button isn't lighting up.
+
+**Generated:**
+- **Costs:** `GOD_ABILITIES` now uses the `[first, repeat]` pattern. The shop already indexes `costs[min(castCount, costs.length-1)]`, so a 2-entry array gives "first cast one price, every later cast a flat repeat", and Helios' single-entry array is always flat. Zeus [25 Brass, then 15Fa+5Au], Poseidon [40 Brass, then 20Fa+8Au], Helios [15Si+20Bz]. No more 40/100/180 escalation.
+- **Cooldown → live button state:** `updateCraftingTray` already redraws every frame, so cost/affordability recompute continuously; the button updates on the first frame after a cooldown reaches 0. Added an explicit `onCooldown` check folded into the button's `affordable` visual, so a god power on cooldown no longer renders as "ready" (blue/pulsing) even when the player can afford it — it stays dimmed and visibly lights up the instant the timer ends.
+- **Per-currency red text:** Replaced the single `costStr` line with `drawCostTokens`, which draws each currency token separately, centred, and colours each one individually — light grey if the player has enough of that currency, red (`#ff5555`) if short. This is driven by the actual `res`/`faith` balances (independent of cooldown), so during a cooldown a player with enough resources still sees green tokens ("you can afford it, just wait"), while a missing currency always shows red.
+
+**Verified:** `node build.js` -> 194.3 KB, exit 0. Rotation 11/11, smoke 29/29. Cost indexing checked numerically (9/9): every god's repeat cast is constant at the specified price across casts #2 through #8. The red-token rendering and the cooldown-dimming were reasoned about from the draw code but not eyeballed — worth a quick on-device look (cast a god, watch the button grey during cooldown then light up, and check a short currency shows red).
