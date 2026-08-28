@@ -562,3 +562,22 @@ All procedural canvas drawing at load time — zero image files, zip size unchan
 **Verified:** `node build.js` -> 241.6 KB, exit 0. Rotation 11/11, smoke 29/29. The smoke test's "Poseidon pull" case (sailed pullX 14, oared -6) still passes — the pull *accumulation* is unchanged; only the release behaviour changed (it no longer resets).
 
 **Honest caveat:** Verified by the code path + tests, not viewed on device — worth a quick check that ships dragged by the vortex stay put when it ends and sail straight down from there (no visible jump back toward their lanes).
+
+---
+
+## 2026-08-25 — Remove Brass Currency + Ability Button Icons
+
+**Asked:** (1) Ability buttons should show vector icons (Zeus thunderbolt, Helios sun, Poseidon trident) with the name and cost below. (2) Remove "Brass" entirely — standardise to 3 metals (Bronze common / Silver rare / Gold elite) + Faith; HUD strictly `Bz | Si | Au | F`. (3) Rename the BRASS altar to BRONZE; merlon order BRONZE → SILVER → GOLD → ELECTRUM; Mirror = 50 Bz; all recipes use only Bz/Si/Au/F.
+
+**Investigated first:** grep'd every `brass` reference — config (enemy rewards, ALTAR_RATES, ALTAR_POSITIONS, SHOP.mirror, Zeus/Poseidon opener costs), foundry (resources object, resetFoundries, legacy getSlag/addSlagDirect), session HUD, crafting (mirror getCost + cost labels). The `input.js` "br/m" (breaches/min) and `strings.js` "Br.Shield" are unrelated legacy strings, left alone.
+
+**Generated:**
+- **Economy (items 2/3/5):** Brass removed everywhere. Enemy rewards → bronze (skiff 10, trireme 25). `ALTAR_RATES` drops brass; bronze is now the common tier (passive 1 / lit 5). `resources` object is `{bronze, silver, gold}` (+ faith), and `resetFoundries`/`getSlag`/`addSlagDirect` map to bronze. Costs recalibrated to Bz/Si/Au/F only: Mirror `50 Bz` (+25/scaling), prisms bronze/silver, Zeus opener `25 Bz`, Poseidon opener `40 Bz` (repeat casts already Faith+Gold). HUD bottom row now shows exactly `Bz | Si | Au | F`, evenly spaced.
+- **Altars (item 4):** Four merlon stations now carry a `type` (the currency they feed) and a `label` (displayed name): BRONZE, SILVER, GOLD, ELECTRUM. ELECTRUM feeds gold (a natural gold alloy) so the merlon reads as four distinct stations without introducing a 4th spendable currency. Altar label draw uses `def.label`; gold-type labels (GOLD + ELECTRUM) stay hidden until first lit, as before.
+- **Icons (item 1):** New `drawAbilityIcon(id, cx, cy, s, col)` renders canvas vector icons — Zeus a filled lightning zig-zag, Helios a sun disc with 8 rays, Poseidon a trident (shaft + crossbar + three prongs). God buttons now lay out as icon (top) → name → cost; non-ability buttons keep the classic name → cost. Icons tint with the button's afford/ready state.
+
+**Verified:** `node build.js` -> 244.4 KB, exit 0. Rotation 11/11, smoke 29/29. Ran a currency-key audit over all costs/rewards/altars: only Bz/Si/Au/F present, altar order BRONZE→SILVER→GOLD→ELECTRUM, Mirror = 50 Bz. No live `brass` references remain (only explanatory comments).
+
+**Decision flagged:** The spec listed four altars (BRONZE/SILVER/GOLD/ELECTRUM) but only three spendable metals. I mapped ELECTRUM to feed **gold** rather than add a 4th currency, so the HUD stays exactly `Bz | Si | Au | F` as required. If ELECTRUM should instead be a distinct premium currency, that's a larger change — say the word.
+
+**Honest caveat:** The icons and HUD/altar labels are canvas draws I can't view here — reasoned from the drawing code. Worth a device look to confirm the three icons read clearly at button size, the name+cost sit cleanly beneath them, and the HUD/altar labels show the new metals correctly.

@@ -66,8 +66,8 @@ export const SYNERGY_BONUS = 0.3;
 
 // --- Enemy types ---
 export const ENEMY_TYPES = {
-  skiff:       { hp: 30,   armour: 0, speed: 5,   reward: { brass: 10 }, propulsion: 'sailed' },
-  trireme:     { hp: 100,  armour: 0, speed: 3.5, reward: { brass: 20, bronze: 5 }, propulsion: 'oared' },
+  skiff:       { hp: 30,   armour: 0, speed: 5,   reward: { bronze: 10 }, propulsion: 'sailed' },
+  trireme:     { hp: 100,  armour: 0, speed: 3.5, reward: { bronze: 25 }, propulsion: 'oared' },
   quadrireme:  { hp: 200,  armour: 2, speed: 2.5, reward: { bronze: 15, silver: 3 }, propulsion: 'oared' },
   shieldbearer:{ hp: 200,  armour: 1, speed: 2.0, reward: { bronze: 20, silver: 8 }, shieldAngle: 25, propulsion: 'oared' },
   flagship:    { hp: 1500, armour: 4, speed: 1.0, reward: { gold: 20 }, propulsion: 'sailed' },
@@ -82,26 +82,30 @@ export const SESSION_DURATION = 600;  // 10 minutes
 // Altars sit on the city ground BELOW the wall (y < WALL_Y).
 // A beam aimed at an altar goes DOWN; beams aimed at ships go UP.
 // No single path can reach both.
+// 3-metal economy: Bronze (common) / Silver (rare) / Gold (elite) + Faith.
 export const ALTAR_RATES = {
-  brass:  { passive: 1, lit: 5 },
-  bronze: { passive: 0.6, lit: 3 },
-  silver: { passive: 0.4, lit: 2 },
-  gold:   { passive: 0.2, lit: 1 },
+  bronze: { passive: 1,   lit: 5 },   // common tier (was Brass)
+  silver: { passive: 0.4, lit: 2 },   // rare tier
+  gold:   { passive: 0.2, lit: 1 },   // elite tier
 };
 export const ALTAR_OVERHEAT_TIME = 6;    // seconds of continuous beam before efficiency halves
 export const ALTAR_RECOVER_TIME = 10;    // seconds to recover from overheat
+// Four altar stations across the merlon: BRONZE -> SILVER -> GOLD -> ELECTRUM.
+// `type` is the currency the altar feeds (bronze/silver/gold — the 3 metals);
+// `label` is the displayed name. ELECTRUM is a premium gold station (electrum =
+// a natural gold alloy), so it feeds gold without adding a 4th currency.
 export const ALTAR_POSITIONS = [
-  { x: -20, y: -44, type: 'brass',  colour: 0xccaa44 },
-  { x: -7,  y: -44, type: 'bronze', colour: 0xcc8833 },
-  { x: 7,   y: -44, type: 'silver', colour: 0xcccccc },
-  { x: 20,  y: -44, type: 'gold',   colour: 0xffdd00 },
+  { x: -20, y: -44, type: 'bronze', label: 'BRONZE',   colour: 0xcc8833 },
+  { x: -7,  y: -44, type: 'silver', label: 'SILVER',   colour: 0xcccccc },
+  { x: 7,   y: -44, type: 'gold',   label: 'GOLD',     colour: 0xffdd00 },
+  { x: 20,  y: -44, type: 'gold',   label: 'ELECTRUM', colour: 0xffe9a0 },
 ];
 export const ALTAR_HW = 4;
 export const ALTAR_HH = 2.5;
 
 // --- Shop prices ---
 export const SHOP = {
-  mirror:    { brass: 50, scaling: 25 },   // 50 + 25 per additional mirror
+  mirror:    { bronze: 50, scaling: 25 },  // 50 Bz + 25 per additional mirror
   prism4:    { bronze: 80 },
   prism5:    { silver: 120 },
   prism6:    { silver: 200 },
@@ -115,7 +119,7 @@ export const GOD_ABILITIES = {
     name: 'Thunderstorm',
     duration: 5,
     costs: [
-      { brass: 25 },                  // #1: cheap opener
+      { bronze: 25 },                 // #1: cheap opener
       { faith: 15, gold: 5 },         // #2+: constant (does not escalate)
     ]
   },
@@ -123,7 +127,7 @@ export const GOD_ABILITIES = {
     name: 'Maelstrom',
     duration: 6,
     costs: [
-      { brass: 40 },                  // #1: cheap opener
+      { bronze: 40 },                 // #1: cheap opener
       { faith: 20, gold: 8 },         // #2+: constant
     ]
   },

@@ -231,19 +231,17 @@ export function updateHud() {
   // --- Wall Integrity: primary health bar (top-centre) ---
   drawWallBar();
 
-  // Resources (bottom row)
+  // Resources (bottom row) — 3 metals + Faith only (Brass removed).
   hudCtx.font = '13px monospace';
   hudCtx.textAlign = 'left';
-  hudCtx.fillStyle = '#ccaa44';
-  hudCtx.fillText('Br:' + Math.floor(res.brass), 8, 48);
   hudCtx.fillStyle = '#cc8833';
-  hudCtx.fillText('Bz:' + Math.floor(res.bronze), 100, 48);
+  hudCtx.fillText('Bz:' + Math.floor(res.bronze), 8, 48);
   hudCtx.fillStyle = '#cccccc';
-  hudCtx.fillText('Si:' + Math.floor(res.silver), 195, 48);
+  hudCtx.fillText('Si:' + Math.floor(res.silver), 130, 48);
   hudCtx.fillStyle = '#ffdd00';
-  hudCtx.fillText('Au:' + Math.floor(res.gold), 285, 48);
+  hudCtx.fillText('Au:' + Math.floor(res.gold), 252, 48);
   hudCtx.fillStyle = '#aa88ff';
-  hudCtx.fillText('F:' + Math.floor(getFaith()), 370, 48);
+  hudCtx.fillText('F:' + Math.floor(getFaith()), 374, 48);
 
   hudTexture.needsUpdate = true;
 }

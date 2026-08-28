@@ -15,7 +15,7 @@ import { getScene, getWorldWidth, getOverlayScene } from './renderer.js';
 import { getSegments } from './beam.js';
 import { getEnemyPool } from './enemy.js';
 
-let resources = { brass: 0, bronze: 0, silver: 0, gold: 0 };
+let resources = { bronze: 0, silver: 0, gold: 0 };
 let faith = 0;
 const altars = [];
 
@@ -41,7 +41,7 @@ export function addKillReward(reward) {
 }
 
 export function resetFoundries() {
-  resources = { brass: 0, bronze: 0, silver: 0, gold: 0 };
+  resources = { bronze: 0, silver: 0, gold: 0 };
   faith = 0;
   for (const a of altars) {
     a.litTime = 0; a.overheated = false; a.cooldown = 0; a.everLit = false;
@@ -91,9 +91,10 @@ export function initFoundries() {
     lCtx.font = 'bold 12px monospace';
     lCtx.textAlign = 'center';
     lCtx.textBaseline = 'middle';
-    lCtx.strokeText(def.type.toUpperCase(), 48, 12);
+    const lbl = def.label || def.type.toUpperCase();
+    lCtx.strokeText(lbl, 48, 12);
     lCtx.fillStyle = '#ffffff';
-    lCtx.fillText(def.type.toUpperCase(), 48, 12);
+    lCtx.fillText(lbl, 48, 12);
     const lTex = new THREE.CanvasTexture(lCanvas);
     lTex.minFilter = THREE.LinearFilter;
     lTex.premultiplyAlpha = false;
@@ -272,14 +273,14 @@ function segHitsBox(seg, cx, cy, hw, hh) {
   return true;
 }
 
-// Legacy compatibility
-export function getSlag() { return resources.brass; }
+// Legacy compatibility (brass removed → maps to bronze, the common tier)
+export function getSlag() { return resources.bronze; }
 export function getInsight() { return resources.bronze; }
 export function getRecombination() { return 0; }
 export function getInsightLog() { return []; }
 export function spendSlag() {}
 export function spendInsight() {}
-export function addSlagDirect(amount) { resources.brass += amount; }
+export function addSlagDirect(amount) { resources.bronze += amount; }
 export function getFoundryColliders() { return []; }
 export function getAltarAudioState() {
   let litCount = 0;

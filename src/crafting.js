@@ -47,7 +47,7 @@ const PRISM_UPGRADES = {
 // layout stays a fixed, non-overlapping grid that shrinks as tiers max out.
 function buildShopItems() {
   const items = [
-    { id: 'mirror', label: 'Mirror', getCost: () => ({ brass: SHOP.mirror.brass + mirrorsBought * SHOP.mirror.scaling }) },
+    { id: 'mirror', label: 'Mirror', getCost: () => ({ bronze: SHOP.mirror.bronze + mirrorsBought * SHOP.mirror.scaling }) },
   ];
   const upgrade = PRISM_UPGRADES[getActiveTier()];
   if (upgrade) items.push(upgrade);
@@ -166,17 +166,26 @@ export function updateCraftingTray() {
     trayCtx.rect(x + 1, 1, btnW - 2, 38);
     trayCtx.clip();
 
+    const cxc = x + btnW / 2;
+    const iconTint = (affordable || zeusGlow) ? '#ffffff' : '#888888';
+    const hasIcon = (item.id === 'zeus' || item.id === 'helios' || item.id === 'poseidon');
+    // God abilities get a vector icon at the top, then name, then cost — so the
+    // three rows are: icon (y~8), name (y~20), cost (y~31). Non-ability items
+    // keep the classic name (y~13) + cost (y~27) layout.
+    if (hasIcon) {
+      drawAbilityIcon(item.id, cxc, 8, 8, iconTint);
+    }
+
     trayCtx.fillStyle = (affordable || zeusGlow) ? '#ffffff' : '#777777';
     trayCtx.font = 'bold 8px monospace';
     trayCtx.textAlign = 'center';
-    trayCtx.fillText(item.label, x + btnW / 2, 13);
+    trayCtx.fillText(item.label, cxc, hasIcon ? 20 : 13);
 
     // Cost line — but ONLY when the button is NOT on cooldown. During cooldown
     // the radial timer draws its own "Ns" in the same spot; showing both stacks
-    // the two strings (the "20 Fa 8 Au" + "7s" overlap the user reported). One
-    // or the other, never both.
+    // the two strings, so we show one or the other, never both.
     if (!onCooldown) {
-      drawCostTokens(cost, res, faith, x + btnW / 2, 27, btnW);
+      drawCostTokens(cost, res, faith, cxc, hasIcon ? 31 : 27, btnW);
     }
 
     trayCtx.restore();
@@ -295,7 +304,7 @@ export function isZeusAffordable() {
 }
 
 function costStr(cost) {
-  const labels = { brass: 'Br', bronze: 'Bz', silver: 'Si', gold: 'Au', faith: 'Fa' };
+  const labels = { bronze: 'Bz', silver: 'Si', gold: 'Au', faith: 'Fa' };
   const parts = [];
   for (const k in cost) {
     parts.push(cost[k] + (labels[k] || k[0]));
@@ -306,7 +315,60 @@ function costStr(cost) {
 // Draw the cost as separate tokens, centred at (centreX, y). Tokens the player
 // can afford render light; tokens they can't afford render red so it's obvious
 // which currency is short.
-const COST_LABELS = { brass: 'Br', bronze: 'Bz', silver: 'Si', gold: 'Au', faith: 'Fa' };
+// Draw a small vector icon for a god ability, centred at (cx, cy) on the tray
+// canvas. `s` is the icon half-extent (px). `col` is the stroke/fill colour.
+function drawAbilityIcon(id, cx, cy, s, col) {
+  trayCtx.save();
+  trayCtx.strokeStyle = col;
+  trayCtx.fillStyle = col;
+  trayCtx.lineJoin = 'round';
+  trayCtx.lineCap = 'round';
+  if (id === 'zeus') {
+    // Lightning bolt: a filled zig-zag.
+    trayCtx.beginPath();
+    trayCtx.moveTo(cx + s * 0.35, cy - s);
+    trayCtx.lineTo(cx - s * 0.5, cy + s * 0.15);
+    trayCtx.lineTo(cx - s * 0.02, cy + s * 0.15);
+    trayCtx.lineTo(cx - s * 0.35, cy + s);
+    trayCtx.lineTo(cx + s * 0.55, cy - s * 0.2);
+    trayCtx.lineTo(cx + s * 0.05, cy - s * 0.2);
+    trayCtx.closePath();
+    trayCtx.fill();
+  } else if (id === 'helios') {
+    // Radiant sun: filled disc + 8 rays.
+    trayCtx.lineWidth = 1.3;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      trayCtx.beginPath();
+      trayCtx.moveTo(cx + Math.cos(a) * s * 0.7, cy + Math.sin(a) * s * 0.7);
+      trayCtx.lineTo(cx + Math.cos(a) * s * 1.15, cy + Math.sin(a) * s * 1.15);
+      trayCtx.stroke();
+    }
+    trayCtx.beginPath();
+    trayCtx.arc(cx, cy, s * 0.5, 0, Math.PI * 2);
+    trayCtx.fill();
+  } else if (id === 'poseidon') {
+    // Trident: central shaft + three prongs.
+    trayCtx.lineWidth = 1.4;
+    trayCtx.beginPath();
+    trayCtx.moveTo(cx, cy - s * 0.6);
+    trayCtx.lineTo(cx, cy + s);            // shaft
+    // Crossbar
+    trayCtx.moveTo(cx - s * 0.7, cy - s * 0.6);
+    trayCtx.lineTo(cx + s * 0.7, cy - s * 0.6);
+    // Three prongs rising from the crossbar
+    trayCtx.moveTo(cx - s * 0.7, cy - s * 0.6);
+    trayCtx.lineTo(cx - s * 0.7, cy - s * 1.15);
+    trayCtx.moveTo(cx, cy - s * 0.6);
+    trayCtx.lineTo(cx, cy - s * 1.25);
+    trayCtx.moveTo(cx + s * 0.7, cy - s * 0.6);
+    trayCtx.lineTo(cx + s * 0.7, cy - s * 1.15);
+    trayCtx.stroke();
+  }
+  trayCtx.restore();
+}
+
+const COST_LABELS = { bronze: 'Bz', silver: 'Si', gold: 'Au', faith: 'Fa' };
 // Draw the cost as clean colour-coded tokens on ONE line, e.g. "15Si 20Bz".
 // Tokens are separated by a plain space (no "+" glyph, which blurred into stray
 // digits at small sizes). The whole line is auto-shrunk to fit the button width
