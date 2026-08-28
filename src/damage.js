@@ -21,7 +21,7 @@ import { getEnemyPool, deactivateEnemy, applyGoldSlow, triggerKillEffect } from 
 import { getWorldWidth, getScene } from './renderer.js';
 import { getFocusMultiplier } from './crafting.js';
 import { addSlagDirect } from './foundry.js';
-import { spawnContactGlow, spawnSparks, spawnDestruction } from './effects.js';
+import { spawnContactGlow, spawnSparks, spawnDestruction, spawnSmoke } from './effects.js';
 import { getActiveTier } from './prism.js';
 import { playSinkGlug, playRicochet } from './audio.js';
 import { isShieldDisabled } from './helios.js';
@@ -146,12 +146,16 @@ export function updateDamage(dt) {
       // been off the target for HEAT_DECAY_GRACE seconds.
       enemy.heatGrace = HEAT_DECAY_GRACE;
 
-      // Contact FX at the exact beam-hull contact point. Throttled (not every
-      // frame) so the small clamped glow reads as a lively spark, not a
-      // constant blob. A modest DPS value keeps the flash well under ship size.
+      // ALL hit feedback lives HERE, at the exact beam-hull contact point — the
+      // beam itself stays a slender uniform strip. A small localized burn glow
+      // + rising sparks (and an occasional smoke wisp), throttled so it reads as
+      // a lively burn mark rather than a swelling blob.
       if (Math.random() < dt * 18) {
         spawnContactGlow(contactX, contactY, hitColour || 0xffaa00, 40);
         spawnSparks(contactX, contactY, hitColour || 0xffcc66, 3);
+      }
+      if (Math.random() < dt * 4) {
+        spawnSmoke(contactX, contactY, 1, 0x5a5048); // faint rising smoke wisp
       }
 
       if (enemy.heat >= enemy.maxHp) {

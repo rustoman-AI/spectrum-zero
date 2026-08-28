@@ -461,3 +461,19 @@ All procedural canvas drawing at load time — zero image files, zip size unchan
 **Verified:** `node build.js` -> 239.4 KB, exit 0. Rotation 11/11, smoke 29/29 (the clamp/recovery don't touch the rotation math). Box math and clamp behaviour at the extremes were checked numerically. Note: `MIRROR_MIN_Y` / `MIRROR_FIELD_BOT` are now unused imports in mirror.js (harmless; the strict-mode lint only flags undefined refs).
 
 **Honest caveat:** The clamp is verified by the numbers; the on-screen drag feel (that discs stop cleanly at the water edges and never jump) wasn't observed here — worth a quick device drag-test to confirm it feels right and that a purchased mirror recovers to a sensible slot if it ever goes out of bounds.
+
+---
+
+## 2026-08-25 — Beam Width Locked (no contact bulge), Hit Feedback at Contact Point
+
+**Asked:** (1) Lock primary + reflected beam width to a fixed sharp size (core ~4-6px, glow ~12px max) — the whole beam mesh must NOT thicken when it contacts a ship/prism. (2) Keep the ray slender through the hit; show feedback only at the contact point (small burn glow + rising spark/smoke).
+
+**Root cause of the bulge:** In `beam-render.js`, beam width was multiplied by an active/idle tier (`tierWidth = isActive ? 1.0 : 0.5`) and a high-tier factor (`wideMult = 1.6`). The active flag is set the moment a beam touches a ship/prism/altar — so on contact the beam's width jumped to full (and 2x vs an idle beam), plus an extra 1.2x on the glow. That was the "bulging on contact."
+
+**Generated:**
+- **Fixed width (item 1):** Width now depends ONLY on the beam's own intensity (full band = 1, halved sub-ray = 0.5) and the gold-thinning factor — it no longer references the active flag or the high-tier `wide` flag. Both core and glow are hard-clamped to `BEAM_WIDTH` / `BEAM_GLOW_WIDTH`. The active/idle distinction now affects brightness ONLY (opacity + glow boost), never geometry. Tightened the constants to a slender profile: `BEAM_WIDTH 1.2 -> 0.7` (~5.5px) and `BEAM_GLOW_WIDTH 2.4 -> 1.5` (~12px). Verified numerically: active and idle full bands both render at core 0.7u / glow 1.5u — identical — so there is zero contact bulge.
+- **Contact feedback (item 2):** Feedback already spawned at the exact beam-hull contact point (`segmentBoxEntry`) — a small clamped burn glow + rising sparks. Added a faint rising smoke wisp there too. All of it lives at the contact coordinate; the beam strip stays uniform mirror-to-target.
+
+**Verified:** `node build.js` -> 239.8 KB, exit 0. Rotation 11/11, smoke 29/29. Width independence from the contact flag confirmed by calculation (core ≈5.5px, glow ≈11.7px on a portrait phone, matching the spec's 4-6px / 12px).
+
+**Honest caveat:** Verified by the width math, not on screen — worth a device look to confirm beams now stay crisp and uniform when they land on a ship, and that the localized burn glow + spark/smoke at the contact point reads clearly at the new slimmer beam width.

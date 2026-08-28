@@ -44,8 +44,11 @@ export const DEV = {
 // --- Beam ---
 export const MAX_BOUNCES = 8;
 export const MAX_SEGMENTS = 24;
-export const BEAM_WIDTH = 1.2;
-export const BEAM_GLOW_WIDTH = 2.4;
+// Fixed, sharp beam profile (world units). ~0.7u core ≈ 5px, ~1.5u glow ≈ 12px
+// on a portrait phone. Beam width is CONSTANT — it never scales on target
+// contact (hit feedback is shown at the contact point instead).
+export const BEAM_WIDTH = 0.7;
+export const BEAM_GLOW_WIDTH = 1.5;
 export const PRISM_SPREAD_DEG = 30;   // wider spread for reversed layout
 export const PRISM_SPLIT_ANGLE = (PRISM_SPREAD_DEG / 2) * (Math.PI / 180);
 

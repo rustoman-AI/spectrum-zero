@@ -61,19 +61,20 @@ export function rebuildBeams(segments) {
         opacityMult = 0.7 + 0.3 * Math.sin(pulseTime * 2.5);
       }
 
-      // Active/idle visual tiers: beams contacting a ship/prism/altar stay at
-      // full opacity + width with an intense core glow; idle reflected beams
-      // drop to 25% with a thinner stroke so active damage lines stand out.
+      // Active/idle tiers affect BRIGHTNESS ONLY, never width. A beam must keep
+      // a clean, uniform, slender profile whether or not it's touching a target
+      // — contact feedback is shown at the hit point (see damage.js), not by
+      // bulging the whole beam.
       const isActive = seg.active !== false; // undefined (older segs) treated active
       const tierOpacity = isActive ? 1.0 : 0.25;
-      const tierWidth = isActive ? 1.0 : 0.5;
       const glowBoost = isActive ? 1.5 : 0.35; // intense core glow on active beams
-      // High-tier focused rays (5/6-prism) render with a fatter core so the
-      // tightened band cluster reads as a few substantial rays, not thin noodles.
-      const wideMult = seg.wide ? 1.6 : 1.0;
 
-      const coreW = BEAM_WIDTH * widthMult * tierWidth * wideMult;
-      const glowW = BEAM_GLOW_WIDTH * widthMult * tierWidth * wideMult * (isActive ? 1.2 : 1.0);
+      // Width is fixed/sharp: it depends only on the beam's own intensity (full
+      // band vs halved sub-ray) and the gold-thinning factor above. NO active
+      // scaling, NO high-tier fattening — clamped to a hard max so it never
+      // exceeds a crisp strip on contact.
+      const coreW = Math.min(BEAM_WIDTH * widthMult, BEAM_WIDTH);
+      const glowW = Math.min(BEAM_GLOW_WIDTH * widthMult, BEAM_GLOW_WIDTH);
 
       // Edge fade: reduce opacity if segment ends near world boundary
       const hh = WORLD_HEIGHT / 2;
