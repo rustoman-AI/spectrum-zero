@@ -201,6 +201,12 @@ export function updateCraftingTray() {
       drawAbilityIcon(item.id, cxc, 8, 8, iconTint);
     }
 
+    // Kill any inherited shadow before drawing text. The ready-pulse glow above
+    // sets shadowBlur inside a save/restore, but we belt-and-suspenders clear it
+    // here so glyphs never pick up a green halo that reads as a ghost/double.
+    trayCtx.shadowBlur = 0;
+    trayCtx.shadowColor = 'transparent';
+
     trayCtx.fillStyle = (affordable || zeusGlow) ? '#ffffff' : '#777777';
     trayCtx.font = 'bold 8px monospace';
     trayCtx.textAlign = 'center';
@@ -210,7 +216,14 @@ export function updateCraftingTray() {
     // the radial timer draws its own "Ns" in the same spot; showing both stacks
     // the two strings, so we show one or the other, never both.
     if (!onCooldown) {
-      drawCostTokens(cost, res, faith, cxc, hasIcon ? 31 : 27, btnW);
+      // Wipe the cost-text band back to the flat button background first, so a
+      // multi-token cost (e.g. Helios "15Si 20Bz") can never leave a ghosted /
+      // stacked remnant from a wider previous string or the glow halo. We're
+      // already clipped to this button cell, so this only repaints its own row.
+      const costY = hasIcon ? 31 : 27;
+      trayCtx.fillStyle = bgColour;
+      trayCtx.fillRect(x + 1, costY - 8, btnW - 2, 12);
+      drawCostTokens(cost, res, faith, cxc, costY, btnW);
     }
 
     trayCtx.restore();

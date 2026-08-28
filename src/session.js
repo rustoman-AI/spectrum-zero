@@ -7,7 +7,7 @@
 
 import { SESSION_DURATION, VICTORY_TIME, VICTORY_KILLS, WORLD_HEIGHT, WALL_Y, DEV, WALL_MAX_HP } from './config.js';
 import { getScene, getWorldWidth, getOverlayScene } from './renderer.js';
-import { resetEnemies } from './enemy.js';
+import { resetEnemies, getEnemyPool, deactivateEnemy } from './enemy.js';
 import { resetSpawner } from './enemy-spawner.js';
 import { resetDamage, getKillCount } from './damage.js';
 import { markDirty } from './beam.js';
@@ -15,7 +15,7 @@ import { getResources, resetFoundries, getFaith } from './foundry.js';
 import { resetCrafting } from './crafting.js';
 import { resetMirrors } from './mirror.js';
 import { resetPrisms, resetTier } from './prism.js';
-import { resetEffects } from './effects.js';
+import { resetEffects, spawnDestruction } from './effects.js';
 import { resetAudio, silenceBattleAudio, playVictoryFanfare } from './audio.js';
 import { resetZeus } from './zeus.js';
 import { resetPoseidon } from './poseidon.js';
@@ -238,38 +238,36 @@ export function updateHud() {
   // --- Wall Integrity: primary health bar (top-centre) ---
   drawWallBar();
 
-  // Resources (bottom row) — 3 metals + Faith only (Brass removed).
-  hudCtx.font = '13px monospace';
-  hudCtx.textAlign = 'left';
-  hudCtx.fillStyle = '#cc8833';
-  hudCtx.fillText('Bz:' + Math.floor(res.bronze), 8, 48);
-  hudCtx.fillStyle = '#cccccc';
-  hudCtx.fillText('Si:' + Math.floor(res.silver), 130, 48);
-  hudCtx.fillStyle = '#ffdd00';
-  hudCtx.fillText('Au:' + Math.floor(res.gold), 252, 48);
-  // Faith counter, with a tiny "powers the gods" hint so players connect the
-  // Fa currency to Zeus/Poseidon. When the player actually has faith, the F
-  // label gets a soft purple glow to pull the eye toward the link.
+  // Resource row (bottom): 3 metals + Faith, as one clean, evenly balanced
+  // row — Bz / Si / Au / Fa — each centred in its quarter of the 512px bar.
+  // No debug hint text: ability cost recipes live exclusively on the shop
+  // buttons now, so the HUD stays uncluttered.
   const faithVal = Math.floor(getFaith());
-  const faithText = 'F:' + faithVal;
-  hudCtx.font = '13px monospace';
-  hudCtx.textAlign = 'left';
-  hudCtx.fillStyle = '#aa88ff';
-  if (faithVal > 0) {
-    hudCtx.save();
-    hudCtx.shadowColor = '#aa88ff';
-    hudCtx.shadowBlur = 6;
-    hudCtx.fillText(faithText, 374, 48);
-    hudCtx.restore();
-  } else {
-    hudCtx.fillText(faithText, 374, 48);
+  const cells = [
+    { label: 'Bz:', val: Math.floor(res.bronze), col: '#cc8833' },
+    { label: 'Si:', val: Math.floor(res.silver), col: '#cccccc' },
+    { label: 'Au:', val: Math.floor(res.gold),   col: '#ffdd00' },
+    { label: 'Fa:', val: faithVal,               col: '#aa88ff' },
+  ];
+  hudCtx.font = 'bold 14px monospace';
+  hudCtx.textAlign = 'center';
+  const cellW = 512 / cells.length;
+  for (let c = 0; c < cells.length; c++) {
+    const cx = cellW * (c + 0.5);
+    const isFaith = c === 3;
+    hudCtx.fillStyle = cells[c].col;
+    // Faith gets a soft purple glow when the player actually has some, to hint
+    // (without words) that it's a special resource worth spending on the gods.
+    if (isFaith && faithVal > 0) {
+      hudCtx.save();
+      hudCtx.shadowColor = '#aa88ff';
+      hudCtx.shadowBlur = 6;
+      hudCtx.fillText(cells[c].label + cells[c].val, cx, 48);
+      hudCtx.restore();
+    } else {
+      hudCtx.fillText(cells[c].label + cells[c].val, cx, 48);
+    }
   }
-  // Inline hint linking Faith -> god abilities, sized to fit the remaining bar.
-  // Compact so it never runs past the 512px HUD edge even with a 3-digit Faith.
-  const fw = hudCtx.measureText(faithText).width;
-  hudCtx.font = '8px monospace';
-  hudCtx.fillStyle = faithVal > 0 ? '#c9b3ff' : '#7a6aa0';
-  hudCtx.fillText('\u2192 Zeus/Poseidon', 374 + fw + 6, 47);
 
   hudTexture.needsUpdate = true;
 }
@@ -307,16 +305,28 @@ export function resetSession() {
   try { resetHelios(); } catch (e) { console.error('resetHelios', e); }
   try { resetInput(); } catch (e) { console.error('resetInput', e); }
   markDirty();
-  // Restore visibility hidden on end state
+  // Restore visibility + opacity faded out on the end screen
   if (typeof setBeamsVisible === 'function') setBeamsVisible(true);
-  if (trayMesh) trayMesh.visible = true;
-  if (hudMesh) hudMesh.visible = true;
+  if (trayMesh) { trayMesh.visible = true; trayMesh.material.opacity = 1; }
+  if (hudMesh) { hudMesh.visible = true; hudMesh.material.opacity = 1; }
 }
 
 function triggerWin() {
   gameOver = true;
   gameWon = true;
   onEndState();
+  // Concluding fleet wipe: any ship still on the water at the moment of victory
+  // is burst with a bright flash + debris, so the board reads "cleared/defended"
+  // rather than leaving stray hulls sitting under the gold card.
+  try {
+    const pool = getEnemyPool();
+    for (const e of pool) {
+      if (!e.active) continue;
+      const heavy = !!(e.type && (e.type === 'quadrireme' || e.type === 'flagship' || e.type === 'shieldbearer'));
+      spawnDestruction(e.mesh.position.x, e.mesh.position.y, heavy);
+      deactivateEnemy(e);
+    }
+  } catch (err) { console.error('victory fleet wipe', err); }
   // Fully in-engine victory: no video. Extinguish beams (onEndState), tint the
   // board gold, sound the fanfare, then fade in the gold stats card — mirroring
   // the defeat sequence layout so both end states feel consistent.
@@ -363,9 +373,12 @@ export function updateVictorySequence(dt) {
   victoryT += dt;
   // Gold dim fades in over ~0.8s to a moderate tint (lighter than defeat so the
   // burning fleet stays visible and celebratory rather than funereal).
+  const dimProgress = Math.min(1, victoryT / 0.8);
   if (dimMesh) {
-    dimMesh.material.opacity = Math.min(0.78, victoryT / 0.8 * 0.78);
+    dimMesh.material.opacity = dimProgress * 0.78;
   }
+  // Smoothly fade the HUD + shop tray out in step with the dim.
+  fadeEndUi(dimProgress);
   // Stats overlay fades in after a short beat (0.5s), over ~0.7s.
   if (overlayMesh) {
     const a = Math.max(0, Math.min(1, (victoryT - 0.5) / 0.7));
@@ -394,9 +407,12 @@ export function updateDefeatSequence(dt) {
   if (!defeatActive) return;
   defeatT += dt;
   // Dark-red dim fades in over ~0.8s to a heavy tint.
+  const dimProgress = Math.min(1, defeatT / 0.8);
   if (dimMesh) {
-    dimMesh.material.opacity = Math.min(0.88, defeatT / 0.8 * 0.88);
+    dimMesh.material.opacity = dimProgress * 0.88;
   }
+  // Smoothly fade the HUD + shop tray out in step with the dim.
+  fadeEndUi(dimProgress);
   // Stats overlay fades in after a short beat (0.5s), over ~0.7s.
   if (overlayMesh) {
     const a = Math.max(0, Math.min(1, (defeatT - 0.5) / 0.7));
@@ -405,14 +421,29 @@ export function updateDefeatSequence(dt) {
   }
 }
 
-// Called when game ends — hide beams, craft tray, cut battle audio loops
+// Called when game ends — extinguish beams, cut battle audio loops. The HUD and
+// shop tray are NOT hard-hidden here anymore: they stay on screen and are faded
+// out smoothly (see fadeEndUi) as the dim tint rises, so the board darkens over
+// live gameplay instead of the UI blinking off a frame before the fade starts.
 function onEndState() {
   if (typeof setBeamsVisible === 'function') setBeamsVisible(false);
-  if (trayMesh) trayMesh.visible = false;
-  if (hudMesh) hudMesh.visible = false;
   // Immediately silence beam hum / burn hiss / altar tone / crackle so only
   // the defeat (or win) sound is heard the instant the wall falls.
   try { silenceBattleAudio(); } catch (e) { console.error('silenceBattleAudio', e); }
+}
+
+// Fade the HUD + shop tray opacity down in step with the end-screen dim (0..1
+// progress). Shared by the victory and defeat sequences so both darken smoothly.
+function fadeEndUi(progress) {
+  const a = Math.max(0, 1 - progress);
+  if (hudMesh) {
+    hudMesh.material.opacity = a;
+    hudMesh.visible = a > 0.001;
+  }
+  if (trayMesh) {
+    trayMesh.material.opacity = a;
+    trayMesh.visible = a > 0.001;
+  }
 }
 
 // --- HUD ---
@@ -496,38 +527,48 @@ function drawOverlayText() {
   const h = overlayCanvas.height; // 128
   overlayCtx.clearRect(0, 0, w, h);
 
-  // Title — gold, triumphant for the win; red for the fall.
+  // Time string (shared by the victory subtext + the stats block below).
+  const mins = Math.floor(elapsed / 60);
+  const secs = Math.floor(elapsed % 60);
+  const timeStr = mins + ':' + (secs < 10 ? '0' : '') + secs;
+
+  // Title — gold survival banner for the win; red for the fall.
   overlayCtx.textAlign = 'center';
-  const title = gameWon ? 'SYRACUSE STANDS VICTORIOUS' : 'SYRACUSE HAS FALLEN';
   if (gameWon) {
-    // Bright gold with a soft glow to sell the victory.
+    // Bright gold with a soft glow to sell the victory. Two-line survival
+    // banner: "SYRACUSE DEFENDED" + "SURVIVED <time>" so the win reads as an
+    // endurance win, not a fleet wipe.
     overlayCtx.save();
     overlayCtx.shadowColor = 'rgba(255,215,0,0.7)';
     overlayCtx.shadowBlur = 8;
     overlayCtx.fillStyle = '#FFD700';
-    // Slightly smaller so the longer victory title fits the 256px card width.
-    overlayCtx.font = 'bold 15px monospace';
-    overlayCtx.fillText(title, w / 2, 24);
+    overlayCtx.font = 'bold 17px monospace';
+    overlayCtx.fillText('SYRACUSE DEFENDED', w / 2, 22);
+    overlayCtx.font = 'bold 12px monospace';
+    overlayCtx.fillText('SURVIVED ' + timeStr, w / 2, 38);
     overlayCtx.restore();
   } else {
     overlayCtx.fillStyle = '#ff5533';
     overlayCtx.font = 'bold 18px monospace';
-    overlayCtx.fillText(title, w / 2, 24);
+    overlayCtx.fillText('SYRACUSE HAS FALLEN', w / 2, 24);
   }
 
   // Stats
-  const mins = Math.floor(elapsed / 60);
-  const secs = Math.floor(elapsed % 60);
-  const timeStr = mins + ':' + (secs < 10 ? '0' : '') + secs;
   const kills = getKillCount();
   const res = getResources();
   const goldEarned = Math.floor(res.gold);
 
   overlayCtx.fillStyle = gameWon ? '#ffe9a8' : '#cccccc';
   overlayCtx.font = '11px monospace';
-  overlayCtx.fillText('Time: ' + timeStr, w / 2, 48);
-  overlayCtx.fillText('Ships Sunk: ' + kills, w / 2, 63);
-  overlayCtx.fillText('Gold Earned: ' + goldEarned, w / 2, 78);
+  // On a win the survival time is already in the banner, so lead with the kills.
+  if (gameWon) {
+    overlayCtx.fillText('Ships Sunk: ' + kills, w / 2, 56);
+    overlayCtx.fillText('Gold Earned: ' + goldEarned, w / 2, 71);
+  } else {
+    overlayCtx.fillText('Time: ' + timeStr, w / 2, 48);
+    overlayCtx.fillText('Ships Sunk: ' + kills, w / 2, 63);
+    overlayCtx.fillText('Gold Earned: ' + goldEarned, w / 2, 78);
+  }
 
   // Prompt: "Play Again" on a win, "try again" on a loss. Both reset cleanly.
   overlayCtx.fillStyle = gameWon ? '#FFD700' : '#ffffff';

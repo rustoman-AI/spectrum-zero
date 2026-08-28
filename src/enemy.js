@@ -408,11 +408,22 @@ export function updateEnemies(dt) {
       e.mesh.rotation.z = Math.sin(e.oarPhase * 0.7) * 0.015; // very slight roll
     }
 
-    // Ships descend all the way to the stone battlement and only breach when
-    // their hull's LEADING (bottom) edge touches the battlement top. Damage is
-    // therefore always at the wall/shoreline — never in open water mid-screen.
-    // The `breached` guard makes the first-contact burst fire exactly once.
+    // Ships descend to the stone battlement and only breach when their hull's
+    // LEADING (bottom) edge touches the battlement top. Damage is therefore
+    // always at the wall/shoreline — never in open water mid-screen. The
+    // `breached` guard makes the first-contact burst fire exactly once.
+    //
+    // STRICT STOP-LINE: hard-clamp the hull so its leading edge can never sink
+    // past the battlement top within a single frame step. Without this, a fast
+    // ship (or a large dt hitch) could overshoot the line for a frame and
+    // visually dip its hull down onto the Bronze/Silver/Gold discs sitting at
+    // the wall before the breach removes it. Clamping to `BATTLEMENT_TOP_Y +
+    // half` guarantees zero ship-on-disc overlap: the hull rests exactly on the
+    // line, then breaches. (BATTLEMENT_TOP_Y === RAM_LINE_Y === RAM_STOP_EDGE.)
     const half = shipHalfHeight(e.type);
+    if (e.y - half < BATTLEMENT_TOP_Y) {
+      e.y = BATTLEMENT_TOP_Y + half;
+    }
     const leadingEdge = e.y - half;
     const atWall = leadingEdge <= BATTLEMENT_TOP_Y;
 
