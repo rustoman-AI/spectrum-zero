@@ -727,3 +727,23 @@ All procedural canvas drawing at load time — zero image files, zip size unchan
 **Verified:** `node build.js` -> 275.6 KB, exit 0. Rotation 11/11, smoke 29/29. Diagnostics clean on foundry + config. Grepped index.html to confirm `makeBrazierMesh`/`makeAltarLabelMesh`/`strokeText`/flame-flicker all bundled. Layout math: label at y-41 is +3.5u above the tray top (y-44.5) and 1u below the wall (y-40).
 
 **Honest caveat:** Can't see the render here. Device check worth doing for: (a) labels are sharp and unobstructed by the tray at device DPR (font sizes on the 256x96 canvas are large, should be crisp), (b) the braziers read as fire-bowls at their on-screen size and the three flame colours are distinct, (c) the flame flicker looks alive but not distracting, and (d) the label + brazier stack doesn't overlap awkwardly with the wall stone or neighbouring altars (they're 36u apart at x -18/0/18, label plane 9.5u wide, so no horizontal overlap). All are constant/asset tweaks (label y-offset, brazier/label plane sizes, flame colours) if anything needs nudging.
+
+---
+
+## 2026-08-25 — Floating "+1" resource combat text on altar ticks
+
+**Asked:** (1) High-contrast black + light-outline altar labels raised above the shop tray. (2) Greek braziers with per-metal flames (bronze orange / silver pale-cyan / gold yellow). (3) NEW: Warcraft-style floating "+1 Bz/Si/Au" combat text on each resource tick while a beam feeds an altar — rises ~25px, expands slightly, fades over 0.7s (opacity 1->0), sprites removed on expiry.
+
+**Status of 1 & 2:** Already shipped last commit (`4938651`) and re-verified against this spec:
+- Labels: bold `#111111` name + `#f2f2f2` `strokeText` outline, at y-41 (well above the tray top ~y-44.5). Matches "sharp high-contrast black + clean light outline, raised above the shop tray." No change needed.
+- Braziers: bronze `#ff8a2a` (warm orange), silver `#7ff0e0` (pale cyan), gold `#ffe24a` (radiant yellow). Matches. No change needed.
+
+**Generated (item 3, `foundry.js` + `config.js`):**
+- **Config:** each altar def gains a `popup` colour — bronze `#ffb14a` (warm amber), silver `#d6fbff` (bright silver-cyan), gold `#ffe870` (shimmering gold).
+- **Popup system:** pre-renders one shared "+1 Bz/Si/Au" texture per metal (bold 30px, dark outline + metal-tint fill) and a pool of 24 reusable sprite planes in the OVERLAY scene (renders on top). `spawnResourcePopup(altar)` grabs a dead pool sprite, positions it just above the altar's brazier (y+3.0) with small x-jitter so stacked ticks don't perfectly overlap, and sets life=0.7s. `updateResourcePopups(dt)` rises each live popup by `POPUP_RISE` (5 world units) over its life, expands scale ~35%, fades opacity 1->0, and hides+frees it the instant life hits 0 (pooled, so no per-frame allocation/GC churn).
+- **Tick hook:** in the accumulation block, when an altar is LIT we track the integer floor of its resource and spawn one popup per whole unit crossed (capped at 2/frame so a dt hitch can't flood the pool). Passive-only trickle (unlit) does NOT pop — so the "+1" stream clearly reads as "the beam is producing". Bronze lit = 6/s, silver 2.4/s, gold 1.2/s (halved under overheat).
+- **Reset:** `resetFoundries` zeroes each altar's `intAccum` and retires all in-flight popups so none carry into a new run.
+
+**Verified:** `node build.js` -> 280.8 KB, exit 0. Rotation 11/11, smoke 29/29. Diagnostics clean on foundry + config. Grepped index.html to confirm the popup init/spawn/update + intAccum tick hook are bundled.
+
+**Honest caveat:** Can't see the render here. Device check worth doing for: (a) the "+1" text is legible and clearly rises/fades above each altar without cluttering (bronze pops ~6/s — if that feels too busy, we can pop only every Nth unit or throttle by time), (b) the rise distance (5 world units) matches the intended "~25px" feel at the game's on-screen scale — it's a one-constant tweak (`POPUP_RISE`), and (c) popups sit above the brazier/label and don't collide with the wall. Pool size 24 comfortably covers the combined tick rate; if ever exhausted, extra ticks are simply skipped that frame (no growth).

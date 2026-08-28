@@ -19,6 +19,18 @@ let resources = { bronze: 0, silver: 0, gold: 0 };
 let faith = 0;
 const altars = [];
 
+// --- Floating "+1 <metal>" combat text ---
+// A small pool of textured sprite planes that rise, expand and fade over ~0.7s
+// whenever a lit altar generates a whole unit. Textures are pre-rendered per
+// metal type (fixed strings "+1 Bz/Si/Au") and shared; the pool just animates
+// position/scale/opacity. Expired popups are hidden (removed from the render).
+const POPUP_LIFE = 0.7;      // seconds
+const POPUP_RISE = 5.0;      // world units risen over the life (~25px at this scale)
+const popupPool = [];
+const POPUP_POOL_SIZE = 24;
+const popupTextures = {};    // type -> CanvasTexture
+let popupGroup = null;
+
 export function getResources() { return resources; }
 export function getFaith() { return faith; }
 export function gainFaith(amount) { faith += amount; }
@@ -45,6 +57,13 @@ export function resetFoundries() {
   faith = 0;
   for (const a of altars) {
     a.litTime = 0; a.overheated = false; a.cooldown = 0; a.everLit = false;
+    a.intAccum = 0;
+  }
+  // Retire any in-flight floating popups so none carry into the new run.
+  for (let i = 0; i < popupPool.length; i++) {
+    popupPool[i].userData.life = 0;
+    popupPool[i].visible = false;
+    popupPool[i].material.opacity = 0;
   }
 }
 
@@ -113,13 +132,105 @@ export function initFoundries() {
     scene.add(arcMesh);
 
     altars.push({
-      type: def.type, colour: def.colour,
+      type: def.type, colour: def.colour, popup: def.popup, short: def.short,
       x: def.x, y: def.y,
       mesh, glowMesh, arcMesh, arcRadius, labelMesh,
       braMesh, flameMesh: braMesh.userData.flameMesh,
       lit: false, everLit: false,
-      litTime: 0, overheated: false, cooldown: 0
+      litTime: 0, overheated: false, cooldown: 0,
+      intAccum: 0, // last whole-unit count seen, for +1 popup detection
     });
+  }
+
+  initResourcePopups();
+}
+
+// Pre-render the "+1 Bz/Si/Au" textures (one per metal) and build a reusable
+// pool of sprite planes. Colours come from each altar def's `popup`.
+function initResourcePopups() {
+  const oScene = getOverlayScene();
+  popupPool.length = 0;
+  for (const k in popupTextures) delete popupTextures[k];
+
+  if (!popupGroup) {
+    popupGroup = new THREE.Group();
+    oScene.add(popupGroup);
+  } else {
+    // Clear any meshes from a prior run.
+    while (popupGroup.children.length) popupGroup.remove(popupGroup.children[0]);
+  }
+
+  // One shared texture per altar type.
+  for (const def of ALTAR_POSITIONS) {
+    const cv = document.createElement('canvas');
+    cv.width = 128; cv.height = 64;
+    const c = cv.getContext('2d');
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.font = 'bold 30px monospace';
+    const txt = '+1 ' + (def.short || def.type);
+    // Dark outline for contrast, coloured fill in the metal's popup tint.
+    c.lineJoin = 'round';
+    c.lineWidth = 6;
+    c.strokeStyle = 'rgba(0,0,0,0.85)';
+    c.strokeText(txt, 64, 34);
+    c.fillStyle = def.popup || '#ffffff';
+    c.fillText(txt, 64, 34);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.minFilter = THREE.LinearFilter;
+    popupTextures[def.type] = tex;
+  }
+
+  // Reusable sprite pool. Each starts hidden with life=0.
+  for (let i = 0; i < POPUP_POOL_SIZE; i++) {
+    const mat = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, opacity: 0 });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(5, 2.5), mat);
+    mesh.visible = false;
+    mesh.userData = { life: 0 };
+    popupGroup.add(mesh);
+    popupPool.push(mesh);
+  }
+}
+
+// Spawn a "+1 <metal>" popup just above an altar. Grabs a dead pool sprite.
+function spawnResourcePopup(altar) {
+  const tex = popupTextures[altar.type];
+  if (!tex) return;
+  let mesh = null;
+  for (let i = 0; i < popupPool.length; i++) {
+    if (popupPool[i].userData.life <= 0) { mesh = popupPool[i]; break; }
+  }
+  if (!mesh) return; // pool exhausted this frame; skip (avoids unbounded growth)
+  mesh.material.map = tex;
+  mesh.material.needsUpdate = true;
+  // Start just above the brazier flame; small horizontal jitter so stacked
+  // ticks don't perfectly overlap.
+  mesh.userData.life = POPUP_LIFE;
+  mesh.userData.startY = altar.y + 3.0;
+  mesh.userData.x = altar.x + (Math.random() - 0.5) * 1.6;
+  mesh.position.set(mesh.userData.x, mesh.userData.startY, 0.4);
+  mesh.scale.set(1, 1, 1);
+  mesh.material.opacity = 1;
+  mesh.visible = true;
+}
+
+// Animate + retire floating popups. Rise, expand slightly, fade over POPUP_LIFE.
+function updateResourcePopups(dt) {
+  for (let i = 0; i < popupPool.length; i++) {
+    const m = popupPool[i];
+    if (m.userData.life <= 0) continue;
+    m.userData.life -= dt;
+    if (m.userData.life <= 0) {
+      // Expired: hide + free immediately.
+      m.visible = false;
+      m.material.opacity = 0;
+      continue;
+    }
+    const t = 1 - m.userData.life / POPUP_LIFE; // 0 -> 1 over the life
+    m.position.y = m.userData.startY + t * POPUP_RISE;
+    const s = 1 + t * 0.35;          // expand ~35%
+    m.scale.set(s, s, 1);
+    m.material.opacity = 1 - t;      // fade 1 -> 0
   }
 }
 
@@ -288,7 +399,23 @@ export function updateFoundries(dt) {
     const passiveRate = rates.passive;
     const litRate = altar.lit ? rates.lit : 0;
     const totalRate = (passiveRate + litRate) * efficiency;
-    resources[altar.type] += totalRate * dt;
+    const before = resources[altar.type];
+    resources[altar.type] = before + totalRate * dt;
+
+    // Floating "+1" combat text: spawn one popup per WHOLE unit generated while
+    // the altar is lit (beam feeding it). Passive-only trickle doesn't pop, so
+    // the popups clearly read as "the beam is producing". Cap at a couple per
+    // frame so a huge dt hitch can't flood the pool.
+    if (altar.lit) {
+      const nowInt = Math.floor(resources[altar.type]);
+      let crossed = nowInt - altar.intAccum;
+      altar.intAccum = nowInt;
+      if (crossed > 2) crossed = 2;
+      for (let n = 0; n < crossed; n++) spawnResourcePopup(altar);
+    } else {
+      // Keep the counter in sync while unlit so re-lighting doesn't burst.
+      altar.intAccum = Math.floor(resources[altar.type]);
+    }
 
     // --- VISUAL FEEDBACK ---
 
@@ -368,6 +495,9 @@ export function updateFoundries(dt) {
     if (e.active && e.heat > 0 && !e.shieldBlocking) burning++;
   }
   faith += burning * 0.5 * dt;
+
+  // Animate + retire floating "+1" resource popups.
+  updateResourcePopups(dt);
 }
 
 // Segment-vs-AABB intersection test

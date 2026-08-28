@@ -112,10 +112,12 @@ export const ALTAR_RECOVER_TIME = 10;    // seconds to recover from overheat
 // altar feeds; `label` is the name engraved on its pedestal.
 // `colour` tints the altar body/glow; `flame` is the brazier fire colour;
 // `short` is the HUD-style currency abbreviation shown in the "+N/s" tick.
+// `popup` is the floating "+1 <metal>" combat-text colour (warm amber / bright
+// silver-cyan / shimmering gold).
 export const ALTAR_POSITIONS = [
-  { x: -18, y: -44, type: 'bronze', label: 'BRONZE', colour: 0xcc8833, flame: '#ff8a2a', short: 'Bz' },
-  { x: 0,   y: -44, type: 'silver', label: 'SILVER', colour: 0xcccccc, flame: '#7ff0e0', short: 'Si' },
-  { x: 18,  y: -44, type: 'gold',   label: 'GOLD',   colour: 0xffdd00, flame: '#ffe24a', short: 'Au' },
+  { x: -18, y: -44, type: 'bronze', label: 'BRONZE', colour: 0xcc8833, flame: '#ff8a2a', short: 'Bz', popup: '#ffb14a' },
+  { x: 0,   y: -44, type: 'silver', label: 'SILVER', colour: 0xcccccc, flame: '#7ff0e0', short: 'Si', popup: '#d6fbff' },
+  { x: 18,  y: -44, type: 'gold',   label: 'GOLD',   colour: 0xffdd00, flame: '#ffe24a', short: 'Au', popup: '#ffe870' },
 ];
 export const ALTAR_HW = 4;
 export const ALTAR_HH = 2.5;
