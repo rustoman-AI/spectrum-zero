@@ -6,7 +6,7 @@ import { APERTURE_Y, DEV, SUN_Y } from './config.js';
 import { initRenderer, render, getWorldWidth, getRenderer } from './renderer.js';
 import { initBeamRenderer, rebuildBeams, updateBeamPulse } from './beam-render.js';
 import { solve, isDirty, getSegments, markDirty } from './beam.js';
-import { initSockets, initMirrors, updateAllMirrorGeometries, getMirrors, updateMirrorTweens } from './mirror.js';
+import { initSockets, initMirrors, updateAllMirrorGeometries, getMirrors, updateMirrorTweens, sanitizeMirrors } from './mirror.js';
 import { initPrisms, getPrisms, updatePrismGlow } from './prism.js';
 import { initInput, tickDebug } from './input.js';
 import { initEnemies, updateEnemies, applySlowStates, getEnemyPool, getLastBreaches } from './enemy.js';
@@ -105,6 +105,7 @@ function loop(now) {
   updateBackground(dt);
   updateBeamPulse(dt);
   updateMirrorTweens(dt);
+  sanitizeMirrors(); // safety net: recover any out-of-bounds mirror to its slot
 
   // Beam solve (only on dirty)
   if (isDirty()) {

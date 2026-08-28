@@ -3,7 +3,7 @@
 // ============================================================
 import { SOCKET_POSITIONS, COLOUR_WHITE, ROTATION_SENSITIVITY, MOTE_TRAVEL_TIME_S, ENEMY_TRAVEL_DIST, ENEMY_TYPES, FREE_PLACEMENT } from './config.js';
 import { screenToWorld, getScene } from './renderer.js';
-import { getMirrors, moveMirrorToSocket, rotateMirror, getSockets, updateMirrorGeometry, moveMirrorFree } from './mirror.js';
+import { getMirrors, moveMirrorToSocket, rotateMirror, getSockets, updateMirrorGeometry, moveMirrorFree, clampMirrorPos } from './mirror.js';
 import { getSegments, getBeamDiag } from './beam.js';
 import { isGameOver, handleRestartTap, getElapsed, getBreaches } from './session.js';
 import { handleCraftTap } from './crafting.js';
@@ -212,8 +212,17 @@ function onPointerMove(e) {
     }
   }
   if (state === STATE_DRAG && dragObject) {
-    dragObject.mesh.position.x = world.x;
-    dragObject.mesh.position.y = world.y;
+    // Clamp the LIVE drag to the strict bounding box so the disc never even
+    // visually leaves the water while being dragged (mirrors only; prisms are
+    // pinned). Prisms have no clampable box, so guard on dragType.
+    if (dragType === 'mirror') {
+      const p = clampMirrorPos(world.x, world.y);
+      dragObject.mesh.position.x = p.x;
+      dragObject.mesh.position.y = p.y;
+    } else {
+      dragObject.mesh.position.x = world.x;
+      dragObject.mesh.position.y = world.y;
+    }
     // Show drop target at nearest socket (visual guide)
     const nearest = findNearestSocket(world.x, world.y);
     if (nearest !== null) {

@@ -2313,6 +2313,26 @@ const mirrors = [];
 let mirrorMeshGroup = null;
 
 const MIRROR_THICKNESS = 1;
+// Disc radius for the drag bounding box (half the mirror length ≈ the gold disc).
+const MIRROR_RADIUS = MIRROR_LENGTH / 2;
+// px→world conversion for the spec offsets (world is 100u over ~780px portrait).
+const PX = 100 / 780;
+
+// Strict rectangular drag bounding box for a mirror centre. Shared by the live
+// drag (input.js) and the drop commit (moveMirrorFree) so a disc can never be
+// dragged off-stage, below the stone battlement, or up into the spawn area.
+function clampMirrorPos(x, y) {
+  const hw = getWorldWidth() / 2;
+  const minX = -hw + MIRROR_RADIUS;
+  const maxX = hw - MIRROR_RADIUS;
+  const minY = BATTLEMENT_TOP_Y + MIRROR_RADIUS + 10 * PX; // never below wall top
+  const maxY = PRISM_Y - 150 * PX;                         // never into spawn area
+  return {
+    x: Math.max(minX, Math.min(maxX, x)),
+    y: Math.max(minY, Math.min(maxY, y)),
+  };
+}
+function getMirrorFloorY() { return BATTLEMENT_TOP_Y + MIRROR_RADIUS; }
 
 // Active tweens: { mirror, fromX, fromY, toX, toY, elapsed, duration }
 const tweens = [];
@@ -2419,6 +2439,8 @@ function createMirror(socketIndex) {
     anchored: false,
     freeX: sx,
     freeY: sy,
+    defaultX: sx,   // fallback slot for out-of-bounds recovery
+    defaultY: sy,
     mesh,
     highlight,
     p1: { x: 0, y: 0 },
@@ -2467,6 +2489,8 @@ function addMirror() {
     }
     mirror.freeX = best.x;
     mirror.freeY = best.y;
+    mirror.defaultX = best.x; // recovery slot for a purchased mirror
+    mirror.defaultY = best.y;
   }
 
   updateMirrorGeometry(mirror);
@@ -2568,14 +2592,30 @@ function updateMirrorGeometry(mirror) {
 
 // Free placement: move mirror to position, clamped to mirror field
 function moveMirrorFree(mirror, x, y) {
-  const ww = getWorldWidth();
-  const hw = ww / 2;
-  mirror.freeX = Math.max(-hw + 2, Math.min(hw - 2, x));
-  // Hard floor at MIRROR_MIN_Y (battlement top + ~40px): discs stay in the
-  // water and never drop onto the brick wall or shop bar. Top stays in field.
-  mirror.freeY = Math.max(MIRROR_MIN_Y, Math.min(MIRROR_FIELD_TOP, y));
+  const p = clampMirrorPos(x, y);
+  mirror.freeX = p.x;
+  mirror.freeY = p.y;
   updateMirrorGeometry(mirror);
   markDirty();
+}
+
+// Per-frame safety net: if any mirror has somehow ended up below the wall floor
+// (a lost/out-of-bounds disc), snap it back to its default altar slot so it can
+// never be permanently lost off-screen. Returns true if it recovered any mirror.
+function sanitizeMirrors() {
+  const floor = getMirrorFloorY();
+  let recovered = false;
+  for (const m of mirrors) {
+    if (m.freeY < floor || m.freeY == null || m.freeX == null || isNaN(m.freeY) || isNaN(m.freeX)) {
+      m.freeX = (m.defaultX != null) ? m.defaultX : 0;
+      m.freeY = (m.defaultY != null) ? m.defaultY : MIRROR_FIELD_TOP;
+      if (m.mesh) m.mesh.position.set(m.freeX, m.freeY, m.mesh.position.z);
+      updateMirrorGeometry(m);
+      recovered = true;
+    }
+  }
+  if (recovered) markDirty();
+  return recovered;
 }
 
 // --- Tween system ---
@@ -6247,8 +6287,17 @@ function onPointerMove(e) {
     }
   }
   if (state === STATE_DRAG && dragObject) {
-    dragObject.mesh.position.x = world.x;
-    dragObject.mesh.position.y = world.y;
+    // Clamp the LIVE drag to the strict bounding box so the disc never even
+    // visually leaves the water while being dragged (mirrors only; prisms are
+    // pinned). Prisms have no clampable box, so guard on dragType.
+    if (dragType === 'mirror') {
+      const p = clampMirrorPos(world.x, world.y);
+      dragObject.mesh.position.x = p.x;
+      dragObject.mesh.position.y = p.y;
+    } else {
+      dragObject.mesh.position.x = world.x;
+      dragObject.mesh.position.y = world.y;
+    }
     // Show drop target at nearest socket (visual guide)
     const nearest = findNearestSocket(world.x, world.y);
     if (nearest !== null) {
@@ -6667,6 +6716,7 @@ function loop(now) {
   updateBackground(dt);
   updateBeamPulse(dt);
   updateMirrorTweens(dt);
+  sanitizeMirrors(); // safety net: recover any out-of-bounds mirror to its slot
 
   // Beam solve (only on dirty)
   if (isDirty()) {

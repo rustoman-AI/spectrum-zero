@@ -5,7 +5,8 @@
 import {
   SOCKET_POSITIONS, MIRROR_COUNT_START, MIRROR_MAX_HITS,
   COLOUR_GREY, DEFAULT_MIRROR_SOCKETS, MIRROR_LENGTH,
-  FREE_PLACEMENT, MIRROR_FIELD_TOP, MIRROR_FIELD_BOT, MIRROR_MIN_Y
+  FREE_PLACEMENT, MIRROR_FIELD_TOP, MIRROR_FIELD_BOT, MIRROR_MIN_Y,
+  BATTLEMENT_TOP_Y, PRISM_Y
 } from './config.js';
 import { getScene, getWorldWidth } from './renderer.js';
 import { markDirty } from './beam.js';
@@ -15,6 +16,26 @@ const mirrors = [];
 let mirrorMeshGroup = null;
 
 const MIRROR_THICKNESS = 1;
+// Disc radius for the drag bounding box (half the mirror length ≈ the gold disc).
+export const MIRROR_RADIUS = MIRROR_LENGTH / 2;
+// px→world conversion for the spec offsets (world is 100u over ~780px portrait).
+const PX = 100 / 780;
+
+// Strict rectangular drag bounding box for a mirror centre. Shared by the live
+// drag (input.js) and the drop commit (moveMirrorFree) so a disc can never be
+// dragged off-stage, below the stone battlement, or up into the spawn area.
+export function clampMirrorPos(x, y) {
+  const hw = getWorldWidth() / 2;
+  const minX = -hw + MIRROR_RADIUS;
+  const maxX = hw - MIRROR_RADIUS;
+  const minY = BATTLEMENT_TOP_Y + MIRROR_RADIUS + 10 * PX; // never below wall top
+  const maxY = PRISM_Y - 150 * PX;                         // never into spawn area
+  return {
+    x: Math.max(minX, Math.min(maxX, x)),
+    y: Math.max(minY, Math.min(maxY, y)),
+  };
+}
+export function getMirrorFloorY() { return BATTLEMENT_TOP_Y + MIRROR_RADIUS; }
 
 // Active tweens: { mirror, fromX, fromY, toX, toY, elapsed, duration }
 const tweens = [];
@@ -121,6 +142,8 @@ function createMirror(socketIndex) {
     anchored: false,
     freeX: sx,
     freeY: sy,
+    defaultX: sx,   // fallback slot for out-of-bounds recovery
+    defaultY: sy,
     mesh,
     highlight,
     p1: { x: 0, y: 0 },
@@ -169,6 +192,8 @@ export function addMirror() {
     }
     mirror.freeX = best.x;
     mirror.freeY = best.y;
+    mirror.defaultX = best.x; // recovery slot for a purchased mirror
+    mirror.defaultY = best.y;
   }
 
   updateMirrorGeometry(mirror);
@@ -270,14 +295,30 @@ export function updateMirrorGeometry(mirror) {
 
 // Free placement: move mirror to position, clamped to mirror field
 export function moveMirrorFree(mirror, x, y) {
-  const ww = getWorldWidth();
-  const hw = ww / 2;
-  mirror.freeX = Math.max(-hw + 2, Math.min(hw - 2, x));
-  // Hard floor at MIRROR_MIN_Y (battlement top + ~40px): discs stay in the
-  // water and never drop onto the brick wall or shop bar. Top stays in field.
-  mirror.freeY = Math.max(MIRROR_MIN_Y, Math.min(MIRROR_FIELD_TOP, y));
+  const p = clampMirrorPos(x, y);
+  mirror.freeX = p.x;
+  mirror.freeY = p.y;
   updateMirrorGeometry(mirror);
   markDirty();
+}
+
+// Per-frame safety net: if any mirror has somehow ended up below the wall floor
+// (a lost/out-of-bounds disc), snap it back to its default altar slot so it can
+// never be permanently lost off-screen. Returns true if it recovered any mirror.
+export function sanitizeMirrors() {
+  const floor = getMirrorFloorY();
+  let recovered = false;
+  for (const m of mirrors) {
+    if (m.freeY < floor || m.freeY == null || m.freeX == null || isNaN(m.freeY) || isNaN(m.freeX)) {
+      m.freeX = (m.defaultX != null) ? m.defaultX : 0;
+      m.freeY = (m.defaultY != null) ? m.defaultY : MIRROR_FIELD_TOP;
+      if (m.mesh) m.mesh.position.set(m.freeX, m.freeY, m.mesh.position.z);
+      updateMirrorGeometry(m);
+      recovered = true;
+    }
+  }
+  if (recovered) markDirty();
+  return recovered;
 }
 
 // --- Tween system ---

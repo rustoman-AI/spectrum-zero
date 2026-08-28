@@ -445,3 +445,19 @@ All procedural canvas drawing at load time — zero image files, zip size unchan
 **Verified:** `node build.js` -> 237.2 KB, exit 0. Rotation 11/11, smoke 29/29 (the reflect-origin nudge doesn't touch the rotation math). Ghost-ship despawn + damage totals and the gold-mirror self-hit avoidance were checked numerically.
 
 **Honest caveat:** The gold-mirror fix and the ship-sink/despawn were verified by simulation and the beam math, but I can't see the rendered result here — worth a device pass to confirm the right mirror now visibly reflects toward the Gold altar, ships clearly sink and vanish (no clump), and no cost/cooldown text overlaps in the shop.
+
+---
+
+## 2026-08-25 — Strict Mirror Drag Bounding Box + Out-of-Bounds Recovery
+
+**Asked:** (1) Clamp mirror dragging to a strict rectangular box — minX/maxX by disc radius, minY = battlementTopY + radius + 10px (never below the stone wall top), maxY = prismY - 150px (never into the spawn area) — enforced in the input drag handler. (2) Sanity check: if a mirror's Y is ever below `battlementTopY + radius`, immediately reset it to its default altar slot.
+
+**Root context:** The previous pass clamped only the *drop commit* (`moveMirrorFree`). The live drag in `input.js onPointerMove` set `mesh.position` straight from the pointer with no clamp, so a disc could visually slide off-stage / below the wall mid-drag, and any stale/out-of-bounds Y could persist.
+
+**Generated:**
+- **Shared clamp (item 1):** Added `MIRROR_RADIUS` (= MIRROR_LENGTH/2 = 5) and `clampMirrorPos(x, y)` in `mirror.js`, implementing the exact box: `minX = -hw + R`, `maxX = hw - R`, `minY = BATTLEMENT_TOP_Y + R + 10px`, `maxY = PRISM_Y - 150px` (px→world via 100/780). `input.js onPointerMove` now runs the live drag through `clampMirrorPos` (mirrors only — the prism stays unclamped/pinned), and `moveMirrorFree` uses the same helper on drop, so the disc never leaves the box even for a frame. Verified numerically: X clamps to ±23.1, minY = −32.7 (above the −34 floor), maxY = 10.8; dragging far below the wall, up into spawn, or off-stage all clamp correctly.
+- **Recovery (item 2):** Each mirror now stores `defaultX/defaultY` (its socket slot, or its spread slot for a purchased mirror). New `sanitizeMirrors()` runs every frame from the main loop (after tweens): any mirror whose `freeY` is below `getMirrorFloorY()` (= BATTLEMENT_TOP_Y + radius = −34) — or NaN/undefined — is snapped back to its default slot. This is a true last-resort net; since the clamp already keeps discs above −32.7, it only fires if some other path corrupts a position.
+
+**Verified:** `node build.js` -> 239.4 KB, exit 0. Rotation 11/11, smoke 29/29 (the clamp/recovery don't touch the rotation math). Box math and clamp behaviour at the extremes were checked numerically. Note: `MIRROR_MIN_Y` / `MIRROR_FIELD_BOT` are now unused imports in mirror.js (harmless; the strict-mode lint only flags undefined refs).
+
+**Honest caveat:** The clamp is verified by the numbers; the on-screen drag feel (that discs stop cleanly at the water edges and never jump) wasn't observed here — worth a quick device drag-test to confirm it feels right and that a purchased mirror recovers to a sensible slot if it ever goes out of bounds.
