@@ -4139,7 +4139,32 @@ function updateCraftingTray() {
 
     trayCtx.fillStyle = bgColour;
     trayCtx.fillRect(x + 1, 1, btnW - 2, 38);
-    // Border
+
+    // ---- Ready-state pulse glow --------------------------------------------
+    // When a button is affordable AND actionable, wrap it in a continuously
+    // pulsing bright border so the player can't miss that the ability is ready.
+    // This is the in-canvas equivalent of a CSS keyframe border-glow. Zeus keeps
+    // its dedicated gold treatment; every other ready button pulses green so it
+    // reads as "go". The pulse is a slow sine (kept subtle so it never fights
+    // the playfield) that drives both the border brightness and an outer
+    // shadowBlur halo.
+    const readyPulse = affordable && !zeusGlow;
+    if (readyPulse) {
+      // 0..1 slow sine (~1.4 Hz). Phase-offset per button so the row shimmers
+      // rather than strobing in unison.
+      const phase = Math.sin(Date.now() * 0.009 + i * 0.7) * 0.5 + 0.5;
+      const glowCol = '#4EFE82';             // bright "ready" green
+      trayCtx.save();
+      trayCtx.strokeStyle = glowCol;
+      trayCtx.shadowColor = glowCol;
+      trayCtx.shadowBlur = 4 + phase * 8;    // breathing outer halo
+      trayCtx.lineWidth = 2 + phase * 1.5;   // 2..3.5px breathing border
+      trayCtx.globalAlpha = 0.65 + phase * 0.35;
+      trayCtx.strokeRect(x + 2, 2, btnW - 4, 36);
+      trayCtx.restore();
+    }
+
+    // Base border (drawn on top so the crisp edge stays sharp over the glow)
     trayCtx.strokeStyle = borderCol;
     trayCtx.lineWidth = zeusGlow ? 3 : (pulsing ? 2.5 : (affordable ? 1.5 : 0.5));
     trayCtx.strokeRect(x + 1, 1, btnW - 2, 38);
@@ -4712,10 +4737,20 @@ function spawnDestruction(x, y, heavy) {
 }
 
 // --- WebAudio synthesis ---
+let fxMaster = null;   // shared compressor+lowpass tail for this context
 function ensureAudio() {
   if (!audioCtx) {
     try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
     catch (e) { return null; }
+    // Master softener: compressor + gentle 4500Hz lowpass, matching audio.js so
+    // the destruction noise burst can't spike into harsh, clicky top end.
+    const comp = audioCtx.createDynamicsCompressor();
+    comp.threshold.value = -18; comp.knee.value = 24; comp.ratio.value = 4;
+    comp.attack.value = 0.003; comp.release.value = 0.25;
+    const lp = audioCtx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 4500; lp.Q.value = 0.707;
+    comp.connect(lp).connect(audioCtx.destination);
+    fxMaster = comp;
   }
   return audioCtx;
 }
@@ -4723,6 +4758,7 @@ function ensureAudio() {
 function playDestructionSound(heavy) {
   const ctx = ensureAudio();
   if (!ctx) return;
+  const out = fxMaster || ctx.destination;
   const now = ctx.currentTime;
   // Wood crack: short noise burst
   const noiseLen = heavy ? 0.14 : 0.08;
@@ -4734,7 +4770,7 @@ function playDestructionSound(heavy) {
   const noiseGain = ctx.createGain();
   noiseGain.gain.setValueAtTime(heavy ? 0.4 : 0.3, now);
   noiseGain.gain.exponentialRampToValueAtTime(0.01, now + noiseLen);
-  noise.connect(noiseGain).connect(ctx.destination);
+  noise.connect(noiseGain).connect(out);
   noise.start(now);
   // Low thump: sine at 60Hz
   const osc = ctx.createOscillator();
@@ -4743,7 +4779,7 @@ function playDestructionSound(heavy) {
   const oscGain = ctx.createGain();
   oscGain.gain.setValueAtTime(0.4, now);
   oscGain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
-  osc.connect(oscGain).connect(ctx.destination);
+  osc.connect(oscGain).connect(out);
   osc.start(now);
   osc.stop(now + 0.2);
   // Heavy ships: deep sub-bass explosion (rumbling drop from 40Hz -> 22Hz)
@@ -4755,7 +4791,7 @@ function playDestructionSound(heavy) {
     const subGain = ctx.createGain();
     subGain.gain.setValueAtTime(0.6, now);
     subGain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
-    sub.connect(subGain).connect(ctx.destination);
+    sub.connect(subGain).connect(out);
     sub.start(now);
     sub.stop(now + 0.55);
   }
@@ -4781,6 +4817,9 @@ let ctx = null;
 let masterGain = null;
 let muted = false;
 let muteBtn = null;
+// Overall SFX master level. Dropped from 0.5 to 0.4 (-20%) in the polish pass to
+// give the compressor/lowpass headroom and take the edge off loud stacks.
+const MASTER_GAIN = 0.4;
 
 // Pools
 let hum = null;
@@ -4807,8 +4846,25 @@ function ensureCtx() {
   try {
     ctx = new (window.AudioContext || window.webkitAudioContext)();
     masterGain = ctx.createGain();
-    masterGain.gain.value = muted ? 0 : 0.5;
-    masterGain.connect(ctx.destination);
+    // Overall SFX gain reduced 20% (0.5 -> 0.4) per polish pass. See MASTER_GAIN.
+    masterGain.gain.value = muted ? 0 : MASTER_GAIN;
+    // Master softening chain: every voice routes through masterGain, so a single
+    // compressor + gentle lowpass at the tail tames ear-piercing clicks/beeps
+    // and stops loud stacks (many SFX at once) from clipping.
+    //   masterGain -> compressor -> lowpass(4500Hz) -> destination
+    const masterComp = ctx.createDynamicsCompressor();
+    masterComp.threshold.value = -18;  // start gently compressing above -18 dB
+    masterComp.knee.value = 24;        // soft knee for a smooth, un-pumpy limit
+    masterComp.ratio.value = 4;        // 4:1 — limiter-ish but musical
+    masterComp.attack.value = 0.003;
+    masterComp.release.value = 0.25;
+    const masterLp = ctx.createBiquadFilter();
+    masterLp.type = 'lowpass';
+    masterLp.frequency.value = 4500;   // roll off the harsh top end
+    masterLp.Q.value = 0.707;          // Butterworth (no resonant peak)
+    masterGain.connect(masterComp);
+    masterComp.connect(masterLp);
+    masterLp.connect(ctx.destination);
     setupHum();
     setupBurnNoise();
     setupAltarTone();
@@ -4875,7 +4931,7 @@ function updateSeaAmbience(dt) { /* LFO-driven, nothing to tick */ }
 function toggleMute(e) {
   if (e) e.preventDefault();
   muted = !muted;
-  if (masterGain) masterGain.gain.value = muted ? 0 : 0.5;
+  if (masterGain) masterGain.gain.value = muted ? 0 : MASTER_GAIN;
   if (muteBtn) muteBtn.textContent = muted ? '🔇' : '🔊';
 }
 
@@ -5896,8 +5952,29 @@ function updateHud() {
   hudCtx.fillText('Si:' + Math.floor(res.silver), 130, 48);
   hudCtx.fillStyle = '#ffdd00';
   hudCtx.fillText('Au:' + Math.floor(res.gold), 252, 48);
+  // Faith counter, with a tiny "powers the gods" hint so players connect the
+  // Fa currency to Zeus/Poseidon. When the player actually has faith, the F
+  // label gets a soft purple glow to pull the eye toward the link.
+  const faithVal = Math.floor(getFaith());
+  const faithText = 'F:' + faithVal;
+  hudCtx.font = '13px monospace';
+  hudCtx.textAlign = 'left';
   hudCtx.fillStyle = '#aa88ff';
-  hudCtx.fillText('F:' + Math.floor(getFaith()), 374, 48);
+  if (faithVal > 0) {
+    hudCtx.save();
+    hudCtx.shadowColor = '#aa88ff';
+    hudCtx.shadowBlur = 6;
+    hudCtx.fillText(faithText, 374, 48);
+    hudCtx.restore();
+  } else {
+    hudCtx.fillText(faithText, 374, 48);
+  }
+  // Inline hint linking Faith -> god abilities, sized to fit the remaining bar.
+  // Compact so it never runs past the 512px HUD edge even with a 3-digit Faith.
+  const fw = hudCtx.measureText(faithText).width;
+  hudCtx.font = '8px monospace';
+  hudCtx.fillStyle = faithVal > 0 ? '#c9b3ff' : '#7a6aa0';
+  hudCtx.fillText('\u2192 Zeus/Poseidon', 374 + fw + 6, 47);
 
   hudTexture.needsUpdate = true;
 }
@@ -6382,6 +6459,16 @@ function onPointerMove(e) {
       const p = clampMirrorPos(world.x, world.y);
       dragObject.mesh.position.x = p.x;
       dragObject.mesh.position.y = p.y;
+      // Direct-aim: while dragging, point the mirror straight at the pointer so
+      // the reflected beam immediately swings to where the finger is. We aim the
+      // mirror's NORMAL at the pointer (atan2 of pointer→mirror), which is the
+      // orientation that sends a reflection toward the touch point. Skip when the
+      // pointer sits almost exactly on the disc to avoid angle jitter.
+      const admx = world.x - p.x;
+      const admy = world.y - p.y;
+      if (admx * admx + admy * admy > 0.25) {
+        rotateMirror(dragObject, Math.atan2(admy, admx));
+      }
     } else {
       dragObject.mesh.position.x = world.x;
       dragObject.mesh.position.y = world.y;

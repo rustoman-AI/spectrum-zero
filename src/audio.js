@@ -9,6 +9,9 @@ let ctx = null;
 let masterGain = null;
 let muted = false;
 let muteBtn = null;
+// Overall SFX master level. Dropped from 0.5 to 0.4 (-20%) in the polish pass to
+// give the compressor/lowpass headroom and take the edge off loud stacks.
+const MASTER_GAIN = 0.4;
 
 // Pools
 let hum = null;
@@ -35,8 +38,25 @@ function ensureCtx() {
   try {
     ctx = new (window.AudioContext || window.webkitAudioContext)();
     masterGain = ctx.createGain();
-    masterGain.gain.value = muted ? 0 : 0.5;
-    masterGain.connect(ctx.destination);
+    // Overall SFX gain reduced 20% (0.5 -> 0.4) per polish pass. See MASTER_GAIN.
+    masterGain.gain.value = muted ? 0 : MASTER_GAIN;
+    // Master softening chain: every voice routes through masterGain, so a single
+    // compressor + gentle lowpass at the tail tames ear-piercing clicks/beeps
+    // and stops loud stacks (many SFX at once) from clipping.
+    //   masterGain -> compressor -> lowpass(4500Hz) -> destination
+    const masterComp = ctx.createDynamicsCompressor();
+    masterComp.threshold.value = -18;  // start gently compressing above -18 dB
+    masterComp.knee.value = 24;        // soft knee for a smooth, un-pumpy limit
+    masterComp.ratio.value = 4;        // 4:1 — limiter-ish but musical
+    masterComp.attack.value = 0.003;
+    masterComp.release.value = 0.25;
+    const masterLp = ctx.createBiquadFilter();
+    masterLp.type = 'lowpass';
+    masterLp.frequency.value = 4500;   // roll off the harsh top end
+    masterLp.Q.value = 0.707;          // Butterworth (no resonant peak)
+    masterGain.connect(masterComp);
+    masterComp.connect(masterLp);
+    masterLp.connect(ctx.destination);
     setupHum();
     setupBurnNoise();
     setupAltarTone();
@@ -103,7 +123,7 @@ export function updateSeaAmbience(dt) { /* LFO-driven, nothing to tick */ }
 function toggleMute(e) {
   if (e) e.preventDefault();
   muted = !muted;
-  if (masterGain) masterGain.gain.value = muted ? 0 : 0.5;
+  if (masterGain) masterGain.gain.value = muted ? 0 : MASTER_GAIN;
   if (muteBtn) muteBtn.textContent = muted ? '🔇' : '🔊';
 }
 

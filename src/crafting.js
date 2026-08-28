@@ -155,7 +155,32 @@ export function updateCraftingTray() {
 
     trayCtx.fillStyle = bgColour;
     trayCtx.fillRect(x + 1, 1, btnW - 2, 38);
-    // Border
+
+    // ---- Ready-state pulse glow --------------------------------------------
+    // When a button is affordable AND actionable, wrap it in a continuously
+    // pulsing bright border so the player can't miss that the ability is ready.
+    // This is the in-canvas equivalent of a CSS keyframe border-glow. Zeus keeps
+    // its dedicated gold treatment; every other ready button pulses green so it
+    // reads as "go". The pulse is a slow sine (kept subtle so it never fights
+    // the playfield) that drives both the border brightness and an outer
+    // shadowBlur halo.
+    const readyPulse = affordable && !zeusGlow;
+    if (readyPulse) {
+      // 0..1 slow sine (~1.4 Hz). Phase-offset per button so the row shimmers
+      // rather than strobing in unison.
+      const phase = Math.sin(Date.now() * 0.009 + i * 0.7) * 0.5 + 0.5;
+      const glowCol = '#4EFE82';             // bright "ready" green
+      trayCtx.save();
+      trayCtx.strokeStyle = glowCol;
+      trayCtx.shadowColor = glowCol;
+      trayCtx.shadowBlur = 4 + phase * 8;    // breathing outer halo
+      trayCtx.lineWidth = 2 + phase * 1.5;   // 2..3.5px breathing border
+      trayCtx.globalAlpha = 0.65 + phase * 0.35;
+      trayCtx.strokeRect(x + 2, 2, btnW - 4, 36);
+      trayCtx.restore();
+    }
+
+    // Base border (drawn on top so the crisp edge stays sharp over the glow)
     trayCtx.strokeStyle = borderCol;
     trayCtx.lineWidth = zeusGlow ? 3 : (pulsing ? 2.5 : (affordable ? 1.5 : 0.5));
     trayCtx.strokeRect(x + 1, 1, btnW - 2, 38);

@@ -219,6 +219,16 @@ function onPointerMove(e) {
       const p = clampMirrorPos(world.x, world.y);
       dragObject.mesh.position.x = p.x;
       dragObject.mesh.position.y = p.y;
+      // Direct-aim: while dragging, point the mirror straight at the pointer so
+      // the reflected beam immediately swings to where the finger is. We aim the
+      // mirror's NORMAL at the pointer (atan2 of pointer→mirror), which is the
+      // orientation that sends a reflection toward the touch point. Skip when the
+      // pointer sits almost exactly on the disc to avoid angle jitter.
+      const admx = world.x - p.x;
+      const admy = world.y - p.y;
+      if (admx * admx + admy * admy > 0.25) {
+        rotateMirror(dragObject, Math.atan2(admy, admx));
+      }
     } else {
       dragObject.mesh.position.x = world.x;
       dragObject.mesh.position.y = world.y;

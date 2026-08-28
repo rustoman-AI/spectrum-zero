@@ -299,10 +299,20 @@ export function spawnDestruction(x, y, heavy) {
 }
 
 // --- WebAudio synthesis ---
+let fxMaster = null;   // shared compressor+lowpass tail for this context
 function ensureAudio() {
   if (!audioCtx) {
     try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
     catch (e) { return null; }
+    // Master softener: compressor + gentle 4500Hz lowpass, matching audio.js so
+    // the destruction noise burst can't spike into harsh, clicky top end.
+    const comp = audioCtx.createDynamicsCompressor();
+    comp.threshold.value = -18; comp.knee.value = 24; comp.ratio.value = 4;
+    comp.attack.value = 0.003; comp.release.value = 0.25;
+    const lp = audioCtx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 4500; lp.Q.value = 0.707;
+    comp.connect(lp).connect(audioCtx.destination);
+    fxMaster = comp;
   }
   return audioCtx;
 }
@@ -310,6 +320,7 @@ function ensureAudio() {
 function playDestructionSound(heavy) {
   const ctx = ensureAudio();
   if (!ctx) return;
+  const out = fxMaster || ctx.destination;
   const now = ctx.currentTime;
   // Wood crack: short noise burst
   const noiseLen = heavy ? 0.14 : 0.08;
@@ -321,7 +332,7 @@ function playDestructionSound(heavy) {
   const noiseGain = ctx.createGain();
   noiseGain.gain.setValueAtTime(heavy ? 0.4 : 0.3, now);
   noiseGain.gain.exponentialRampToValueAtTime(0.01, now + noiseLen);
-  noise.connect(noiseGain).connect(ctx.destination);
+  noise.connect(noiseGain).connect(out);
   noise.start(now);
   // Low thump: sine at 60Hz
   const osc = ctx.createOscillator();
@@ -330,7 +341,7 @@ function playDestructionSound(heavy) {
   const oscGain = ctx.createGain();
   oscGain.gain.setValueAtTime(0.4, now);
   oscGain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
-  osc.connect(oscGain).connect(ctx.destination);
+  osc.connect(oscGain).connect(out);
   osc.start(now);
   osc.stop(now + 0.2);
   // Heavy ships: deep sub-bass explosion (rumbling drop from 40Hz -> 22Hz)
@@ -342,7 +353,7 @@ function playDestructionSound(heavy) {
     const subGain = ctx.createGain();
     subGain.gain.setValueAtTime(0.6, now);
     subGain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
-    sub.connect(subGain).connect(ctx.destination);
+    sub.connect(subGain).connect(out);
     sub.start(now);
     sub.stop(now + 0.55);
   }

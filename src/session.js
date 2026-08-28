@@ -240,8 +240,29 @@ export function updateHud() {
   hudCtx.fillText('Si:' + Math.floor(res.silver), 130, 48);
   hudCtx.fillStyle = '#ffdd00';
   hudCtx.fillText('Au:' + Math.floor(res.gold), 252, 48);
+  // Faith counter, with a tiny "powers the gods" hint so players connect the
+  // Fa currency to Zeus/Poseidon. When the player actually has faith, the F
+  // label gets a soft purple glow to pull the eye toward the link.
+  const faithVal = Math.floor(getFaith());
+  const faithText = 'F:' + faithVal;
+  hudCtx.font = '13px monospace';
+  hudCtx.textAlign = 'left';
   hudCtx.fillStyle = '#aa88ff';
-  hudCtx.fillText('F:' + Math.floor(getFaith()), 374, 48);
+  if (faithVal > 0) {
+    hudCtx.save();
+    hudCtx.shadowColor = '#aa88ff';
+    hudCtx.shadowBlur = 6;
+    hudCtx.fillText(faithText, 374, 48);
+    hudCtx.restore();
+  } else {
+    hudCtx.fillText(faithText, 374, 48);
+  }
+  // Inline hint linking Faith -> god abilities, sized to fit the remaining bar.
+  // Compact so it never runs past the 512px HUD edge even with a 3-digit Faith.
+  const fw = hudCtx.measureText(faithText).width;
+  hudCtx.font = '8px monospace';
+  hudCtx.fillStyle = faithVal > 0 ? '#c9b3ff' : '#7a6aa0';
+  hudCtx.fillText('\u2192 Zeus/Poseidon', 374 + fw + 6, 47);
 
   hudTexture.needsUpdate = true;
 }
