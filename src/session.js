@@ -107,10 +107,13 @@ export function getWallShake() {
   };
 }
 export function tickWallShake(dt) { if (wallShakeTimer > 0) wallShakeTimer -= dt; }
-// Trigger a camera shake pulse (called throttled from the main loop during a drip).
+// Trigger a camera shake pulse (called throttled from the main loop on wall
+// impact). Intensity is cut ~70% from the old value for a subtle thud; it only
+// grows toward the old feel when the wall is critical (<25%).
 export function triggerWallShake() {
   wallShakeTimer = WALL_SHAKE_DURATION;
-  wallShakeIntensity = 1.6;
+  const critical = (wallIntegrity / WALL_MAX_HP) < 0.25;
+  wallShakeIntensity = critical ? 0.9 : 0.48; // was 1.6 (subtle thud, stronger only when critical)
 }
 
 // Quick notch flash on the wall bar when the wall takes a hit.

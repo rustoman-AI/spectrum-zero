@@ -70,9 +70,12 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
     return;
   }
   const hit = castRay(origin, direction, mirrors, prisms, foundryColliders, worldWidth, excludePrism);
+  // For mirror hits, anchor the visible segment end at the disc CENTRE so the
+  // ray always terminates at the middle of the gold disc, never at the rim.
+  const endPoint = (hit.type === 'mirror' && hit.center) ? hit.center : hit.point;
   segments.push({
     start: { x: origin.x, y: origin.y },
-    end: { x: hit.point.x, y: hit.point.y },
+    end: { x: endPoint.x, y: endPoint.y },
     colour,
     intensity,
     bounces: bouncesUsed,
@@ -114,7 +117,9 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
     reflected.y /= len;
     const newBounces = bouncesUsed + 1;
     if (newBounces > maxBouncesUsed) maxBouncesUsed = newBounces;
-    traceBeam(hit.point, reflected, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, null, newBounces, preSplit, wide);
+    // Reflected ray originates from the disc CENTRE so it stays anchored there.
+    const reflectOrigin = hit.center || hit.point;
+    traceBeam(reflectOrigin, reflected, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, null, newBounces, preSplit, wide);
   } else if (hit.type === 'prism') {
     if (colour === COLOUR_WHITE) {
       // Generate N bands based on active prism tier
@@ -150,7 +155,11 @@ function castRay(origin, direction, mirrors, prisms, foundryColliders, worldWidt
     const result = raySegmentIntersect(origin, direction, mirror.p1, mirror.p2);
     if (result && result.dist > 0.1 && result.dist < nearestDist) {
       nearestDist = result.dist;
-      nearest = { type: 'mirror', point: result.point, normal: mirror.normal, object: mirror };
+      // Anchor point = the mirror's CENTRE (midpoint of p1/p2 = the gold disc
+      // centre), so incident and reflected rays always meet at the disc middle
+      // rather than detaching at the rim, at any rotation angle.
+      const center = { x: (mirror.p1.x + mirror.p2.x) / 2, y: (mirror.p1.y + mirror.p2.y) / 2 };
+      nearest = { type: 'mirror', point: result.point, center, normal: mirror.normal, object: mirror };
     }
   }
   // Test prisms

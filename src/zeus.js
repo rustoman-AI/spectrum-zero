@@ -9,6 +9,7 @@
 import { getScene, getWorldWidth } from './renderer.js';
 import { getEnemyPool } from './enemy.js';
 import { SHIP_SPAWN_Y, ENEMY_LANE_COUNT, GOD_ABILITIES } from './config.js';
+import { playZeusThunder } from './audio.js';
 
 // --- State ---
 let zeusReady = false;
@@ -121,8 +122,8 @@ export function triggerZeusStrike() {
     strikeBolts.push(bolt);
   }
 
-  // Thunder audio
-  playThunderCrack();
+  // Thunder audio — natural thunderclap on the shared audio bus.
+  playZeusThunder();
 }
 
 function updateStrike(dt) {

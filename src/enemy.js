@@ -3,7 +3,7 @@
 // ============================================================
 
 import {
-  ENEMY_POOL_SIZE, ENEMY_TYPES, SHIP_SPAWN_Y, SHIP_TOP_BOUND, WALL_Y, MIRROR_DISC_TOP,
+  ENEMY_POOL_SIZE, ENEMY_TYPES, SHIP_SPAWN_Y, SHIP_TOP_BOUND, WALL_Y, BATTLEMENT_TOP_Y,
   ENEMY_LANE_COUNT, WORLD_HEIGHT, WALL_MAX_HP, BREACH_DRIP_PCT
 } from './config.js';
 import { getScene, getWorldWidth } from './renderer.js';
@@ -366,17 +366,13 @@ export function updateEnemies(dt) {
       e.mesh.rotation.z = Math.sin(e.oarPhase * 0.7) * 0.015; // very slight roll
     }
 
-    // Crash when the ship's LEADING (bottom) edge reaches the stop edge, which
-    // sits a clear gap above the mirror discs. Per-ship half-height means big
-    // ships stop earlier so no hull ever shares pixels with a disc.
-    // The `breached` guard makes damage fire EXACTLY ONCE — even if any code
-    // path briefly left the enemy active, it can never re-charge the wall.
-    // Bottom bound: the ship's LEADING (bottom) edge stops one FULL hull-height
-    // above the mirror disc top edge, so no hull ever shares pixels with a disc.
+    // Ships descend all the way to the stone battlement and only breach when
+    // their hull's LEADING (bottom) edge touches the battlement top. Damage is
+    // therefore always at the wall/shoreline — never in open water mid-screen.
+    // The `breached` guard makes the first-contact burst fire exactly once.
     const half = shipHalfHeight(e.type);
-    const stopEdge = MIRROR_DISC_TOP + half * 2; // disc top + one hull-height
     const leadingEdge = e.y - half;
-    const atWall = leadingEdge <= stopEdge;
+    const atWall = leadingEdge <= BATTLEMENT_TOP_Y;
 
     // Clamp the contact X to the visible battlement so edge/flank ships (and
     // Poseidon-pulled ones) always render on-screen with a matching flash.
@@ -385,8 +381,8 @@ export function updateEnemies(dt) {
     const cx = Math.max(-edgeX, Math.min(edgeX, rawX));
 
     if (atWall) {
-      // Pin the ship at the wall (bottom edge exactly at the stop line).
-      e.y = stopEdge + half;
+      // Pin the ship so its hull bottom rests on the battlement top edge.
+      e.y = BATTLEMENT_TOP_Y + half;
       // One-time contact burst the first frame it reaches the wall.
       if (!e.breached) {
         e.breached = true;

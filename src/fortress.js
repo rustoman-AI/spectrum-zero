@@ -159,7 +159,8 @@ export function triggerImpactFlash(x) {
 // Called from session.js when a breach happens
 export function triggerBreachShake(damage) {
   shakeTimer = SHAKE_DURATION;
-  shakeIntensity = Math.min(damage / 10, 2.5);
+  // Subtle thud: ~70% quieter than before (was min(damage/10, 2.5)).
+  shakeIntensity = Math.min(damage / 10, 2.5) * 0.3;
   // Spawn dust
   spawnDust(6);
 }

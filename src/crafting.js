@@ -295,38 +295,44 @@ function costStr(cost) {
 // can afford render light; tokens they can't afford render red so it's obvious
 // which currency is short.
 const COST_LABELS = { brass: 'Br', bronze: 'Bz', silver: 'Si', gold: 'Au', faith: 'Fa' };
-// Draw the cost as clean, spaced tokens on a single line, e.g. "15 Si + 20 Bz".
-// Each currency is measured/positioned individually so tokens never run into
-// each other, and unaffordable ones render red. A "+" joins multiple currencies.
+// Draw the cost as clean colour-coded tokens on ONE line, e.g. "15Si 20Bz".
+// Tokens are separated by a plain space (no "+" glyph, which blurred into stray
+// digits at small sizes). The whole line is auto-shrunk to fit the button width
+// so it never overflows, wraps, or leaves fragments from a previous state. The
+// per-frame canvas clear already removes old pixels; the fit guarantees no
+// stacking/overlap regardless of how many currencies a cost has.
 function drawCostTokens(cost, res, faith, centreX, y, btnW) {
-  trayCtx.font = 'bold 8px monospace';
-  // Build renderable pieces: [amount+label] tokens joined by " + " separators.
+  // Build tokens (compact "15Si" form).
   const tokens = [];
   for (const k in cost) {
     const have = (k === 'faith') ? faith : (res[k] || 0);
-    tokens.push({ text: cost[k] + ' ' + (COST_LABELS[k] || k[0]), ok: have >= cost[k] });
+    tokens.push({ text: cost[k] + (COST_LABELS[k] || k[0]), ok: have >= cost[k] });
   }
   if (tokens.length === 0) return;
 
-  const sep = ' + ';
-  const sepW = trayCtx.measureText(sep).width;
-  let totalW = 0;
-  for (let t = 0; t < tokens.length; t++) {
-    totalW += trayCtx.measureText(tokens[t].text).width;
-    if (t < tokens.length - 1) totalW += sepW;
-  }
+  const GAP = 3; // px gap between tokens (logical space)
+  const maxW = btnW - 8; // keep clear of the button edges
+
+  // Find the largest font (<=9px) at which the whole line fits maxW.
+  let fontPx = 9;
+  const measureTotal = () => {
+    trayCtx.font = 'bold ' + fontPx + 'px monospace';
+    let w = 0;
+    for (let t = 0; t < tokens.length; t++) {
+      w += trayCtx.measureText(tokens[t].text).width;
+      if (t < tokens.length - 1) w += GAP;
+    }
+    return w;
+  };
+  let totalW = measureTotal();
+  while (totalW > maxW && fontPx > 6) { fontPx -= 0.5; totalW = measureTotal(); }
 
   trayCtx.textAlign = 'left';
   let cx = centreX - totalW / 2;
   for (let t = 0; t < tokens.length; t++) {
     trayCtx.fillStyle = tokens[t].ok ? '#dddddd' : '#ff5555';
     trayCtx.fillText(tokens[t].text, cx, y);
-    cx += trayCtx.measureText(tokens[t].text).width;
-    if (t < tokens.length - 1) {
-      trayCtx.fillStyle = '#888888'; // neutral separator
-      trayCtx.fillText(sep, cx, y);
-      cx += sepW;
-    }
+    cx += trayCtx.measureText(tokens[t].text).width + GAP;
   }
   trayCtx.textAlign = 'center'; // restore for subsequent draws
 }

@@ -218,17 +218,14 @@ const WALL_Y = -40;            // fortress/battlement backdrop line
 const ENEMY_LANE_COUNT = 5;
 
 // --- Ram line (ship crash boundary) ---
-// The topmost mirror sits at socket row y = -12; its sprite is (MIRROR_LENGTH+2)
-// = 12 units tall (MIRROR_LENGTH is 10, defined below), so the disc's top edge
-// is at -12 + 6 = -6. Ships must stop with a clear gap ABOVE that edge and
-// NEVER share pixels with the discs. ~25px on a portrait phone (100 world units
-// over ~780px) is ~3.2u; use 4u for safety.
-const MIRROR_DISC_TOP = -6;   // top edge of the topmost mirror sprite
-const RAM_CLEARANCE = 4;      // world units of clear space above the disc top
-// A ship crashes when its LEADING (bottom) edge reaches RAM_STOP_EDGE. Using the
-// ship's own half-height means every ship size stops with the same clearance and
-// zero overlap. RAM_LINE_Y is the nominal line kept for effects/legacy refs.
-const RAM_STOP_EDGE = MIRROR_DISC_TOP + RAM_CLEARANCE; // = -2
+// Ships descend all the way to the STONE BATTLEMENT at the shoreline (WALL_Y)
+// and only breach when their hull touches the battlement's top edge. This keeps
+// all wall damage at the wall — never in open water mid-screen. The wall stone
+// mesh sits at WALL_Y (1.2u tall), so its top edge is ~WALL_Y + 0.6; ships stop
+// with their leading (bottom) edge resting just on top of it.
+const MIRROR_DISC_TOP = -6;         // top edge of the topmost mirror sprite (kept for refs)
+const BATTLEMENT_TOP_Y = WALL_Y + 1; // top of the stone the hull rams into (~ -39)
+const RAM_STOP_EDGE = BATTLEMENT_TOP_Y;
 const RAM_LINE_Y = RAM_STOP_EDGE;
 
 // --- DEV flags ---
@@ -855,7 +852,8 @@ function triggerImpactFlash(x) {
 // Called from session.js when a breach happens
 function triggerBreachShake(damage) {
   shakeTimer = SHAKE_DURATION;
-  shakeIntensity = Math.min(damage / 10, 2.5);
+  // Subtle thud: ~70% quieter than before (was min(damage/10, 2.5)).
+  shakeIntensity = Math.min(damage / 10, 2.5) * 0.3;
   // Spawn dust
   spawnDust(6);
 }
@@ -1101,6 +1099,7 @@ function drawFire(ctx, x, y) {
 
 
 
+
 // --- State ---
 let zeusReady = false;
 let readyNotified = false;
@@ -1212,8 +1211,8 @@ function triggerZeusStrike() {
     strikeBolts.push(bolt);
   }
 
-  // Thunder audio
-  playThunderCrack();
+  // Thunder audio — natural thunderclap on the shared audio bus.
+  playZeusThunder();
 }
 
 function updateStrike(dt) {
@@ -1629,6 +1628,7 @@ function playWhirlpoolSound() {
 
 
 
+
 const CFG = GOD_ABILITIES.helios;
 
 let heliosActive = false;
@@ -1730,63 +1730,10 @@ function resetHelios() {
   endFlare();
 }
 
-// --- Audio: rising solar hum + bright chime ---
-function getHeliosCtx() {
-  if (heliosACtx) return heliosACtx;
-  try { heliosACtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
-  return heliosACtx;
-}
-
-function playSolarHum() {
-  const ctx = getHeliosCtx();
-  if (!ctx) return;
-  const now = ctx.currentTime;
-
-  // Bright chime up front (two stacked sines, quick bell)
-  for (const [freq, delay] of [[1320, 0], [1760, 0.06]]) {
-    const osc = ctx.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq, now + delay);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0, now + delay);
-    g.gain.linearRampToValueAtTime(0.18, now + delay + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.7);
-    osc.connect(g).connect(ctx.destination);
-    osc.start(now + delay);
-    osc.stop(now + delay + 0.75);
-  }
-
-  // Rising solar hum: sawtooth swept up through a lowpass over the flare.
-  stopSolarHum(); // ensure no overlap if recast fast
-  heliosHumOsc = ctx.createOscillator();
-  heliosHumOsc.type = 'sawtooth';
-  heliosHumOsc.frequency.setValueAtTime(180, now);
-  heliosHumOsc.frequency.linearRampToValueAtTime(420, now + CFG.duration);
-  const lp = ctx.createBiquadFilter();
-  lp.type = 'lowpass';
-  lp.frequency.setValueAtTime(400, now);
-  lp.frequency.linearRampToValueAtTime(1600, now + CFG.duration);
-  heliosHumGain = ctx.createGain();
-  heliosHumGain.gain.setValueAtTime(0.0, now);
-  heliosHumGain.gain.linearRampToValueAtTime(0.14, now + 0.3);       // swell in
-  heliosHumGain.gain.setValueAtTime(0.14, now + CFG.duration - 0.5);
-  heliosHumGain.gain.exponentialRampToValueAtTime(0.001, now + CFG.duration); // fade out
-  heliosHumOsc.connect(lp).connect(heliosHumGain).connect(ctx.destination);
-  heliosHumOsc.start(now);
-  heliosHumOsc.stop(now + CFG.duration + 0.05);
-}
-
-function stopSolarHum() {
-  if (heliosHumOsc) {
-    try { heliosHumOsc.stop(); } catch (_) {}
-    try { heliosHumOsc.disconnect(); } catch (_) {}
-    heliosHumOsc = null;
-  }
-  if (heliosHumGain) {
-    try { heliosHumGain.disconnect(); } catch (_) {}
-    heliosHumGain = null;
-  }
-}
+// --- Audio: resonant temple chime + horn (organic, via shared audio bus so it
+// respects mute). The old sci-fi sawtooth sweep was removed. ---
+function playSolarHum() { playHeliosHorn(); }
+function stopSolarHum() { /* horn is a one-shot swell; nothing to stop */ }
 
 
 // === src/beam.js ===
@@ -1857,9 +1804,12 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
     return;
   }
   const hit = castRay(origin, direction, mirrors, prisms, foundryColliders, worldWidth, excludePrism);
+  // For mirror hits, anchor the visible segment end at the disc CENTRE so the
+  // ray always terminates at the middle of the gold disc, never at the rim.
+  const endPoint = (hit.type === 'mirror' && hit.center) ? hit.center : hit.point;
   segments.push({
     start: { x: origin.x, y: origin.y },
-    end: { x: hit.point.x, y: hit.point.y },
+    end: { x: endPoint.x, y: endPoint.y },
     colour,
     intensity,
     bounces: bouncesUsed,
@@ -1901,7 +1851,9 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
     reflected.y /= len;
     const newBounces = bouncesUsed + 1;
     if (newBounces > maxBouncesUsed) maxBouncesUsed = newBounces;
-    traceBeam(hit.point, reflected, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, null, newBounces, preSplit, wide);
+    // Reflected ray originates from the disc CENTRE so it stays anchored there.
+    const reflectOrigin = hit.center || hit.point;
+    traceBeam(reflectOrigin, reflected, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, null, newBounces, preSplit, wide);
   } else if (hit.type === 'prism') {
     if (colour === COLOUR_WHITE) {
       // Generate N bands based on active prism tier
@@ -1937,7 +1889,11 @@ function castRay(origin, direction, mirrors, prisms, foundryColliders, worldWidt
     const result = raySegmentIntersect(origin, direction, mirror.p1, mirror.p2);
     if (result && result.dist > 0.1 && result.dist < nearestDist) {
       nearestDist = result.dist;
-      nearest = { type: 'mirror', point: result.point, normal: mirror.normal, object: mirror };
+      // Anchor point = the mirror's CENTRE (midpoint of p1/p2 = the gold disc
+      // centre), so incident and reflected rays always meet at the disc middle
+      // rather than detaching at the rim, at any rotation angle.
+      const center = { x: (mirror.p1.x + mirror.p2.x) / 2, y: (mirror.p1.y + mirror.p2.y) / 2 };
+      nearest = { type: 'mirror', point: result.point, center, normal: mirror.normal, object: mirror };
     }
   }
   // Test prisms
@@ -3150,17 +3106,13 @@ function updateEnemies(dt) {
       e.mesh.rotation.z = Math.sin(e.oarPhase * 0.7) * 0.015; // very slight roll
     }
 
-    // Crash when the ship's LEADING (bottom) edge reaches the stop edge, which
-    // sits a clear gap above the mirror discs. Per-ship half-height means big
-    // ships stop earlier so no hull ever shares pixels with a disc.
-    // The `breached` guard makes damage fire EXACTLY ONCE — even if any code
-    // path briefly left the enemy active, it can never re-charge the wall.
-    // Bottom bound: the ship's LEADING (bottom) edge stops one FULL hull-height
-    // above the mirror disc top edge, so no hull ever shares pixels with a disc.
+    // Ships descend all the way to the stone battlement and only breach when
+    // their hull's LEADING (bottom) edge touches the battlement top. Damage is
+    // therefore always at the wall/shoreline — never in open water mid-screen.
+    // The `breached` guard makes the first-contact burst fire exactly once.
     const half = shipHalfHeight(e.type);
-    const stopEdge = MIRROR_DISC_TOP + half * 2; // disc top + one hull-height
     const leadingEdge = e.y - half;
-    const atWall = leadingEdge <= stopEdge;
+    const atWall = leadingEdge <= BATTLEMENT_TOP_Y;
 
     // Clamp the contact X to the visible battlement so edge/flank ships (and
     // Poseidon-pulled ones) always render on-screen with a matching flash.
@@ -3169,8 +3121,8 @@ function updateEnemies(dt) {
     const cx = Math.max(-edgeX, Math.min(edgeX, rawX));
 
     if (atWall) {
-      // Pin the ship at the wall (bottom edge exactly at the stop line).
-      e.y = stopEdge + half;
+      // Pin the ship so its hull bottom rests on the battlement top edge.
+      e.y = BATTLEMENT_TOP_Y + half;
       // One-time contact burst the first frame it reaches the wall.
       if (!e.breached) {
         e.breached = true;
@@ -4088,38 +4040,44 @@ function costStr(cost) {
 // can afford render light; tokens they can't afford render red so it's obvious
 // which currency is short.
 const COST_LABELS = { brass: 'Br', bronze: 'Bz', silver: 'Si', gold: 'Au', faith: 'Fa' };
-// Draw the cost as clean, spaced tokens on a single line, e.g. "15 Si + 20 Bz".
-// Each currency is measured/positioned individually so tokens never run into
-// each other, and unaffordable ones render red. A "+" joins multiple currencies.
+// Draw the cost as clean colour-coded tokens on ONE line, e.g. "15Si 20Bz".
+// Tokens are separated by a plain space (no "+" glyph, which blurred into stray
+// digits at small sizes). The whole line is auto-shrunk to fit the button width
+// so it never overflows, wraps, or leaves fragments from a previous state. The
+// per-frame canvas clear already removes old pixels; the fit guarantees no
+// stacking/overlap regardless of how many currencies a cost has.
 function drawCostTokens(cost, res, faith, centreX, y, btnW) {
-  trayCtx.font = 'bold 8px monospace';
-  // Build renderable pieces: [amount+label] tokens joined by " + " separators.
+  // Build tokens (compact "15Si" form).
   const tokens = [];
   for (const k in cost) {
     const have = (k === 'faith') ? faith : (res[k] || 0);
-    tokens.push({ text: cost[k] + ' ' + (COST_LABELS[k] || k[0]), ok: have >= cost[k] });
+    tokens.push({ text: cost[k] + (COST_LABELS[k] || k[0]), ok: have >= cost[k] });
   }
   if (tokens.length === 0) return;
 
-  const sep = ' + ';
-  const sepW = trayCtx.measureText(sep).width;
-  let totalW = 0;
-  for (let t = 0; t < tokens.length; t++) {
-    totalW += trayCtx.measureText(tokens[t].text).width;
-    if (t < tokens.length - 1) totalW += sepW;
-  }
+  const GAP = 3; // px gap between tokens (logical space)
+  const maxW = btnW - 8; // keep clear of the button edges
+
+  // Find the largest font (<=9px) at which the whole line fits maxW.
+  let fontPx = 9;
+  const measureTotal = () => {
+    trayCtx.font = 'bold ' + fontPx + 'px monospace';
+    let w = 0;
+    for (let t = 0; t < tokens.length; t++) {
+      w += trayCtx.measureText(tokens[t].text).width;
+      if (t < tokens.length - 1) w += GAP;
+    }
+    return w;
+  };
+  let totalW = measureTotal();
+  while (totalW > maxW && fontPx > 6) { fontPx -= 0.5; totalW = measureTotal(); }
 
   trayCtx.textAlign = 'left';
   let cx = centreX - totalW / 2;
   for (let t = 0; t < tokens.length; t++) {
     trayCtx.fillStyle = tokens[t].ok ? '#dddddd' : '#ff5555';
     trayCtx.fillText(tokens[t].text, cx, y);
-    cx += trayCtx.measureText(tokens[t].text).width;
-    if (t < tokens.length - 1) {
-      trayCtx.fillStyle = '#888888'; // neutral separator
-      trayCtx.fillText(sep, cx, y);
-      cx += sepW;
-    }
+    cx += trayCtx.measureText(tokens[t].text).width + GAP;
   }
   trayCtx.textAlign = 'center'; // restore for subsequent draws
 }
@@ -4395,8 +4353,77 @@ function ensureCtx() {
     setupHum();
     setupBurnNoise();
     setupAltarTone();
+    setupSeaAmbience();
   } catch (e) { return null; }
   return ctx;
+}
+
+// ============================================================
+// SEA AMBIENCE — gentle Mediterranean bed: soft breeze (filtered noise) with a
+// slow rhythmic wave-wash swell against stone. Replaces sci-fi drone character.
+// ============================================================
+let breezeGain = null;
+let waveWashGain = null;
+let waveTimer = 0;
+function setupSeaAmbience() {
+  // Breeze: looping pink-ish noise through a gentle lowpass, very quiet.
+  const bufLen = ctx.sampleRate * 2;
+  const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < bufLen; i++) {
+    const white = Math.random() * 2 - 1;
+    last = 0.98 * last + 0.02 * white; // low-passed → soft airy noise
+    d[i] = last * 3;
+  }
+  const src = ctx.createBufferSource();
+  src.buffer = buf; src.loop = true;
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass'; lp.frequency.value = 700;
+  breezeGain = ctx.createGain();
+  breezeGain.gain.value = 0.05; // subtle bed
+  src.connect(lp).connect(breezeGain).connect(masterGain);
+  src.start();
+
+  // Wave-wash bus: swells are fired rhythmically in updateSeaAmbience().
+  waveWashGain = ctx.createGain();
+  waveWashGain.gain.value = 1;
+  waveWashGain.connect(masterGain);
+}
+
+// Called each frame; fires a soft wave-wash swell every few seconds.
+function updateSeaAmbience(dt) {
+  if (!ctx || !waveWashGain) return;
+  waveTimer -= dt;
+  if (waveTimer <= 0) {
+    waveTimer = 3.2 + Math.random() * 2.0; // a wash every ~3-5s
+    fireWaveWash();
+  }
+}
+
+function fireWaveWash() {
+  const now = ctx.currentTime;
+  const dur = 1.6;
+  const bufLen = Math.ceil(ctx.sampleRate * dur);
+  const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < bufLen; i++) d[i] = Math.random() * 2 - 1;
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  // Band-limited "shhh" that rises then falls — water washing over stone.
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.setValueAtTime(500, now);
+  bp.frequency.linearRampToValueAtTime(1100, now + dur * 0.4);
+  bp.frequency.linearRampToValueAtTime(300, now + dur);
+  bp.Q.value = 0.7;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, now);
+  g.gain.linearRampToValueAtTime(0.06, now + dur * 0.4); // swell in
+  g.gain.linearRampToValueAtTime(0.0, now + dur);        // wash out
+  src.connect(bp).connect(g).connect(waveWashGain);
+  src.start(now);
+  src.stop(now + dur + 0.05);
 }
 
 function toggleMute(e) {
@@ -4406,25 +4433,26 @@ function toggleMute(e) {
   if (muteBtn) muteBtn.textContent = muted ? '🔇' : '🔊';
 }
 
-// --- Beam hum: continuous drone, pitch/volume scales with throughput ---
+// --- Beam tone: warm sunlight shimmer, not a sci-fi drone. A soft triangle
+// through a lowpass, quiet, pitch/volume gently tracking throughput. ---
 function setupHum() {
   hum = ctx.createOscillator();
-  hum.type = 'sawtooth';
-  hum.frequency.value = 55;
+  hum.type = 'triangle';       // warm, not buzzy
+  hum.frequency.value = 160;
   humGain = ctx.createGain();
   humGain.gain.value = 0;
   const filter = ctx.createBiquadFilter();
   filter.type = 'lowpass';
-  filter.frequency.value = 200;
+  filter.frequency.value = 500;
   hum.connect(filter).connect(humGain).connect(masterGain);
   hum.start();
 }
 
 function updateHum(throughput) {
   if (!humGain) return;
-  // throughput: 0 to ~50 (total DPS across all beams hitting targets)
-  const vol = Math.min(0.15, throughput * 0.003);
-  const pitch = 55 + throughput * 0.5;
+  // throughput: 0 to ~50. Keep it quiet and warm — a shimmer of focused light.
+  const vol = Math.min(0.06, throughput * 0.0014);
+  const pitch = 150 + throughput * 0.8;
   humGain.gain.value = vol;
   if (hum) hum.frequency.value = pitch;
 }
@@ -4524,51 +4552,164 @@ function playDeflect() {
   osc.onended = () => activeVoices--;
 }
 
-// --- Shield ricochet: short, bright high-frequency metallic tick ---
+// --- Shield deflection: bright BRONZE CLANG. Struck-bronze bell = a set of
+// inharmonic partials with a fast attack and a ringing (but short) decay. ---
 let lastRicochetTime = 0;
 function playRicochet() {
   if (!ensureCtx() || activeVoices >= MAX_VOICES) return;
   const now = ctx.currentTime;
-  // Rate-limit tighter than deflect — these fire fast, keep them tick-like.
   if (now - lastRicochetTime < 0.08) return;
   lastRicochetTime = now;
   activeVoices++;
-  // Two quick high partials for a metallic "ting"
-  const osc = ctx.createOscillator();
-  osc.type = 'square';
-  osc.frequency.setValueAtTime(3200, now);
-  osc.frequency.exponentialRampToValueAtTime(2100, now + 0.04);
-  const osc2 = ctx.createOscillator();
-  osc2.type = 'triangle';
-  osc2.frequency.setValueAtTime(4700, now);
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0.09, now);
-  g.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
-  const hp = ctx.createBiquadFilter();
-  hp.type = 'highpass';
-  hp.frequency.value = 1500;
-  osc.connect(hp);
-  osc2.connect(hp);
-  hp.connect(g).connect(masterGain);
-  osc.start(now); osc.stop(now + 0.07);
-  osc2.start(now); osc2.stop(now + 0.05);
-  osc.onended = () => activeVoices--;
+  // Inharmonic partials around a ~1400Hz fundamental (bronze, not pure sine).
+  const fund = 1350 + Math.random() * 120;
+  const ratios = [1.0, 2.76, 5.4, 8.9]; // bell-like inharmonic series
+  const gains  = [0.10, 0.06, 0.035, 0.02];
+  const out = ctx.createGain();
+  out.gain.value = 1;
+  out.connect(masterGain);
+  for (let i = 0; i < ratios.length; i++) {
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = fund * ratios[i];
+    const g = ctx.createGain();
+    const decay = 0.18 - i * 0.03; // higher partials die faster
+    g.gain.setValueAtTime(gains[i], now);
+    g.gain.exponentialRampToValueAtTime(0.0008, now + Math.max(0.05, decay));
+    osc.connect(g).connect(out);
+    osc.start(now);
+    osc.stop(now + 0.25);
+  }
+  // Tiny strike transient for the "clang" bite.
+  const tLen = Math.ceil(ctx.sampleRate * 0.015);
+  const tBuf = ctx.createBuffer(1, tLen, ctx.sampleRate);
+  const td = tBuf.getChannelData(0);
+  for (let i = 0; i < tLen; i++) td[i] = (Math.random() * 2 - 1) * (1 - i / tLen);
+  const tSrc = ctx.createBufferSource(); tSrc.buffer = tBuf;
+  const tHp = ctx.createBiquadFilter(); tHp.type = 'highpass'; tHp.frequency.value = 2500;
+  const tG = ctx.createGain(); tG.gain.value = 0.06;
+  tSrc.connect(tHp).connect(tG).connect(out);
+  tSrc.start(now); tSrc.stop(now + 0.02);
+  setTimeout(() => { activeVoices--; }, 260);
 }
 
-// --- Wall damage: dull impact ---
+// --- Wall impact: wooden hull crunch + hollow acoustic war-drum (tympanon) ---
 function playWallHit() {
   if (!ensureCtx() || activeVoices >= MAX_VOICES) return;
   activeVoices++;
-  const osc = ctx.createOscillator();
-  osc.type = 'triangle';
-  osc.frequency.setValueAtTime(120, ctx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(40, ctx.currentTime + 0.3);
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0.25, ctx.currentTime);
-  g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
-  osc.connect(g).connect(masterGain);
-  osc.start(); osc.stop(ctx.currentTime + 0.4);
-  osc.onended = () => activeVoices--;
+  const now = ctx.currentTime;
+
+  // 1) Wooden hull crunch: short mid-band noise burst with a fast decay.
+  const crLen = Math.ceil(ctx.sampleRate * 0.09);
+  const crBuf = ctx.createBuffer(1, crLen, ctx.sampleRate);
+  const cd = crBuf.getChannelData(0);
+  for (let i = 0; i < crLen; i++) cd[i] = (Math.random() * 2 - 1) * (1 - i / crLen);
+  const crSrc = ctx.createBufferSource();
+  crSrc.buffer = crBuf;
+  const crBp = ctx.createBiquadFilter();
+  crBp.type = 'bandpass';
+  crBp.frequency.setValueAtTime(420, now);
+  crBp.frequency.exponentialRampToValueAtTime(180, now + 0.09);
+  crBp.Q.value = 1.2;
+  const crG = ctx.createGain();
+  crG.gain.setValueAtTime(0.22, now);
+  crG.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+  crSrc.connect(crBp).connect(crG).connect(masterGain);
+  crSrc.start(now); crSrc.stop(now + 0.11);
+
+  // 2) Hollow war-drum thud: a low membrane tone (sine) with a quick pitch drop
+  //    and a resonant body, giving the taut-skin "doom" of a tympanon.
+  const drum = ctx.createOscillator();
+  drum.type = 'sine';
+  drum.frequency.setValueAtTime(140, now);
+  drum.frequency.exponentialRampToValueAtTime(66, now + 0.18);
+  const drumG = ctx.createGain();
+  drumG.gain.setValueAtTime(0.28, now);
+  drumG.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+  // Bandpass "body" resonance for a hollow, skin-over-shell character.
+  const body = ctx.createBiquadFilter();
+  body.type = 'bandpass';
+  body.frequency.value = 110;
+  body.Q.value = 3.5;
+  drum.connect(body).connect(drumG).connect(masterGain);
+  drum.start(now); drum.stop(now + 0.5);
+  drum.onended = () => activeVoices--;
+}
+
+// --- Helios: resonant acoustic temple chime + a warm horn swell ---
+function playHeliosHorn() {
+  if (!ensureCtx()) return;
+  const now = ctx.currentTime;
+  // Temple chime: a bright struck bell (harmonic-ish, warmer than the shield).
+  const chimeFund = 523; // ~C5
+  const chimeRatios = [1, 2, 3, 4.2];
+  const chimeGains = [0.14, 0.08, 0.05, 0.03];
+  for (let i = 0; i < chimeRatios.length; i++) {
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = chimeFund * chimeRatios[i];
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(chimeGains[i], now + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0008, now + 1.4 - i * 0.2);
+    osc.connect(g).connect(masterGain);
+    osc.start(now); osc.stop(now + 1.5);
+  }
+  // Warm horn swell underneath (sacred, brass-like): stacked saw+triangle
+  // through a lowpass, rising then holding, evoking a temple horn/salpinx.
+  const horn = ctx.createOscillator(); horn.type = 'sawtooth'; horn.frequency.value = 174; // ~F3
+  const horn2 = ctx.createOscillator(); horn2.type = 'triangle'; horn2.frequency.value = 261;
+  const hlp = ctx.createBiquadFilter();
+  hlp.type = 'lowpass';
+  hlp.frequency.setValueAtTime(400, now);
+  hlp.frequency.linearRampToValueAtTime(1400, now + 0.6);
+  hlp.frequency.linearRampToValueAtTime(700, now + 2.0);
+  const hg = ctx.createGain();
+  hg.gain.setValueAtTime(0, now);
+  hg.gain.linearRampToValueAtTime(0.12, now + 0.4);   // swell in
+  hg.gain.setValueAtTime(0.12, now + 1.6);
+  hg.gain.exponentialRampToValueAtTime(0.001, now + 2.4); // fade
+  horn.connect(hlp); horn2.connect(hlp);
+  hlp.connect(hg).connect(masterGain);
+  horn.start(now); horn.stop(now + 2.5);
+  horn2.start(now); horn2.stop(now + 2.5);
+}
+
+// --- Zeus: natural THUNDERCLAP — sharp crack (filtered noise) + rolling rumble ---
+function playZeusThunder() {
+  if (!ensureCtx()) return;
+  const now = ctx.currentTime;
+
+  // Sharp crack: bright wideband noise burst, very fast decay.
+  const crackLen = Math.ceil(ctx.sampleRate * 0.12);
+  const cBuf = ctx.createBuffer(1, crackLen, ctx.sampleRate);
+  const cd = cBuf.getChannelData(0);
+  for (let i = 0; i < crackLen; i++) cd[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / crackLen, 1.5);
+  const cSrc = ctx.createBufferSource(); cSrc.buffer = cBuf;
+  const cHp = ctx.createBiquadFilter(); cHp.type = 'highpass'; cHp.frequency.value = 900;
+  const cG = ctx.createGain();
+  cG.gain.setValueAtTime(0.4, now);
+  cG.gain.exponentialRampToValueAtTime(0.01, now + 0.18);
+  cSrc.connect(cHp).connect(cG).connect(masterGain);
+  cSrc.start(now); cSrc.stop(now + 0.2);
+
+  // Rolling rumble: long low-passed noise with a slow-closing filter — the
+  // thunder rolling away across the bay. Natural, no synth boom oscillator.
+  const rumLen = Math.ceil(ctx.sampleRate * 2.0);
+  const rBuf = ctx.createBuffer(1, rumLen, ctx.sampleRate);
+  const rd = rBuf.getChannelData(0);
+  for (let i = 0; i < rumLen; i++) rd[i] = Math.random() * 2 - 1;
+  const rSrc = ctx.createBufferSource(); rSrc.buffer = rBuf;
+  const rLp = ctx.createBiquadFilter();
+  rLp.type = 'lowpass';
+  rLp.frequency.setValueAtTime(300, now);
+  rLp.frequency.exponentialRampToValueAtTime(60, now + 1.8);
+  const rG = ctx.createGain();
+  rG.gain.setValueAtTime(0.0, now);
+  rG.gain.linearRampToValueAtTime(0.3, now + 0.08); // quick onset behind the crack
+  rG.gain.exponentialRampToValueAtTime(0.001, now + 2.0);
+  rSrc.connect(rLp).connect(rG).connect(masterGain);
+  rSrc.start(now + 0.03); rSrc.stop(now + 2.05);
 }
 
 // --- Altar tone: soft rising note while lit ---
@@ -4590,6 +4731,10 @@ function updateAltarTone(litCount, anyOverheated) {
 
 function resetAudio() {
   silenceBattleAudio();
+  // Restore the ambient sea bed for the new run.
+  if (breezeGain) breezeGain.gain.value = 0.05;
+  if (waveWashGain) waveWashGain.gain.value = 1;
+  waveTimer = 1.0;
 }
 
 // Immediately silence all continuous battle loops (beam hum, burn hiss, altar
@@ -4599,6 +4744,8 @@ function silenceBattleAudio() {
   if (humGain) humGain.gain.value = 0;
   if (burnGain) burnGain.gain.value = 0;
   if (altarGain) altarGain.gain.value = 0;
+  if (breezeGain) breezeGain.gain.value = 0;      // sea bed fades out on end
+  if (waveWashGain) waveWashGain.gain.value = 0;
   for (const cv of crackleVoices) { stopCrackleVoice(cv); }
   crackleVoices.length = 0;
 }
@@ -5136,10 +5283,13 @@ function getWallShake() {
   };
 }
 function tickWallShake(dt) { if (wallShakeTimer > 0) wallShakeTimer -= dt; }
-// Trigger a camera shake pulse (called throttled from the main loop during a drip).
+// Trigger a camera shake pulse (called throttled from the main loop on wall
+// impact). Intensity is cut ~70% from the old value for a subtle thud; it only
+// grows toward the old feel when the wall is critical (<25%).
 function triggerWallShake() {
   wallShakeTimer = WALL_SHAKE_DURATION;
-  wallShakeIntensity = 1.6;
+  const critical = (wallIntegrity / WALL_MAX_HP) < 0.25;
+  wallShakeIntensity = critical ? 0.9 : 0.48; // was 1.6 (subtle thud, stronger only when critical)
 }
 
 // Quick notch flash on the wall bar when the wall takes a hit.
@@ -6230,6 +6380,9 @@ function loop(now) {
   // Altar audio (tone + overheat pitch drop)
   const altarAudio = getAltarAudioState();
   updateAltarTone(altarAudio.litCount, altarAudio.anyOverheated);
+
+  // Ambient sea breeze + rhythmic wave-wash
+  updateSeaAmbience(dt);
 
   // Zeus ultimate (ready state + strike animation)
   updateZeus(dt, isZeusAffordable());

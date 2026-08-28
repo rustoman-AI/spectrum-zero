@@ -22,17 +22,14 @@ export const WALL_Y = -40;            // fortress/battlement backdrop line
 export const ENEMY_LANE_COUNT = 5;
 
 // --- Ram line (ship crash boundary) ---
-// The topmost mirror sits at socket row y = -12; its sprite is (MIRROR_LENGTH+2)
-// = 12 units tall (MIRROR_LENGTH is 10, defined below), so the disc's top edge
-// is at -12 + 6 = -6. Ships must stop with a clear gap ABOVE that edge and
-// NEVER share pixels with the discs. ~25px on a portrait phone (100 world units
-// over ~780px) is ~3.2u; use 4u for safety.
-export const MIRROR_DISC_TOP = -6;   // top edge of the topmost mirror sprite
-export const RAM_CLEARANCE = 4;      // world units of clear space above the disc top
-// A ship crashes when its LEADING (bottom) edge reaches RAM_STOP_EDGE. Using the
-// ship's own half-height means every ship size stops with the same clearance and
-// zero overlap. RAM_LINE_Y is the nominal line kept for effects/legacy refs.
-export const RAM_STOP_EDGE = MIRROR_DISC_TOP + RAM_CLEARANCE; // = -2
+// Ships descend all the way to the STONE BATTLEMENT at the shoreline (WALL_Y)
+// and only breach when their hull touches the battlement's top edge. This keeps
+// all wall damage at the wall — never in open water mid-screen. The wall stone
+// mesh sits at WALL_Y (1.2u tall), so its top edge is ~WALL_Y + 0.6; ships stop
+// with their leading (bottom) edge resting just on top of it.
+export const MIRROR_DISC_TOP = -6;         // top edge of the topmost mirror sprite (kept for refs)
+export const BATTLEMENT_TOP_Y = WALL_Y + 1; // top of the stone the hull rams into (~ -39)
+export const RAM_STOP_EDGE = BATTLEMENT_TOP_Y;
 export const RAM_LINE_Y = RAM_STOP_EDGE;
 
 // --- DEV flags ---

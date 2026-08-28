@@ -40,8 +40,77 @@ function ensureCtx() {
     setupHum();
     setupBurnNoise();
     setupAltarTone();
+    setupSeaAmbience();
   } catch (e) { return null; }
   return ctx;
+}
+
+// ============================================================
+// SEA AMBIENCE — gentle Mediterranean bed: soft breeze (filtered noise) with a
+// slow rhythmic wave-wash swell against stone. Replaces sci-fi drone character.
+// ============================================================
+let breezeGain = null;
+let waveWashGain = null;
+let waveTimer = 0;
+function setupSeaAmbience() {
+  // Breeze: looping pink-ish noise through a gentle lowpass, very quiet.
+  const bufLen = ctx.sampleRate * 2;
+  const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < bufLen; i++) {
+    const white = Math.random() * 2 - 1;
+    last = 0.98 * last + 0.02 * white; // low-passed → soft airy noise
+    d[i] = last * 3;
+  }
+  const src = ctx.createBufferSource();
+  src.buffer = buf; src.loop = true;
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass'; lp.frequency.value = 700;
+  breezeGain = ctx.createGain();
+  breezeGain.gain.value = 0.05; // subtle bed
+  src.connect(lp).connect(breezeGain).connect(masterGain);
+  src.start();
+
+  // Wave-wash bus: swells are fired rhythmically in updateSeaAmbience().
+  waveWashGain = ctx.createGain();
+  waveWashGain.gain.value = 1;
+  waveWashGain.connect(masterGain);
+}
+
+// Called each frame; fires a soft wave-wash swell every few seconds.
+export function updateSeaAmbience(dt) {
+  if (!ctx || !waveWashGain) return;
+  waveTimer -= dt;
+  if (waveTimer <= 0) {
+    waveTimer = 3.2 + Math.random() * 2.0; // a wash every ~3-5s
+    fireWaveWash();
+  }
+}
+
+function fireWaveWash() {
+  const now = ctx.currentTime;
+  const dur = 1.6;
+  const bufLen = Math.ceil(ctx.sampleRate * dur);
+  const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < bufLen; i++) d[i] = Math.random() * 2 - 1;
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  // Band-limited "shhh" that rises then falls — water washing over stone.
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.setValueAtTime(500, now);
+  bp.frequency.linearRampToValueAtTime(1100, now + dur * 0.4);
+  bp.frequency.linearRampToValueAtTime(300, now + dur);
+  bp.Q.value = 0.7;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, now);
+  g.gain.linearRampToValueAtTime(0.06, now + dur * 0.4); // swell in
+  g.gain.linearRampToValueAtTime(0.0, now + dur);        // wash out
+  src.connect(bp).connect(g).connect(waveWashGain);
+  src.start(now);
+  src.stop(now + dur + 0.05);
 }
 
 function toggleMute(e) {
@@ -51,25 +120,26 @@ function toggleMute(e) {
   if (muteBtn) muteBtn.textContent = muted ? '🔇' : '🔊';
 }
 
-// --- Beam hum: continuous drone, pitch/volume scales with throughput ---
+// --- Beam tone: warm sunlight shimmer, not a sci-fi drone. A soft triangle
+// through a lowpass, quiet, pitch/volume gently tracking throughput. ---
 function setupHum() {
   hum = ctx.createOscillator();
-  hum.type = 'sawtooth';
-  hum.frequency.value = 55;
+  hum.type = 'triangle';       // warm, not buzzy
+  hum.frequency.value = 160;
   humGain = ctx.createGain();
   humGain.gain.value = 0;
   const filter = ctx.createBiquadFilter();
   filter.type = 'lowpass';
-  filter.frequency.value = 200;
+  filter.frequency.value = 500;
   hum.connect(filter).connect(humGain).connect(masterGain);
   hum.start();
 }
 
 export function updateHum(throughput) {
   if (!humGain) return;
-  // throughput: 0 to ~50 (total DPS across all beams hitting targets)
-  const vol = Math.min(0.15, throughput * 0.003);
-  const pitch = 55 + throughput * 0.5;
+  // throughput: 0 to ~50. Keep it quiet and warm — a shimmer of focused light.
+  const vol = Math.min(0.06, throughput * 0.0014);
+  const pitch = 150 + throughput * 0.8;
   humGain.gain.value = vol;
   if (hum) hum.frequency.value = pitch;
 }
@@ -169,51 +239,164 @@ export function playDeflect() {
   osc.onended = () => activeVoices--;
 }
 
-// --- Shield ricochet: short, bright high-frequency metallic tick ---
+// --- Shield deflection: bright BRONZE CLANG. Struck-bronze bell = a set of
+// inharmonic partials with a fast attack and a ringing (but short) decay. ---
 let lastRicochetTime = 0;
 export function playRicochet() {
   if (!ensureCtx() || activeVoices >= MAX_VOICES) return;
   const now = ctx.currentTime;
-  // Rate-limit tighter than deflect — these fire fast, keep them tick-like.
   if (now - lastRicochetTime < 0.08) return;
   lastRicochetTime = now;
   activeVoices++;
-  // Two quick high partials for a metallic "ting"
-  const osc = ctx.createOscillator();
-  osc.type = 'square';
-  osc.frequency.setValueAtTime(3200, now);
-  osc.frequency.exponentialRampToValueAtTime(2100, now + 0.04);
-  const osc2 = ctx.createOscillator();
-  osc2.type = 'triangle';
-  osc2.frequency.setValueAtTime(4700, now);
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0.09, now);
-  g.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
-  const hp = ctx.createBiquadFilter();
-  hp.type = 'highpass';
-  hp.frequency.value = 1500;
-  osc.connect(hp);
-  osc2.connect(hp);
-  hp.connect(g).connect(masterGain);
-  osc.start(now); osc.stop(now + 0.07);
-  osc2.start(now); osc2.stop(now + 0.05);
-  osc.onended = () => activeVoices--;
+  // Inharmonic partials around a ~1400Hz fundamental (bronze, not pure sine).
+  const fund = 1350 + Math.random() * 120;
+  const ratios = [1.0, 2.76, 5.4, 8.9]; // bell-like inharmonic series
+  const gains  = [0.10, 0.06, 0.035, 0.02];
+  const out = ctx.createGain();
+  out.gain.value = 1;
+  out.connect(masterGain);
+  for (let i = 0; i < ratios.length; i++) {
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = fund * ratios[i];
+    const g = ctx.createGain();
+    const decay = 0.18 - i * 0.03; // higher partials die faster
+    g.gain.setValueAtTime(gains[i], now);
+    g.gain.exponentialRampToValueAtTime(0.0008, now + Math.max(0.05, decay));
+    osc.connect(g).connect(out);
+    osc.start(now);
+    osc.stop(now + 0.25);
+  }
+  // Tiny strike transient for the "clang" bite.
+  const tLen = Math.ceil(ctx.sampleRate * 0.015);
+  const tBuf = ctx.createBuffer(1, tLen, ctx.sampleRate);
+  const td = tBuf.getChannelData(0);
+  for (let i = 0; i < tLen; i++) td[i] = (Math.random() * 2 - 1) * (1 - i / tLen);
+  const tSrc = ctx.createBufferSource(); tSrc.buffer = tBuf;
+  const tHp = ctx.createBiquadFilter(); tHp.type = 'highpass'; tHp.frequency.value = 2500;
+  const tG = ctx.createGain(); tG.gain.value = 0.06;
+  tSrc.connect(tHp).connect(tG).connect(out);
+  tSrc.start(now); tSrc.stop(now + 0.02);
+  setTimeout(() => { activeVoices--; }, 260);
 }
 
-// --- Wall damage: dull impact ---
+// --- Wall impact: wooden hull crunch + hollow acoustic war-drum (tympanon) ---
 export function playWallHit() {
   if (!ensureCtx() || activeVoices >= MAX_VOICES) return;
   activeVoices++;
-  const osc = ctx.createOscillator();
-  osc.type = 'triangle';
-  osc.frequency.setValueAtTime(120, ctx.currentTime);
-  osc.frequency.exponentialRampToValueAtTime(40, ctx.currentTime + 0.3);
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0.25, ctx.currentTime);
-  g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
-  osc.connect(g).connect(masterGain);
-  osc.start(); osc.stop(ctx.currentTime + 0.4);
-  osc.onended = () => activeVoices--;
+  const now = ctx.currentTime;
+
+  // 1) Wooden hull crunch: short mid-band noise burst with a fast decay.
+  const crLen = Math.ceil(ctx.sampleRate * 0.09);
+  const crBuf = ctx.createBuffer(1, crLen, ctx.sampleRate);
+  const cd = crBuf.getChannelData(0);
+  for (let i = 0; i < crLen; i++) cd[i] = (Math.random() * 2 - 1) * (1 - i / crLen);
+  const crSrc = ctx.createBufferSource();
+  crSrc.buffer = crBuf;
+  const crBp = ctx.createBiquadFilter();
+  crBp.type = 'bandpass';
+  crBp.frequency.setValueAtTime(420, now);
+  crBp.frequency.exponentialRampToValueAtTime(180, now + 0.09);
+  crBp.Q.value = 1.2;
+  const crG = ctx.createGain();
+  crG.gain.setValueAtTime(0.22, now);
+  crG.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+  crSrc.connect(crBp).connect(crG).connect(masterGain);
+  crSrc.start(now); crSrc.stop(now + 0.11);
+
+  // 2) Hollow war-drum thud: a low membrane tone (sine) with a quick pitch drop
+  //    and a resonant body, giving the taut-skin "doom" of a tympanon.
+  const drum = ctx.createOscillator();
+  drum.type = 'sine';
+  drum.frequency.setValueAtTime(140, now);
+  drum.frequency.exponentialRampToValueAtTime(66, now + 0.18);
+  const drumG = ctx.createGain();
+  drumG.gain.setValueAtTime(0.28, now);
+  drumG.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+  // Bandpass "body" resonance for a hollow, skin-over-shell character.
+  const body = ctx.createBiquadFilter();
+  body.type = 'bandpass';
+  body.frequency.value = 110;
+  body.Q.value = 3.5;
+  drum.connect(body).connect(drumG).connect(masterGain);
+  drum.start(now); drum.stop(now + 0.5);
+  drum.onended = () => activeVoices--;
+}
+
+// --- Helios: resonant acoustic temple chime + a warm horn swell ---
+export function playHeliosHorn() {
+  if (!ensureCtx()) return;
+  const now = ctx.currentTime;
+  // Temple chime: a bright struck bell (harmonic-ish, warmer than the shield).
+  const chimeFund = 523; // ~C5
+  const chimeRatios = [1, 2, 3, 4.2];
+  const chimeGains = [0.14, 0.08, 0.05, 0.03];
+  for (let i = 0; i < chimeRatios.length; i++) {
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = chimeFund * chimeRatios[i];
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(chimeGains[i], now + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0008, now + 1.4 - i * 0.2);
+    osc.connect(g).connect(masterGain);
+    osc.start(now); osc.stop(now + 1.5);
+  }
+  // Warm horn swell underneath (sacred, brass-like): stacked saw+triangle
+  // through a lowpass, rising then holding, evoking a temple horn/salpinx.
+  const horn = ctx.createOscillator(); horn.type = 'sawtooth'; horn.frequency.value = 174; // ~F3
+  const horn2 = ctx.createOscillator(); horn2.type = 'triangle'; horn2.frequency.value = 261;
+  const hlp = ctx.createBiquadFilter();
+  hlp.type = 'lowpass';
+  hlp.frequency.setValueAtTime(400, now);
+  hlp.frequency.linearRampToValueAtTime(1400, now + 0.6);
+  hlp.frequency.linearRampToValueAtTime(700, now + 2.0);
+  const hg = ctx.createGain();
+  hg.gain.setValueAtTime(0, now);
+  hg.gain.linearRampToValueAtTime(0.12, now + 0.4);   // swell in
+  hg.gain.setValueAtTime(0.12, now + 1.6);
+  hg.gain.exponentialRampToValueAtTime(0.001, now + 2.4); // fade
+  horn.connect(hlp); horn2.connect(hlp);
+  hlp.connect(hg).connect(masterGain);
+  horn.start(now); horn.stop(now + 2.5);
+  horn2.start(now); horn2.stop(now + 2.5);
+}
+
+// --- Zeus: natural THUNDERCLAP — sharp crack (filtered noise) + rolling rumble ---
+export function playZeusThunder() {
+  if (!ensureCtx()) return;
+  const now = ctx.currentTime;
+
+  // Sharp crack: bright wideband noise burst, very fast decay.
+  const crackLen = Math.ceil(ctx.sampleRate * 0.12);
+  const cBuf = ctx.createBuffer(1, crackLen, ctx.sampleRate);
+  const cd = cBuf.getChannelData(0);
+  for (let i = 0; i < crackLen; i++) cd[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / crackLen, 1.5);
+  const cSrc = ctx.createBufferSource(); cSrc.buffer = cBuf;
+  const cHp = ctx.createBiquadFilter(); cHp.type = 'highpass'; cHp.frequency.value = 900;
+  const cG = ctx.createGain();
+  cG.gain.setValueAtTime(0.4, now);
+  cG.gain.exponentialRampToValueAtTime(0.01, now + 0.18);
+  cSrc.connect(cHp).connect(cG).connect(masterGain);
+  cSrc.start(now); cSrc.stop(now + 0.2);
+
+  // Rolling rumble: long low-passed noise with a slow-closing filter — the
+  // thunder rolling away across the bay. Natural, no synth boom oscillator.
+  const rumLen = Math.ceil(ctx.sampleRate * 2.0);
+  const rBuf = ctx.createBuffer(1, rumLen, ctx.sampleRate);
+  const rd = rBuf.getChannelData(0);
+  for (let i = 0; i < rumLen; i++) rd[i] = Math.random() * 2 - 1;
+  const rSrc = ctx.createBufferSource(); rSrc.buffer = rBuf;
+  const rLp = ctx.createBiquadFilter();
+  rLp.type = 'lowpass';
+  rLp.frequency.setValueAtTime(300, now);
+  rLp.frequency.exponentialRampToValueAtTime(60, now + 1.8);
+  const rG = ctx.createGain();
+  rG.gain.setValueAtTime(0.0, now);
+  rG.gain.linearRampToValueAtTime(0.3, now + 0.08); // quick onset behind the crack
+  rG.gain.exponentialRampToValueAtTime(0.001, now + 2.0);
+  rSrc.connect(rLp).connect(rG).connect(masterGain);
+  rSrc.start(now + 0.03); rSrc.stop(now + 2.05);
 }
 
 // --- Altar tone: soft rising note while lit ---
@@ -235,6 +418,10 @@ export function updateAltarTone(litCount, anyOverheated) {
 
 export function resetAudio() {
   silenceBattleAudio();
+  // Restore the ambient sea bed for the new run.
+  if (breezeGain) breezeGain.gain.value = 0.05;
+  if (waveWashGain) waveWashGain.gain.value = 1;
+  waveTimer = 1.0;
 }
 
 // Immediately silence all continuous battle loops (beam hum, burn hiss, altar
@@ -244,6 +431,8 @@ export function silenceBattleAudio() {
   if (humGain) humGain.gain.value = 0;
   if (burnGain) burnGain.gain.value = 0;
   if (altarGain) altarGain.gain.value = 0;
+  if (breezeGain) breezeGain.gain.value = 0;      // sea bed fades out on end
+  if (waveWashGain) waveWashGain.gain.value = 0;
   for (const cv of crackleVoices) { stopCrackleVoice(cv); }
   crackleVoices.length = 0;
 }

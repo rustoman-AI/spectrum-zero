@@ -18,7 +18,7 @@ import { initFortress, updateFortress, triggerBreachShake, triggerImpactFlash } 
 import { initCrafting, updateCraftingTray, isZeusAffordable } from './crafting.js';
 import { initBackground, updateBackground } from './background.js';
 import { initEffects, updateEffects } from './effects.js';
-import { initAudio, updateHum, updateBurnHiss, updateAltarTone, updateCrackle, playWallHit, playSinkGlug, resetAudio } from './audio.js';
+import { initAudio, updateHum, updateBurnHiss, updateAltarTone, updateCrackle, playWallHit, playSinkGlug, resetAudio, updateSeaAmbience } from './audio.js';
 import { initZeus, updateZeus, getZeusFlash, getZeusShake, isZeusReady } from './zeus.js';
 import { initPoseidon, updatePoseidon } from './poseidon.js';
 import { initHelios, updateHelios } from './helios.js';
@@ -168,6 +168,9 @@ function loop(now) {
   // Altar audio (tone + overheat pitch drop)
   const altarAudio = getAltarAudioState();
   updateAltarTone(altarAudio.litCount, altarAudio.anyOverheated);
+
+  // Ambient sea breeze + rhythmic wave-wash
+  updateSeaAmbience(dt);
 
   // Zeus ultimate (ready state + strike animation)
   updateZeus(dt, isZeusAffordable());

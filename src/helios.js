@@ -15,6 +15,7 @@ import { GOD_ABILITIES, WORLD_HEIGHT } from './config.js';
 import { getOverlayScene, getWorldWidth } from './renderer.js';
 import { getEnemyPool } from './enemy.js';
 import { gainFaith } from './foundry.js';
+import { playHeliosHorn } from './audio.js';
 
 const CFG = GOD_ABILITIES.helios;
 
@@ -117,60 +118,7 @@ export function resetHelios() {
   endFlare();
 }
 
-// --- Audio: rising solar hum + bright chime ---
-function getHeliosCtx() {
-  if (heliosACtx) return heliosACtx;
-  try { heliosACtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
-  return heliosACtx;
-}
-
-function playSolarHum() {
-  const ctx = getHeliosCtx();
-  if (!ctx) return;
-  const now = ctx.currentTime;
-
-  // Bright chime up front (two stacked sines, quick bell)
-  for (const [freq, delay] of [[1320, 0], [1760, 0.06]]) {
-    const osc = ctx.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq, now + delay);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0, now + delay);
-    g.gain.linearRampToValueAtTime(0.18, now + delay + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.7);
-    osc.connect(g).connect(ctx.destination);
-    osc.start(now + delay);
-    osc.stop(now + delay + 0.75);
-  }
-
-  // Rising solar hum: sawtooth swept up through a lowpass over the flare.
-  stopSolarHum(); // ensure no overlap if recast fast
-  heliosHumOsc = ctx.createOscillator();
-  heliosHumOsc.type = 'sawtooth';
-  heliosHumOsc.frequency.setValueAtTime(180, now);
-  heliosHumOsc.frequency.linearRampToValueAtTime(420, now + CFG.duration);
-  const lp = ctx.createBiquadFilter();
-  lp.type = 'lowpass';
-  lp.frequency.setValueAtTime(400, now);
-  lp.frequency.linearRampToValueAtTime(1600, now + CFG.duration);
-  heliosHumGain = ctx.createGain();
-  heliosHumGain.gain.setValueAtTime(0.0, now);
-  heliosHumGain.gain.linearRampToValueAtTime(0.14, now + 0.3);       // swell in
-  heliosHumGain.gain.setValueAtTime(0.14, now + CFG.duration - 0.5);
-  heliosHumGain.gain.exponentialRampToValueAtTime(0.001, now + CFG.duration); // fade out
-  heliosHumOsc.connect(lp).connect(heliosHumGain).connect(ctx.destination);
-  heliosHumOsc.start(now);
-  heliosHumOsc.stop(now + CFG.duration + 0.05);
-}
-
-function stopSolarHum() {
-  if (heliosHumOsc) {
-    try { heliosHumOsc.stop(); } catch (_) {}
-    try { heliosHumOsc.disconnect(); } catch (_) {}
-    heliosHumOsc = null;
-  }
-  if (heliosHumGain) {
-    try { heliosHumGain.disconnect(); } catch (_) {}
-    heliosHumGain = null;
-  }
-}
+// --- Audio: resonant temple chime + horn (organic, via shared audio bus so it
+// respects mute). The old sci-fi sawtooth sweep was removed. ---
+function playSolarHum() { playHeliosHorn(); }
+function stopSolarHum() { /* horn is a one-shot swell; nothing to stop */ }
