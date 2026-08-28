@@ -12,7 +12,7 @@ import { initInput, tickDebug } from './input.js';
 import { initEnemies, updateEnemies, applySlowStates, getEnemyPool, getLastBreaches } from './enemy.js';
 import { updateSpawner, resetSpawner } from './enemy-spawner.js';
 import { updateDamage, getKillCount, updateBlockedLabels } from './damage.js';
-import { initSession, updateSession, addBreaches, isGameOver, getElapsed, updateHud, handleRestartTap, decayWallFlash, getWallHitFlash, getWallShake, tickWallShake, flashWallBarNotch } from './session.js';
+import { initSession, updateSession, addBreaches, isGameOver, isGameWon, getElapsed, updateHud, handleRestartTap, decayWallFlash, getWallHitFlash, getWallShake, tickWallShake, flashWallBarNotch, triggerWallShake, updateDefeatSequence } from './session.js';
 import { initFoundries, updateFoundries, getFoundryColliders, getAltarAudioState } from './foundry.js';
 import { initFortress, updateFortress, triggerBreachShake, triggerImpactFlash } from './fortress.js';
 import { initCrafting, updateCraftingTray, isZeusAffordable } from './crafting.js';
@@ -30,6 +30,11 @@ let sourceY = SUN_Y;
 // --- Clock ---
 let lastTime = 0;
 const MAX_DT = 1 / 30;
+
+// Throttle for heavy breach feedback (shake/sound/bar-notch) during the drip.
+let breachFxTimer = 0;
+// One-shot guard so the defeat debris burst fires only on the first over-frame.
+let defeatDebrisFired = false;
 
 export function init() {
   console.log('[Burning Glass] init starting');
@@ -78,10 +83,20 @@ function loop(now) {
   if (dt > MAX_DT) dt = MAX_DT;
 
   if (isGameOver()) {
+    // In-engine defeat: fade in the dark-red dim + stats, keep debris/effects
+    // animating, and fire a one-time stone-debris burst on the first frame.
+    if (!isGameWon() && !defeatDebrisFired) {
+      defeatDebrisFired = true;
+      triggerBreachShake(3); // dust/debris + shake
+    }
+    updateDefeatSequence(dt);
+    updateEffects(dt);
+    updateFortress(dt);
     updateHud(); // keep HUD visible on end screen
-    render();
+    render(getWallShake());
     return;
   }
+  defeatDebrisFired = false;
 
   // --- Update ---
   updateSession(dt);
@@ -107,16 +122,22 @@ function loop(now) {
   // Spawner + enemies
   updateSpawner(dt, sessionTime);
   applySlowStates();
-  const newBreaches = updateEnemies(dt);
-  if (newBreaches > 0) {
-    addBreaches(newBreaches);
-    triggerBreachShake(newBreaches);
-    playWallHit();
-    // Per-impact feedback: localized battlement flash at each crash lane +
-    // a quick notch flash on the top wall bar.
-    const breaches = getLastBreaches();
-    for (const b of breaches) triggerImpactFlash(b.x);
-    if (breaches.length > 0) flashWallBarNotch();
+  const dripDamage = updateEnemies(dt);
+  const contacts = getLastBreaches(); // ships currently pressed on the wall
+  if (dripDamage > 0) {
+    addBreaches(dripDamage); // apply the per-second drip (silent)
+    // Continuous localized battlement stone flash under each contacting lane.
+    for (const b of contacts) triggerImpactFlash(b.x);
+    // Throttle the loud/heavy feedback (shake, sound, bar notch) so the
+    // continuous drip doesn't spam a nauseating shake or audio every frame.
+    breachFxTimer -= dt;
+    if (breachFxTimer <= 0) {
+      breachFxTimer = 0.5;
+      triggerBreachShake(1); // fortress dust + mesh shake
+      triggerWallShake();    // camera shake pulse
+      playWallHit();
+      flashWallBarNotch();
+    }
   }
 
   // Damage

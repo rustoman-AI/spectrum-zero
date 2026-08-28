@@ -69,10 +69,6 @@ canvas { display: block; width: 100%; height: 100%; }
          style="max-width:100%;max-height:100%;object-fit:contain;"></video>
   <div id="intro-tap" style="position:absolute;bottom:15%;color:#fff;font:bold 16px monospace;opacity:0.8;pointer-events:none;">Tap to begin</div>
 </div>
-<div id="defeat-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:99998;background:#000;display:none;pointer-events:none;align-items:center;justify-content:center;">
-  <video id="defeat-video" playsinline webkit-playsinline preload="none"
-         style="max-width:100%;max-height:100%;object-fit:contain;"></video>
-</div>
 <div id="win-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:99998;background:#000;display:none;pointer-events:none;align-items:center;justify-content:center;">
   <video id="win-video" playsinline webkit-playsinline preload="none"
          style="max-width:100%;max-height:100%;object-fit:contain;"></video>
@@ -176,89 +172,11 @@ canvas { display: block; width: 100%; height: 100%; }
   }
 })();
 
-// --- Defeat video layer ---
-// Plays once per browsing session on first loss. Skippable. Falls back to defeat screen on any failure.
-(function() {
-  var defeatLayer = document.getElementById('defeat-layer');
-  var defeatVideo = document.getElementById('defeat-video');
-  var defeatPlayed = false;
-  var defeatActive = false;
-  var defeatDone = false;
-  var FADE_START = 8.5;
-  var FADE_CUT   = 9.0;
-
-  // Check sessionStorage — only play once per browsing session
-  try { defeatPlayed = sessionStorage.getItem('defeatPlayed') === '1'; } catch(e) {}
-
-  // Preload: start fetching a few seconds into gameplay
-  var preloadTimer = setTimeout(function() {
-    if (!defeatPlayed) {
-      defeatVideo.src = './assets/archimed_fail.mp4?v=3';
-      defeatVideo.load();
-    }
-  }, 5000);
-
-  // Exposed globally so session.js triggerLose can call it
-  window.playDefeatCinematic = function(onDone) {
-    // onDone: callback to show the defeat overlay
-    if (defeatPlayed || defeatActive) { onDone(); return; }
-    defeatActive = true;
-    defeatDone = false;
-
-    var finish = function() {
-      if (defeatDone) return;
-      defeatDone = true;
-      defeatPlayed = true;
-      try { sessionStorage.setItem('defeatPlayed', '1'); } catch(e) {}
-      defeatVideo.pause();
-      defeatLayer.style.display = 'none';
-      defeatLayer.style.pointerEvents = 'none'; // stop intercepting taps
-      onDone();
-    };
-
-    // If video not ready, skip straight to defeat screen
-    if (!defeatVideo.src || defeatVideo.readyState < 2) {
-      finish();
-      return;
-    }
-
-    // Show layer and play (enable pointer-events only while playing, for skip tap)
-    defeatLayer.style.display = 'flex';
-    defeatLayer.style.pointerEvents = 'auto';
-    defeatLayer.style.background = '#000';
-    var playPromise = defeatVideo.play();
-    if (playPromise && playPromise.then) {
-      playPromise.catch(function() { finish(); });
-    }
-
-    // Fade-to-black transition
-    defeatVideo.addEventListener('timeupdate', function onTime() {
-      if (defeatDone) { defeatVideo.removeEventListener('timeupdate', onTime); return; }
-      var t = defeatVideo.currentTime;
-      if (t >= FADE_START) {
-        defeatLayer.style.transition = 'background 0.5s';
-        defeatLayer.style.background = '#000';
-      }
-      if (t >= FADE_CUT) {
-        defeatVideo.removeEventListener('timeupdate', onTime);
-        finish();
-      }
-    });
-
-    // Fallbacks
-    defeatVideo.addEventListener('ended', finish);
-    defeatVideo.addEventListener('error', finish);
-
-    // Skip on tap
-    defeatLayer.addEventListener('pointerdown', function skipTap() {
-      defeatLayer.removeEventListener('pointerdown', skipTap);
-      finish();
-    });
-
-    // Failsafe: 12s max
-    setTimeout(function() { if (!defeatDone) finish(); }, 12000);
-  };
-})();
+// --- Defeat: fully in-engine (no video) ---
+// The defeat cinematic was removed. Defeat is handled entirely in-engine by
+// session.js (dark-red dim + debris + fade-in stats overlay). This no-op stub
+// remains only so any stray caller degrades gracefully to the in-engine screen.
+window.playDefeatCinematic = function(onDone) { if (typeof onDone === 'function') onDone(); };
 
 // --- Win video layer ---
 // Plays on every win. Skippable. Falls back to victory screen on any failure.

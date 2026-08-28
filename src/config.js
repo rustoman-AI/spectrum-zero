@@ -10,8 +10,11 @@ export const WORLD_HEIGHT = 100;
 // Ships spawn at top, descend toward wall at bottom.
 // Beam comes from sun (top), hits prism, splits, goes down to mirrors at bottom.
 // Mirrors reflect beams UPWARD into descending ships.
-export const SUN_Y = 48;              // sun/beam source (top)
+export const SUN_Y = 48;              // sun/crystal beam source (top)
 export const SHIP_SPAWN_Y = 40;       // ships appear near top
+// Top bound: no ship may sit over the crystal. A ship's TOP edge must stay
+// below this line (crystal at 48, leave ~4u clear). Enforced in spawnEnemy.
+export const SHIP_TOP_BOUND = 44;
 export const PRISM_Y = 30;            // prism splits light here
 export const MIRROR_FIELD_TOP = -12;  // top of mirror zone (raised off the bottom HUD)
 export const MIRROR_FIELD_BOT = -30;  // bottom of mirror zone
@@ -146,6 +149,10 @@ export const HEAT_DECAY_GRACE = 0.5;      // grace before decay starts (holding 
 // --- Wall ---
 export const WALL_MAX_HP = 100;
 export const BREACH_DAMAGE = { skiff: 5, trireme: 15, quadrireme: 25, shieldbearer: 0, flagship: 100 };
+// Breach is now a per-second CONTACT DRIP (not an instant chunk): each ship
+// pressed against the wall drains this % of max wall HP per second while it
+// sits there. Bigger ships drip faster. Shield-bearers still do 0.
+export const BREACH_DRIP_PCT = { skiff: 0.05, trireme: 0.06, quadrireme: 0.07, shieldbearer: 0, flagship: 0.08 };
 
 // --- Mirror ---
 export const MIRROR_MAX_HITS = 3;

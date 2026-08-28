@@ -17,10 +17,6 @@ canvas { display: block; width: 100%; height: 100%; }
          style="max-width:100%;max-height:100%;object-fit:contain;"></video>
   <div id="intro-tap" style="position:absolute;bottom:15%;color:#fff;font:bold 16px monospace;opacity:0.8;pointer-events:none;">Tap to begin</div>
 </div>
-<div id="defeat-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:99998;background:#000;display:none;pointer-events:none;align-items:center;justify-content:center;">
-  <video id="defeat-video" playsinline webkit-playsinline preload="none"
-         style="max-width:100%;max-height:100%;object-fit:contain;"></video>
-</div>
 <div id="win-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;z-index:99998;background:#000;display:none;pointer-events:none;align-items:center;justify-content:center;">
   <video id="win-video" playsinline webkit-playsinline preload="none"
          style="max-width:100%;max-height:100%;object-fit:contain;"></video>
@@ -124,89 +120,11 @@ canvas { display: block; width: 100%; height: 100%; }
   }
 })();
 
-// --- Defeat video layer ---
-// Plays once per browsing session on first loss. Skippable. Falls back to defeat screen on any failure.
-(function() {
-  var defeatLayer = document.getElementById('defeat-layer');
-  var defeatVideo = document.getElementById('defeat-video');
-  var defeatPlayed = false;
-  var defeatActive = false;
-  var defeatDone = false;
-  var FADE_START = 8.5;
-  var FADE_CUT   = 9.0;
-
-  // Check sessionStorage — only play once per browsing session
-  try { defeatPlayed = sessionStorage.getItem('defeatPlayed') === '1'; } catch(e) {}
-
-  // Preload: start fetching a few seconds into gameplay
-  var preloadTimer = setTimeout(function() {
-    if (!defeatPlayed) {
-      defeatVideo.src = './assets/archimed_fail.mp4?v=3';
-      defeatVideo.load();
-    }
-  }, 5000);
-
-  // Exposed globally so session.js triggerLose can call it
-  window.playDefeatCinematic = function(onDone) {
-    // onDone: callback to show the defeat overlay
-    if (defeatPlayed || defeatActive) { onDone(); return; }
-    defeatActive = true;
-    defeatDone = false;
-
-    var finish = function() {
-      if (defeatDone) return;
-      defeatDone = true;
-      defeatPlayed = true;
-      try { sessionStorage.setItem('defeatPlayed', '1'); } catch(e) {}
-      defeatVideo.pause();
-      defeatLayer.style.display = 'none';
-      defeatLayer.style.pointerEvents = 'none'; // stop intercepting taps
-      onDone();
-    };
-
-    // If video not ready, skip straight to defeat screen
-    if (!defeatVideo.src || defeatVideo.readyState < 2) {
-      finish();
-      return;
-    }
-
-    // Show layer and play (enable pointer-events only while playing, for skip tap)
-    defeatLayer.style.display = 'flex';
-    defeatLayer.style.pointerEvents = 'auto';
-    defeatLayer.style.background = '#000';
-    var playPromise = defeatVideo.play();
-    if (playPromise && playPromise.then) {
-      playPromise.catch(function() { finish(); });
-    }
-
-    // Fade-to-black transition
-    defeatVideo.addEventListener('timeupdate', function onTime() {
-      if (defeatDone) { defeatVideo.removeEventListener('timeupdate', onTime); return; }
-      var t = defeatVideo.currentTime;
-      if (t >= FADE_START) {
-        defeatLayer.style.transition = 'background 0.5s';
-        defeatLayer.style.background = '#000';
-      }
-      if (t >= FADE_CUT) {
-        defeatVideo.removeEventListener('timeupdate', onTime);
-        finish();
-      }
-    });
-
-    // Fallbacks
-    defeatVideo.addEventListener('ended', finish);
-    defeatVideo.addEventListener('error', finish);
-
-    // Skip on tap
-    defeatLayer.addEventListener('pointerdown', function skipTap() {
-      defeatLayer.removeEventListener('pointerdown', skipTap);
-      finish();
-    });
-
-    // Failsafe: 12s max
-    setTimeout(function() { if (!defeatDone) finish(); }, 12000);
-  };
-})();
+// --- Defeat: fully in-engine (no video) ---
+// The defeat cinematic was removed. Defeat is handled entirely in-engine by
+// session.js (dark-red dim + debris + fade-in stats overlay). This no-op stub
+// remains only so any stray caller degrades gracefully to the in-engine screen.
+window.playDefeatCinematic = function(onDone) { if (typeof onDone === 'function') onDone(); };
 
 // --- Win video layer ---
 // Plays on every win. Skippable. Falls back to victory screen on any failure.
@@ -288,8 +206,11 @@ const WORLD_HEIGHT = 100;
 // Ships spawn at top, descend toward wall at bottom.
 // Beam comes from sun (top), hits prism, splits, goes down to mirrors at bottom.
 // Mirrors reflect beams UPWARD into descending ships.
-const SUN_Y = 48;              // sun/beam source (top)
+const SUN_Y = 48;              // sun/crystal beam source (top)
 const SHIP_SPAWN_Y = 40;       // ships appear near top
+// Top bound: no ship may sit over the crystal. A ship's TOP edge must stay
+// below this line (crystal at 48, leave ~4u clear). Enforced in spawnEnemy.
+const SHIP_TOP_BOUND = 44;
 const PRISM_Y = 30;            // prism splits light here
 const MIRROR_FIELD_TOP = -12;  // top of mirror zone (raised off the bottom HUD)
 const MIRROR_FIELD_BOT = -30;  // bottom of mirror zone
@@ -424,6 +345,10 @@ const HEAT_DECAY_GRACE = 0.5;      // grace before decay starts (holding a beam 
 // --- Wall ---
 const WALL_MAX_HP = 100;
 const BREACH_DAMAGE = { skiff: 5, trireme: 15, quadrireme: 25, shieldbearer: 0, flagship: 100 };
+// Breach is now a per-second CONTACT DRIP (not an instant chunk): each ship
+// pressed against the wall drains this % of max wall HP per second while it
+// sits there. Bigger ships drip faster. Shield-bearers still do 0.
+const BREACH_DRIP_PCT = { skiff: 0.05, trireme: 0.06, quadrireme: 0.07, shieldbearer: 0, flagship: 0.08 };
 
 // --- Mirror ---
 const MIRROR_MAX_HITS = 3;
@@ -892,16 +817,28 @@ function updateFortress(dt) {
       impactFlashes.splice(i, 1);
     } else {
       const t = f.life / f.maxLife; // 1 -> 0
-      f.mesh.material.opacity = t * 0.85;
-      const s = 1 + (1 - t) * 0.6;
+      // Throb while alive (sustained contact) + fade as life runs out.
+      const pulse = 0.7 + 0.3 * Math.sin(performance.now() * 0.02);
+      f.mesh.material.opacity = t * 0.9 * pulse;
+      const s = 1 + (1 - t) * 0.5;
       f.mesh.scale.set(s, s, 1);
     }
   }
 }
 
-// Localized stone flash/pulse at a specific X-lane on the battlement, fired
-// when an individual ship crashes into the wall.
+// Localized reddish-orange stone flash on the battlement section directly below
+// a contacting/crashing lane. Called continuously while a ship drips damage, so
+// if a flash already exists near this X we just refresh its life (sustained
+// pulse) instead of spawning a new mesh every frame.
 function triggerImpactFlash(x) {
+  // Refresh a nearby existing flash (same lane) to keep it alive + pulsing.
+  for (const f of impactFlashes) {
+    if (Math.abs(f.mesh.position.x - x) < 6) {
+      f.life = f.maxLife;
+      f.mesh.position.x = x;
+      return;
+    }
+  }
   if (impactFlashes.length >= MAX_IMPACT_FLASHES) return;
   const scene = getScene();
   const geo = new THREE.PlaneGeometry(8, 6);
@@ -910,8 +847,6 @@ function triggerImpactFlash(x) {
     blending: THREE.AdditiveBlending
   });
   const mesh = new THREE.Mesh(geo, mat);
-  // Localized reddish-orange stone flash on the battlement section directly
-  // below the crash lane (a little above WALL_Y, in front of the fort).
   mesh.position.set(x, WALL_Y + 2, -6);
   scene.add(mesh);
   impactFlashes.push({ mesh, life: 0.35, maxLife: 0.35 });
@@ -3141,7 +3076,9 @@ function spawnEnemy(type, lane, hpMultiplier, yOffset) {
       e.zeusPendingHeat = 0;
       e.breached = false; // wall-breach guard: damage fires exactly once
       e.lane = lane;
-      e.y = SHIP_SPAWN_Y + (yOffset || 0);
+      // Spawn Y, clamped so the ship's TOP edge never crosses the crystal bound.
+      const half = shipHalfHeight(type);
+      e.y = Math.min(SHIP_SPAWN_Y + (yOffset || 0), SHIP_TOP_BOUND - half);
       e.speed = template.speed;
       e.baseSpeed = template.speed;
       e.burn = 0;
@@ -3218,23 +3155,39 @@ function updateEnemies(dt) {
     // ships stop earlier so no hull ever shares pixels with a disc.
     // The `breached` guard makes damage fire EXACTLY ONCE — even if any code
     // path briefly left the enemy active, it can never re-charge the wall.
-    const leadingEdge = e.y - shipHalfHeight(e.type);
-    if (leadingEdge <= RAM_STOP_EDGE && !e.breached) {
-      e.breached = true;
-      // Snap to the exact stop position, then explode + damage the wall.
-      e.y = RAM_STOP_EDGE + shipHalfHeight(e.type);
-      const dmg = BREACH_DAMAGE[e.type] || 10;
+    // Bottom bound: the ship's LEADING (bottom) edge stops one FULL hull-height
+    // above the mirror disc top edge, so no hull ever shares pixels with a disc.
+    const half = shipHalfHeight(e.type);
+    const stopEdge = MIRROR_DISC_TOP + half * 2; // disc top + one hull-height
+    const leadingEdge = e.y - half;
+    const atWall = leadingEdge <= stopEdge;
+
+    // Clamp the contact X to the visible battlement so edge/flank ships (and
+    // Poseidon-pulled ones) always render on-screen with a matching flash.
+    const rawX = -ww / 2 + lw * (e.lane + 0.5) + (e.driftX || 0) + (e.pullX || 0);
+    const edgeX = ww / 2 - 2;
+    const cx = Math.max(-edgeX, Math.min(edgeX, rawX));
+
+    if (atWall) {
+      // Pin the ship at the wall (bottom edge exactly at the stop line).
+      e.y = stopEdge + half;
+      // One-time contact burst the first frame it reaches the wall.
+      if (!e.breached) {
+        e.breached = true;
+        const heavy = (e.type === 'flagship' || e.type === 'quadrireme');
+        spawnDestruction(cx, e.y, heavy);
+      }
+      // Continuous per-second CONTACT DRIP of wall HP while pressed against it.
+      // Reduced if the ship is on fire (its own heat), so damaging it helps.
+      const dripPct = BREACH_DRIP_PCT[e.type] != null ? BREACH_DRIP_PCT[e.type] : 0.05;
       const heatFrac = Math.min(1, (e.heat || 0) / e.maxHp);
-      wallDamage += dmg * Math.max(0.2, 1 - heatFrac);
-      // Clamp the crash X to the visible battlement so edge/flank ships (and
-      // Poseidon-pulled ones) always explode on-screen with a matching flash.
-      const rawX = -ww / 2 + lw * (e.lane + 0.5) + (e.driftX || 0) + (e.pullX || 0);
-      const edge = ww / 2 - 2;
-      const cx = Math.max(-edge, Math.min(edge, rawX));
-      const heavy = (e.type === 'flagship' || e.type === 'quadrireme');
-      spawnDestruction(cx, e.y, heavy); // crash burst at the ship's stopped position
-      lastBreaches.push({ x: cx, lane: e.lane });
-      deactivateEnemy(e);
+      wallDamage += WALL_MAX_HP * dripPct * Math.max(0.2, 1 - heatFrac) * dt;
+      // Emit a contact event every frame → continuous battlement stone flash.
+      lastBreaches.push({ x: cx, lane: e.lane, contact: true });
+      // Occasional small dust/sparks so the contact reads even without a kill.
+      if (Math.random() < dt * 6) spawnSparks(cx, e.y - half, 0xffaa66, 2);
+      positionEnemy(e);
+      updateEnemyVisual(e);
       continue;
     }
     positionEnemy(e);
@@ -5154,10 +5107,10 @@ function addBreaches(damage) {
   if (damage <= 0 || gameOver) return;
   if (DEV.INVINCIBLE) return;
   wallIntegrity = Math.max(0, wallIntegrity - damage);
-  // Wall hit feedback: red screen flash + camera shake
-  wallHitFlash = 0.3;
-  wallShakeTimer = WALL_SHAKE_DURATION;
-  wallShakeIntensity = Math.min(1.2 + damage * 0.15, 3.0);
+  // Keep a gentle red screen flash topped up while damage drips in. Camera
+  // shake / sound / bar-notch are driven (throttled) from the main loop so the
+  // continuous drip doesn't shake the screen every frame.
+  wallHitFlash = Math.max(wallHitFlash, 0.18);
   if (wallIntegrity <= 0) {
     triggerLose();
   }
@@ -5176,6 +5129,11 @@ function getWallShake() {
   };
 }
 function tickWallShake(dt) { if (wallShakeTimer > 0) wallShakeTimer -= dt; }
+// Trigger a camera shake pulse (called throttled from the main loop during a drip).
+function triggerWallShake() {
+  wallShakeTimer = WALL_SHAKE_DURATION;
+  wallShakeIntensity = 1.6;
+}
 
 // Quick notch flash on the wall bar when the wall takes a hit.
 let wallBarNotch = 0;
@@ -5320,6 +5278,9 @@ function resetSession() {
   wallHitFlash = 0;
   wallShakeTimer = 0;
   wallBarNotch = 0;
+  defeatActive = false;
+  defeatT = 0;
+  if (dimMesh) dimMesh.material.color.setHex(0x000000); // restore neutral dim
   if (wallFlashMesh) { wallFlashMesh.material.opacity = 0; wallFlashMesh.visible = false; }
   // Each reset wrapped so one failure can't leave the overlay stuck
   try { resetEnemies(); } catch (e) { console.error('resetEnemies', e); }
@@ -5359,11 +5320,44 @@ function triggerLose() {
   gameOver = true;
   gameWon = false;
   onEndState();
-  // Play defeat cinematic (once per session), then show overlay
-  if (typeof window !== 'undefined' && window.playDefeatCinematic) {
-    window.playDefeatCinematic(function() { if (gameOver) showOverlay(MSG_LOSE); });
-  } else {
-    showOverlay(MSG_LOSE);
+  // Fully in-engine defeat: NO video. Extinguish beams (onEndState), dim the
+  // board to dark red, throw stone debris, then fade in the stats overlay.
+  startDefeatSequence();
+}
+
+// --- In-engine defeat sequence ---
+let defeatT = 0;          // animation clock
+let defeatActive = false;
+function isDefeatSequenceActive() { return defeatActive; }
+
+function startDefeatSequence() {
+  defeatActive = true;
+  defeatT = 0;
+  // Dark-red board dim fades in (dimMesh recoloured for defeat).
+  if (dimMesh) {
+    dimMesh.material.color.setHex(0x330505);
+    dimMesh.material.opacity = 0;
+    dimMesh.visible = true;
+    if (dimMesh.parent == null) getOverlayScene().add(dimMesh);
+  }
+  // (Stone debris burst is fired from the main loop, which owns fortress.)
+  // Prepare the overlay text but keep it transparent for the fade-in.
+  prepareDefeatOverlay();
+}
+
+// Advance the defeat fade-in each frame (called from the main loop while over).
+function updateDefeatSequence(dt) {
+  if (!defeatActive) return;
+  defeatT += dt;
+  // Dark-red dim fades in over ~0.8s to a heavy tint.
+  if (dimMesh) {
+    dimMesh.material.opacity = Math.min(0.88, defeatT / 0.8 * 0.88);
+  }
+  // Stats overlay fades in after a short beat (0.5s), over ~0.7s.
+  if (overlayMesh) {
+    const a = Math.max(0, Math.min(1, (defeatT - 0.5) / 0.7));
+    overlayMesh.material.opacity = a;
+    overlayMesh.visible = a > 0.001;
   }
 }
 
@@ -5453,13 +5447,13 @@ function createOverlay() {
   oScene.add(overlayMesh);
 }
 
-function showOverlay(text) {
+function drawOverlayText() {
   const w = overlayCanvas.width;  // 256
   const h = overlayCanvas.height; // 128
   overlayCtx.clearRect(0, 0, w, h);
 
   // Title
-  overlayCtx.fillStyle = gameWon ? '#00ff88' : '#ff4444';
+  overlayCtx.fillStyle = gameWon ? '#00ff88' : '#ff5533';
   overlayCtx.font = 'bold 18px monospace';
   overlayCtx.textAlign = 'center';
   const title = gameWon ? 'THE FLEET BURNS' : 'SYRACUSE HAS FALLEN';
@@ -5485,11 +5479,28 @@ function showOverlay(text) {
   overlayCtx.fillText('Tap to try again', w / 2, 105);
 
   overlayTexture.needsUpdate = true;
+}
+
+// Win path: show the overlay instantly (win keeps its cinematic upstream).
+function showOverlay(text) {
+  drawOverlayText();
   const oScene = getOverlayScene();
   if (overlayMesh.parent !== oScene) oScene.add(overlayMesh);
   if (dimMesh.parent !== oScene) oScene.add(dimMesh);
+  overlayMesh.material.opacity = 1;
   overlayMesh.visible = true;
+  dimMesh.material.opacity = 0.82;
   dimMesh.visible = true;
+}
+
+// Defeat path: draw the text but keep it transparent; updateDefeatSequence
+// fades the dark-red dim and then the stats in.
+function prepareDefeatOverlay() {
+  drawOverlayText();
+  const oScene = getOverlayScene();
+  if (overlayMesh.parent !== oScene) oScene.add(overlayMesh);
+  overlayMesh.material.opacity = 0;
+  overlayMesh.visible = false; // revealed by the fade-in
 }
 
 function hideOverlay() {
@@ -6075,6 +6086,11 @@ let sourceY = SUN_Y;
 let lastTime = 0;
 const MAX_DT = 1 / 30;
 
+// Throttle for heavy breach feedback (shake/sound/bar-notch) during the drip.
+let breachFxTimer = 0;
+// One-shot guard so the defeat debris burst fires only on the first over-frame.
+let defeatDebrisFired = false;
+
 function init() {
   console.log('[Burning Glass] init starting');
   initRenderer();
@@ -6122,10 +6138,20 @@ function loop(now) {
   if (dt > MAX_DT) dt = MAX_DT;
 
   if (isGameOver()) {
+    // In-engine defeat: fade in the dark-red dim + stats, keep debris/effects
+    // animating, and fire a one-time stone-debris burst on the first frame.
+    if (!isGameWon() && !defeatDebrisFired) {
+      defeatDebrisFired = true;
+      triggerBreachShake(3); // dust/debris + shake
+    }
+    updateDefeatSequence(dt);
+    updateEffects(dt);
+    updateFortress(dt);
     updateHud(); // keep HUD visible on end screen
-    render();
+    render(getWallShake());
     return;
   }
+  defeatDebrisFired = false;
 
   // --- Update ---
   updateSession(dt);
@@ -6151,16 +6177,22 @@ function loop(now) {
   // Spawner + enemies
   updateSpawner(dt, sessionTime);
   applySlowStates();
-  const newBreaches = updateEnemies(dt);
-  if (newBreaches > 0) {
-    addBreaches(newBreaches);
-    triggerBreachShake(newBreaches);
-    playWallHit();
-    // Per-impact feedback: localized battlement flash at each crash lane +
-    // a quick notch flash on the top wall bar.
-    const breaches = getLastBreaches();
-    for (const b of breaches) triggerImpactFlash(b.x);
-    if (breaches.length > 0) flashWallBarNotch();
+  const dripDamage = updateEnemies(dt);
+  const contacts = getLastBreaches(); // ships currently pressed on the wall
+  if (dripDamage > 0) {
+    addBreaches(dripDamage); // apply the per-second drip (silent)
+    // Continuous localized battlement stone flash under each contacting lane.
+    for (const b of contacts) triggerImpactFlash(b.x);
+    // Throttle the loud/heavy feedback (shake, sound, bar notch) so the
+    // continuous drip doesn't spam a nauseating shake or audio every frame.
+    breachFxTimer -= dt;
+    if (breachFxTimer <= 0) {
+      breachFxTimer = 0.5;
+      triggerBreachShake(1); // fortress dust + mesh shake
+      triggerWallShake();    // camera shake pulse
+      playWallHit();
+      flashWallBarNotch();
+    }
   }
 
   // Damage

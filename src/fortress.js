@@ -121,16 +121,28 @@ export function updateFortress(dt) {
       impactFlashes.splice(i, 1);
     } else {
       const t = f.life / f.maxLife; // 1 -> 0
-      f.mesh.material.opacity = t * 0.85;
-      const s = 1 + (1 - t) * 0.6;
+      // Throb while alive (sustained contact) + fade as life runs out.
+      const pulse = 0.7 + 0.3 * Math.sin(performance.now() * 0.02);
+      f.mesh.material.opacity = t * 0.9 * pulse;
+      const s = 1 + (1 - t) * 0.5;
       f.mesh.scale.set(s, s, 1);
     }
   }
 }
 
-// Localized stone flash/pulse at a specific X-lane on the battlement, fired
-// when an individual ship crashes into the wall.
+// Localized reddish-orange stone flash on the battlement section directly below
+// a contacting/crashing lane. Called continuously while a ship drips damage, so
+// if a flash already exists near this X we just refresh its life (sustained
+// pulse) instead of spawning a new mesh every frame.
 export function triggerImpactFlash(x) {
+  // Refresh a nearby existing flash (same lane) to keep it alive + pulsing.
+  for (const f of impactFlashes) {
+    if (Math.abs(f.mesh.position.x - x) < 6) {
+      f.life = f.maxLife;
+      f.mesh.position.x = x;
+      return;
+    }
+  }
   if (impactFlashes.length >= MAX_IMPACT_FLASHES) return;
   const scene = getScene();
   const geo = new THREE.PlaneGeometry(8, 6);
@@ -139,8 +151,6 @@ export function triggerImpactFlash(x) {
     blending: THREE.AdditiveBlending
   });
   const mesh = new THREE.Mesh(geo, mat);
-  // Localized reddish-orange stone flash on the battlement section directly
-  // below the crash lane (a little above WALL_Y, in front of the fort).
   mesh.position.set(x, WALL_Y + 2, -6);
   scene.add(mesh);
   impactFlashes.push({ mesh, life: 0.35, maxLife: 0.35 });

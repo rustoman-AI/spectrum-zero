@@ -3,8 +3,8 @@
 // ============================================================
 
 import {
-  ENEMY_POOL_SIZE, ENEMY_TYPES, SHIP_SPAWN_Y, WALL_Y, RAM_LINE_Y, RAM_STOP_EDGE,
-  ENEMY_LANE_COUNT, WORLD_HEIGHT, BREACH_DAMAGE
+  ENEMY_POOL_SIZE, ENEMY_TYPES, SHIP_SPAWN_Y, SHIP_TOP_BOUND, WALL_Y, MIRROR_DISC_TOP,
+  ENEMY_LANE_COUNT, WORLD_HEIGHT, WALL_MAX_HP, BREACH_DRIP_PCT
 } from './config.js';
 import { getScene, getWorldWidth } from './renderer.js';
 import { addKillReward } from './foundry.js';
@@ -292,7 +292,9 @@ export function spawnEnemy(type, lane, hpMultiplier, yOffset) {
       e.zeusPendingHeat = 0;
       e.breached = false; // wall-breach guard: damage fires exactly once
       e.lane = lane;
-      e.y = SHIP_SPAWN_Y + (yOffset || 0);
+      // Spawn Y, clamped so the ship's TOP edge never crosses the crystal bound.
+      const half = shipHalfHeight(type);
+      e.y = Math.min(SHIP_SPAWN_Y + (yOffset || 0), SHIP_TOP_BOUND - half);
       e.speed = template.speed;
       e.baseSpeed = template.speed;
       e.burn = 0;
@@ -369,23 +371,39 @@ export function updateEnemies(dt) {
     // ships stop earlier so no hull ever shares pixels with a disc.
     // The `breached` guard makes damage fire EXACTLY ONCE — even if any code
     // path briefly left the enemy active, it can never re-charge the wall.
-    const leadingEdge = e.y - shipHalfHeight(e.type);
-    if (leadingEdge <= RAM_STOP_EDGE && !e.breached) {
-      e.breached = true;
-      // Snap to the exact stop position, then explode + damage the wall.
-      e.y = RAM_STOP_EDGE + shipHalfHeight(e.type);
-      const dmg = BREACH_DAMAGE[e.type] || 10;
+    // Bottom bound: the ship's LEADING (bottom) edge stops one FULL hull-height
+    // above the mirror disc top edge, so no hull ever shares pixels with a disc.
+    const half = shipHalfHeight(e.type);
+    const stopEdge = MIRROR_DISC_TOP + half * 2; // disc top + one hull-height
+    const leadingEdge = e.y - half;
+    const atWall = leadingEdge <= stopEdge;
+
+    // Clamp the contact X to the visible battlement so edge/flank ships (and
+    // Poseidon-pulled ones) always render on-screen with a matching flash.
+    const rawX = -ww / 2 + lw * (e.lane + 0.5) + (e.driftX || 0) + (e.pullX || 0);
+    const edgeX = ww / 2 - 2;
+    const cx = Math.max(-edgeX, Math.min(edgeX, rawX));
+
+    if (atWall) {
+      // Pin the ship at the wall (bottom edge exactly at the stop line).
+      e.y = stopEdge + half;
+      // One-time contact burst the first frame it reaches the wall.
+      if (!e.breached) {
+        e.breached = true;
+        const heavy = (e.type === 'flagship' || e.type === 'quadrireme');
+        spawnDestruction(cx, e.y, heavy);
+      }
+      // Continuous per-second CONTACT DRIP of wall HP while pressed against it.
+      // Reduced if the ship is on fire (its own heat), so damaging it helps.
+      const dripPct = BREACH_DRIP_PCT[e.type] != null ? BREACH_DRIP_PCT[e.type] : 0.05;
       const heatFrac = Math.min(1, (e.heat || 0) / e.maxHp);
-      wallDamage += dmg * Math.max(0.2, 1 - heatFrac);
-      // Clamp the crash X to the visible battlement so edge/flank ships (and
-      // Poseidon-pulled ones) always explode on-screen with a matching flash.
-      const rawX = -ww / 2 + lw * (e.lane + 0.5) + (e.driftX || 0) + (e.pullX || 0);
-      const edge = ww / 2 - 2;
-      const cx = Math.max(-edge, Math.min(edge, rawX));
-      const heavy = (e.type === 'flagship' || e.type === 'quadrireme');
-      spawnDestruction(cx, e.y, heavy); // crash burst at the ship's stopped position
-      lastBreaches.push({ x: cx, lane: e.lane });
-      deactivateEnemy(e);
+      wallDamage += WALL_MAX_HP * dripPct * Math.max(0.2, 1 - heatFrac) * dt;
+      // Emit a contact event every frame → continuous battlement stone flash.
+      lastBreaches.push({ x: cx, lane: e.lane, contact: true });
+      // Occasional small dust/sparks so the contact reads even without a kill.
+      if (Math.random() < dt * 6) spawnSparks(cx, e.y - half, 0xffaa66, 2);
+      positionEnemy(e);
+      updateEnemyVisual(e);
       continue;
     }
     positionEnemy(e);

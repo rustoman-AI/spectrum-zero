@@ -85,10 +85,10 @@ export function addBreaches(damage) {
   if (damage <= 0 || gameOver) return;
   if (DEV.INVINCIBLE) return;
   wallIntegrity = Math.max(0, wallIntegrity - damage);
-  // Wall hit feedback: red screen flash + camera shake
-  wallHitFlash = 0.3;
-  wallShakeTimer = WALL_SHAKE_DURATION;
-  wallShakeIntensity = Math.min(1.2 + damage * 0.15, 3.0);
+  // Keep a gentle red screen flash topped up while damage drips in. Camera
+  // shake / sound / bar-notch are driven (throttled) from the main loop so the
+  // continuous drip doesn't shake the screen every frame.
+  wallHitFlash = Math.max(wallHitFlash, 0.18);
   if (wallIntegrity <= 0) {
     triggerLose();
   }
@@ -107,6 +107,11 @@ export function getWallShake() {
   };
 }
 export function tickWallShake(dt) { if (wallShakeTimer > 0) wallShakeTimer -= dt; }
+// Trigger a camera shake pulse (called throttled from the main loop during a drip).
+export function triggerWallShake() {
+  wallShakeTimer = WALL_SHAKE_DURATION;
+  wallShakeIntensity = 1.6;
+}
 
 // Quick notch flash on the wall bar when the wall takes a hit.
 let wallBarNotch = 0;
@@ -251,6 +256,9 @@ export function resetSession() {
   wallHitFlash = 0;
   wallShakeTimer = 0;
   wallBarNotch = 0;
+  defeatActive = false;
+  defeatT = 0;
+  if (dimMesh) dimMesh.material.color.setHex(0x000000); // restore neutral dim
   if (wallFlashMesh) { wallFlashMesh.material.opacity = 0; wallFlashMesh.visible = false; }
   // Each reset wrapped so one failure can't leave the overlay stuck
   try { resetEnemies(); } catch (e) { console.error('resetEnemies', e); }
@@ -290,11 +298,44 @@ function triggerLose() {
   gameOver = true;
   gameWon = false;
   onEndState();
-  // Play defeat cinematic (once per session), then show overlay
-  if (typeof window !== 'undefined' && window.playDefeatCinematic) {
-    window.playDefeatCinematic(function() { if (gameOver) showOverlay(MSG_LOSE); });
-  } else {
-    showOverlay(MSG_LOSE);
+  // Fully in-engine defeat: NO video. Extinguish beams (onEndState), dim the
+  // board to dark red, throw stone debris, then fade in the stats overlay.
+  startDefeatSequence();
+}
+
+// --- In-engine defeat sequence ---
+let defeatT = 0;          // animation clock
+let defeatActive = false;
+export function isDefeatSequenceActive() { return defeatActive; }
+
+function startDefeatSequence() {
+  defeatActive = true;
+  defeatT = 0;
+  // Dark-red board dim fades in (dimMesh recoloured for defeat).
+  if (dimMesh) {
+    dimMesh.material.color.setHex(0x330505);
+    dimMesh.material.opacity = 0;
+    dimMesh.visible = true;
+    if (dimMesh.parent == null) getOverlayScene().add(dimMesh);
+  }
+  // (Stone debris burst is fired from the main loop, which owns fortress.)
+  // Prepare the overlay text but keep it transparent for the fade-in.
+  prepareDefeatOverlay();
+}
+
+// Advance the defeat fade-in each frame (called from the main loop while over).
+export function updateDefeatSequence(dt) {
+  if (!defeatActive) return;
+  defeatT += dt;
+  // Dark-red dim fades in over ~0.8s to a heavy tint.
+  if (dimMesh) {
+    dimMesh.material.opacity = Math.min(0.88, defeatT / 0.8 * 0.88);
+  }
+  // Stats overlay fades in after a short beat (0.5s), over ~0.7s.
+  if (overlayMesh) {
+    const a = Math.max(0, Math.min(1, (defeatT - 0.5) / 0.7));
+    overlayMesh.material.opacity = a;
+    overlayMesh.visible = a > 0.001;
   }
 }
 
@@ -384,13 +425,13 @@ function createOverlay() {
   oScene.add(overlayMesh);
 }
 
-function showOverlay(text) {
+function drawOverlayText() {
   const w = overlayCanvas.width;  // 256
   const h = overlayCanvas.height; // 128
   overlayCtx.clearRect(0, 0, w, h);
 
   // Title
-  overlayCtx.fillStyle = gameWon ? '#00ff88' : '#ff4444';
+  overlayCtx.fillStyle = gameWon ? '#00ff88' : '#ff5533';
   overlayCtx.font = 'bold 18px monospace';
   overlayCtx.textAlign = 'center';
   const title = gameWon ? 'THE FLEET BURNS' : 'SYRACUSE HAS FALLEN';
@@ -416,11 +457,28 @@ function showOverlay(text) {
   overlayCtx.fillText('Tap to try again', w / 2, 105);
 
   overlayTexture.needsUpdate = true;
+}
+
+// Win path: show the overlay instantly (win keeps its cinematic upstream).
+function showOverlay(text) {
+  drawOverlayText();
   const oScene = getOverlayScene();
   if (overlayMesh.parent !== oScene) oScene.add(overlayMesh);
   if (dimMesh.parent !== oScene) oScene.add(dimMesh);
+  overlayMesh.material.opacity = 1;
   overlayMesh.visible = true;
+  dimMesh.material.opacity = 0.82;
   dimMesh.visible = true;
+}
+
+// Defeat path: draw the text but keep it transparent; updateDefeatSequence
+// fades the dark-red dim and then the stats in.
+function prepareDefeatOverlay() {
+  drawOverlayText();
+  const oScene = getOverlayScene();
+  if (overlayMesh.parent !== oScene) oScene.add(overlayMesh);
+  overlayMesh.material.opacity = 0;
+  overlayMesh.visible = false; // revealed by the fade-in
 }
 
 function hideOverlay() {
