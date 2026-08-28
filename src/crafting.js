@@ -188,11 +188,17 @@ export function updateCraftingTray() {
     if (item.id === 'poseidon' && poseidonCooldown > 0) { cooldownFrac = poseidonCooldown / POSEIDON_COOLDOWN_TIME; cooldownTotal = POSEIDON_COOLDOWN_TIME; }
     if (item.id === 'helios' && heliosCooldown > 0) { cooldownFrac = heliosCooldown / HELIOS_COOLDOWN_TIME; cooldownTotal = HELIOS_COOLDOWN_TIME; }
     if (cooldownFrac > 0) {
-      // Dark radial wipe (pie slice from top, clockwise)
+      // Dark radial wipe (pie slice from top, clockwise), CLIPPED to this
+      // button cell and sized so it never spills past the button into the bar
+      // below the battlement. Radius kept within the button half-height.
       const cx = x + btnW / 2;
       const cy = 20;
-      const r = 18;
+      const r = 15; // < half the 38px button height, stays inside the cell
       trayCtx.save();
+      // Clip strictly to the button rect so the arc can never bleed outside it.
+      trayCtx.beginPath();
+      trayCtx.rect(x + 1, 1, btnW - 2, 38);
+      trayCtx.clip();
       trayCtx.fillStyle = 'rgba(0, 0, 0, 0.6)';
       trayCtx.beginPath();
       trayCtx.moveTo(cx, cy);
@@ -201,11 +207,13 @@ export function updateCraftingTray() {
       trayCtx.arc(cx, cy, r, startAngle, endAngle);
       trayCtx.closePath();
       trayCtx.fill();
-      // Cooldown seconds text
+      // Cooldown seconds text, centred on the button (no cost shown while cooling).
       trayCtx.fillStyle = '#ffffff';
-      trayCtx.font = 'bold 10px monospace';
+      trayCtx.font = 'bold 11px monospace';
       trayCtx.textAlign = 'center';
-      trayCtx.fillText(Math.ceil(cooldownFrac * cooldownTotal) + 's', cx, 23);
+      trayCtx.textBaseline = 'middle';
+      trayCtx.fillText(Math.ceil(cooldownFrac * cooldownTotal) + 's', cx, 22);
+      trayCtx.textBaseline = 'alphabetic';
       trayCtx.restore();
     }
   }
@@ -315,10 +323,11 @@ function drawCostTokens(cost, res, faith, centreX, y, btnW) {
   if (tokens.length === 0) return;
 
   const GAP = 3; // px gap between tokens (logical space)
-  const maxW = btnW - 8; // keep clear of the button edges
+  const maxW = btnW - 12; // keep a clear margin from the button edges
 
-  // Find the largest font (<=9px) at which the whole line fits maxW.
-  let fontPx = 9;
+  // Find the largest font (<=8px) at which the whole line fits maxW. Capped at
+  // 8 so a two-currency cost like "15Si 20Bz" always sits cleanly on one line.
+  let fontPx = 8;
   const measureTotal = () => {
     trayCtx.font = 'bold ' + fontPx + 'px monospace';
     let w = 0;

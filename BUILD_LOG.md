@@ -477,3 +477,19 @@ All procedural canvas drawing at load time — zero image files, zip size unchan
 **Verified:** `node build.js` -> 239.8 KB, exit 0. Rotation 11/11, smoke 29/29. Width independence from the contact flag confirmed by calculation (core ≈5.5px, glow ≈11.7px on a portrait phone, matching the spec's 4-6px / 12px).
 
 **Honest caveat:** Verified by the width math, not on screen — worth a device look to confirm beams now stay crisp and uniform when they land on a ship, and that the localized burn glow + spark/smoke at the contact point reads clearly at the new slimmer beam width.
+
+---
+
+## 2026-08-25 — Instant Breach Removal, Shop Text/Arc Cleanup, Calmer Damage FX
+
+**Asked:** (1) On wall breach, deal damage once + spawn a burst, then IMMEDIATELY remove the ship — no lingering/frozen hulls at the bottom (the prior 0.9s sink still read as "stuck"). (2) Fix the Helios shop cost text overlap ("15Si 20Bz") + clean margins. (3) Stop the cooldown red arc clipping into the bottom bar. (4) Lower the damage-contact sound + light FX — it was distracting, not just alerting.
+
+**Generated:**
+- **Instant breach (item 1):** Replaced the crash-and-sink (which faded the hull over 0.9s and still looked stuck) with a single-frame breach: on reaching the battlement the ship deals its full breach damage once (same total as before — `WALL_MAX_HP * dripPct * BREACH_SINK_TIME`, so skiff 4.5% / trireme 5.4% / flagship 6.3% / shield-bearer 0), fires an explosion + smoke burst and a battlement stone flash, then `deactivateEnemy` removes it from the active array and hides/resets its mesh the *same frame*. Verified: ship is inactive the frame it breaches — nothing lingers. (Pooled meshes are hidden+reset rather than `scene.remove`/disposed, which is the correct removal for a fixed pool.)
+- **Shop cost text (item 2):** `drawCostTokens` font cap lowered 9→8px and the fit margin widened (`btnW-8` → `btnW-12`), so a two-currency cost like Helios' "15Si 20Bz" always sits cleanly on one line inside the button clip with margin. (Cost is already suppressed while a button is on cooldown, so cost and timer never coexist.)
+- **Cooldown arc (item 3):** The radial cooldown wipe is now clipped strictly to the button rect and its radius trimmed 18→15 (< half the button height), so it can never spill past the button into the bar below the battlement. The seconds text is centred (middle baseline) within the button.
+- **Calmer damage FX (item 4):** Contact glow opacity 0.7→0.45 (spawn and fade); contact spawn throttle halved (dt*18→dt*9), glow DPS 40→18 (smaller), sparks per hit 3→1, smoke wisps dt*4→dt*2. Audio: burn hiss cap 0.06→0.03, per-ship crackle hiss `0.03+heat*0.07` → `0.015+heat*0.035`, crackle pop gain `0.08+rand*0.12` → `0.04+rand*0.06`. The hit still reads, just quieter and dimmer.
+
+**Verified:** `node build.js` -> 239.7 KB, exit 0. Rotation 11/11, smoke 29/29. Breach damage totals + same-frame removal confirmed by simulation.
+
+**Honest caveat:** The breach removal and damage math are verified; the shop-text/arc layout and the "calmer" FX levels are judgement calls I can't see or hear here. Worth a device pass to confirm no ship ever freezes at the wall, the Helios cost reads cleanly with no overlap, the cooldown arc stays inside its button, and the damage FX now feel supportive rather than distracting (the audio/glow constants are easy to nudge further either way).

@@ -146,16 +146,14 @@ export function updateDamage(dt) {
       // been off the target for HEAT_DECAY_GRACE seconds.
       enemy.heatGrace = HEAT_DECAY_GRACE;
 
-      // ALL hit feedback lives HERE, at the exact beam-hull contact point — the
-      // beam itself stays a slender uniform strip. A small localized burn glow
-      // + rising sparks (and an occasional smoke wisp), throttled so it reads as
-      // a lively burn mark rather than a swelling blob.
-      if (Math.random() < dt * 18) {
-        spawnContactGlow(contactX, contactY, hitColour || 0xffaa00, 40);
-        spawnSparks(contactX, contactY, hitColour || 0xffcc66, 3);
+      // Contact feedback at the exact hit point — kept SUBTLE (calmer, not
+      // distracting): slower spawn rate, smaller/dimmer glow, fewer sparks.
+      if (Math.random() < dt * 9) {
+        spawnContactGlow(contactX, contactY, hitColour || 0xffaa00, 18);
+        spawnSparks(contactX, contactY, hitColour || 0xffcc66, 1);
       }
-      if (Math.random() < dt * 4) {
-        spawnSmoke(contactX, contactY, 1, 0x5a5048); // faint rising smoke wisp
+      if (Math.random() < dt * 2) {
+        spawnSmoke(contactX, contactY, 1, 0x5a5048); // occasional faint smoke wisp
       }
 
       if (enemy.heat >= enemy.maxHp) {

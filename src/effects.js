@@ -126,7 +126,7 @@ export function updateEffects(dt) {
   for (const g of glowPool) {
     if (g.life > 0) {
       g.life -= dt;
-      g.mesh.material.opacity = Math.max(0, (g.life / GLOW_LIFE) * 0.7);
+      g.mesh.material.opacity = Math.max(0, (g.life / GLOW_LIFE) * 0.45);
       g.mesh.scale.set(g.scale, g.scale, 1);
       if (g.life <= 0) g.mesh.visible = false;
     }
@@ -228,7 +228,7 @@ export function spawnContactGlow(x, y, colour, dps) {
       g.mesh.position.x = x;
       g.mesh.position.y = y;
       g.mesh.material.color.setHex(colour);
-      g.mesh.material.opacity = 0.7;
+      g.mesh.material.opacity = 0.45; // calmer flash (was 0.7 — too distracting)
       g.mesh.visible = true;
       g.life = GLOW_LIFE;
       // Scale grows gently with DPS but is hard-clamped so it never balloons.

@@ -413,37 +413,19 @@ export function updateEnemies(dt) {
     const cx = Math.max(-edgeX, Math.min(edgeX, rawX));
 
     if (atWall) {
-      // Pin the ship at the battlement top and RAM it: it deals its wall
-      // damage as a short bleed over a brief crash-and-sink, then is fully
-      // removed. Ships never linger/stack on the battlement.
-      e.y = BATTLEMENT_TOP_Y + half;
-      if (!e.breached) {
-        e.breached = true;
-        e.sinkTimer = BREACH_SINK_TIME; // ~1s crash-and-sink window
-        const heavy = (e.type === 'flagship' || e.type === 'quadrireme');
-        spawnDestruction(cx, e.y, heavy);
-      }
-      // Wall damage bled out evenly across the sink window (total = the ship's
-      // full breach %, reduced if it was already burning).
+      // INSTANT breach: deal the full wall damage ONCE, fire an explosion +
+      // smoke burst, then remove the ship the SAME frame — it never lingers,
+      // sinks, or stacks at the bottom of the screen.
       const dripPct = BREACH_DRIP_PCT[e.type] != null ? BREACH_DRIP_PCT[e.type] : 0.05;
       const heatFrac = Math.min(1, (e.heat || 0) / e.maxHp);
-      const totalDmg = WALL_MAX_HP * dripPct * BREACH_SINK_TIME * Math.max(0.2, 1 - heatFrac);
-      wallDamage += (totalDmg / BREACH_SINK_TIME) * dt;
-      // Continuous battlement stone flash + occasional sparks while it sinks.
-      lastBreaches.push({ x: cx, lane: e.lane, contact: true });
-      if (Math.random() < dt * 8) spawnSparks(cx, e.y - half, 0xffaa66, 2);
-
-      // Advance the sink: fade + settle, then FULLY remove the ship.
-      e.sinkTimer -= dt;
-      const sinkT = Math.max(0, e.sinkTimer / BREACH_SINK_TIME); // 1 -> 0
-      if (e.spriteMat) e.spriteMat.opacity = sinkT; // fade the hull out
-      e.mesh.position.y = e.y - (1 - sinkT) * 2;    // settle down slightly
-      if (e.sinkTimer <= 0) {
-        spawnSmoke(cx, BATTLEMENT_TOP_Y + 1, 2);    // parting smoke
-        deactivateEnemy(e);                          // remove from logic + hide mesh
-        continue;
-      }
-      updateEnemyVisual(e);
+      // One-shot damage: the full breach amount (was bled over the sink window),
+      // reduced if the ship was already burning.
+      wallDamage += WALL_MAX_HP * dripPct * BREACH_SINK_TIME * Math.max(0.2, 1 - heatFrac);
+      const heavy = (e.type === 'flagship' || e.type === 'quadrireme');
+      spawnDestruction(cx, BATTLEMENT_TOP_Y + half, heavy); // explosion + embers
+      spawnSmoke(cx, BATTLEMENT_TOP_Y + 1, 2);              // parting smoke burst
+      lastBreaches.push({ x: cx, lane: e.lane });           // battlement stone flash
+      deactivateEnemy(e);  // remove from logic array + fully hide/reset the mesh
       continue;
     }
     positionEnemy(e);

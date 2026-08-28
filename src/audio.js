@@ -155,9 +155,9 @@ function setupBurnNoise() {
 
 export function updateBurnHiss(intensity) {
   if (!burnGain) return;
-  // intensity: 0 to 1 (fraction of enemies being burned). Kept subtle; the
-  // crackle pops carry the character.
-  burnGain.gain.value = Math.min(0.06, intensity * 0.08);
+  // intensity: 0 to 1 (fraction of enemies being burned). Quieter now — the
+  // burn sizzle was distracting; keep it a faint bed under the crackle.
+  burnGain.gain.value = Math.min(0.03, intensity * 0.04);
 }
 
 // --- Prism chime: short bell ---
@@ -490,7 +490,7 @@ export function updateCrackle(burningShips) {
     if (voice) {
       // Scale volume and pop rate by heat (0 to 1)
       const heat = Math.min(1, ship.heat);
-      voice.gain.gain.value = 0.03 + heat * 0.07; // hiss volume
+      voice.gain.gain.value = 0.015 + heat * 0.035; // hiss volume (quieter)
       voice.popRate = 2 + heat * 4; // 2 to 6 pops/sec
     }
   }
@@ -549,7 +549,7 @@ function fireCracklePop(voice) {
   bp.frequency.value = 800 + Math.random() * 1200; // 800-2000 Hz
   bp.Q.value = 2 + Math.random() * 3;
   const g = ctx.createGain();
-  g.gain.setValueAtTime(0.08 + Math.random() * 0.12, ctx.currentTime);
+  g.gain.setValueAtTime(0.04 + Math.random() * 0.06, ctx.currentTime); // softer pops
   g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
   src.connect(bp).connect(g).connect(masterGain);
   src.start();

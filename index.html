@@ -3327,37 +3327,19 @@ function updateEnemies(dt) {
     const cx = Math.max(-edgeX, Math.min(edgeX, rawX));
 
     if (atWall) {
-      // Pin the ship at the battlement top and RAM it: it deals its wall
-      // damage as a short bleed over a brief crash-and-sink, then is fully
-      // removed. Ships never linger/stack on the battlement.
-      e.y = BATTLEMENT_TOP_Y + half;
-      if (!e.breached) {
-        e.breached = true;
-        e.sinkTimer = BREACH_SINK_TIME; // ~1s crash-and-sink window
-        const heavy = (e.type === 'flagship' || e.type === 'quadrireme');
-        spawnDestruction(cx, e.y, heavy);
-      }
-      // Wall damage bled out evenly across the sink window (total = the ship's
-      // full breach %, reduced if it was already burning).
+      // INSTANT breach: deal the full wall damage ONCE, fire an explosion +
+      // smoke burst, then remove the ship the SAME frame — it never lingers,
+      // sinks, or stacks at the bottom of the screen.
       const dripPct = BREACH_DRIP_PCT[e.type] != null ? BREACH_DRIP_PCT[e.type] : 0.05;
       const heatFrac = Math.min(1, (e.heat || 0) / e.maxHp);
-      const totalDmg = WALL_MAX_HP * dripPct * BREACH_SINK_TIME * Math.max(0.2, 1 - heatFrac);
-      wallDamage += (totalDmg / BREACH_SINK_TIME) * dt;
-      // Continuous battlement stone flash + occasional sparks while it sinks.
-      lastBreaches.push({ x: cx, lane: e.lane, contact: true });
-      if (Math.random() < dt * 8) spawnSparks(cx, e.y - half, 0xffaa66, 2);
-
-      // Advance the sink: fade + settle, then FULLY remove the ship.
-      e.sinkTimer -= dt;
-      const sinkT = Math.max(0, e.sinkTimer / BREACH_SINK_TIME); // 1 -> 0
-      if (e.spriteMat) e.spriteMat.opacity = sinkT; // fade the hull out
-      e.mesh.position.y = e.y - (1 - sinkT) * 2;    // settle down slightly
-      if (e.sinkTimer <= 0) {
-        spawnSmoke(cx, BATTLEMENT_TOP_Y + 1, 2);    // parting smoke
-        deactivateEnemy(e);                          // remove from logic + hide mesh
-        continue;
-      }
-      updateEnemyVisual(e);
+      // One-shot damage: the full breach amount (was bled over the sink window),
+      // reduced if the ship was already burning.
+      wallDamage += WALL_MAX_HP * dripPct * BREACH_SINK_TIME * Math.max(0.2, 1 - heatFrac);
+      const heavy = (e.type === 'flagship' || e.type === 'quadrireme');
+      spawnDestruction(cx, BATTLEMENT_TOP_Y + half, heavy); // explosion + embers
+      spawnSmoke(cx, BATTLEMENT_TOP_Y + 1, 2);              // parting smoke burst
+      lastBreaches.push({ x: cx, lane: e.lane });           // battlement stone flash
+      deactivateEnemy(e);  // remove from logic array + fully hide/reset the mesh
       continue;
     }
     positionEnemy(e);
@@ -4181,11 +4163,17 @@ function updateCraftingTray() {
     if (item.id === 'poseidon' && poseidonCooldown > 0) { cooldownFrac = poseidonCooldown / POSEIDON_COOLDOWN_TIME; cooldownTotal = POSEIDON_COOLDOWN_TIME; }
     if (item.id === 'helios' && heliosCooldown > 0) { cooldownFrac = heliosCooldown / HELIOS_COOLDOWN_TIME; cooldownTotal = HELIOS_COOLDOWN_TIME; }
     if (cooldownFrac > 0) {
-      // Dark radial wipe (pie slice from top, clockwise)
+      // Dark radial wipe (pie slice from top, clockwise), CLIPPED to this
+      // button cell and sized so it never spills past the button into the bar
+      // below the battlement. Radius kept within the button half-height.
       const cx = x + btnW / 2;
       const cy = 20;
-      const r = 18;
+      const r = 15; // < half the 38px button height, stays inside the cell
       trayCtx.save();
+      // Clip strictly to the button rect so the arc can never bleed outside it.
+      trayCtx.beginPath();
+      trayCtx.rect(x + 1, 1, btnW - 2, 38);
+      trayCtx.clip();
       trayCtx.fillStyle = 'rgba(0, 0, 0, 0.6)';
       trayCtx.beginPath();
       trayCtx.moveTo(cx, cy);
@@ -4194,11 +4182,13 @@ function updateCraftingTray() {
       trayCtx.arc(cx, cy, r, startAngle, endAngle);
       trayCtx.closePath();
       trayCtx.fill();
-      // Cooldown seconds text
+      // Cooldown seconds text, centred on the button (no cost shown while cooling).
       trayCtx.fillStyle = '#ffffff';
-      trayCtx.font = 'bold 10px monospace';
+      trayCtx.font = 'bold 11px monospace';
       trayCtx.textAlign = 'center';
-      trayCtx.fillText(Math.ceil(cooldownFrac * cooldownTotal) + 's', cx, 23);
+      trayCtx.textBaseline = 'middle';
+      trayCtx.fillText(Math.ceil(cooldownFrac * cooldownTotal) + 's', cx, 22);
+      trayCtx.textBaseline = 'alphabetic';
       trayCtx.restore();
     }
   }
@@ -4308,10 +4298,11 @@ function drawCostTokens(cost, res, faith, centreX, y, btnW) {
   if (tokens.length === 0) return;
 
   const GAP = 3; // px gap between tokens (logical space)
-  const maxW = btnW - 8; // keep clear of the button edges
+  const maxW = btnW - 12; // keep a clear margin from the button edges
 
-  // Find the largest font (<=9px) at which the whole line fits maxW.
-  let fontPx = 9;
+  // Find the largest font (<=8px) at which the whole line fits maxW. Capped at
+  // 8 so a two-currency cost like "15Si 20Bz" always sits cleanly on one line.
+  let fontPx = 8;
   const measureTotal = () => {
     trayCtx.font = 'bold ' + fontPx + 'px monospace';
     let w = 0;
@@ -4464,7 +4455,7 @@ function updateEffects(dt) {
   for (const g of glowPool) {
     if (g.life > 0) {
       g.life -= dt;
-      g.mesh.material.opacity = Math.max(0, (g.life / GLOW_LIFE) * 0.7);
+      g.mesh.material.opacity = Math.max(0, (g.life / GLOW_LIFE) * 0.45);
       g.mesh.scale.set(g.scale, g.scale, 1);
       if (g.life <= 0) g.mesh.visible = false;
     }
@@ -4566,7 +4557,7 @@ function spawnContactGlow(x, y, colour, dps) {
       g.mesh.position.x = x;
       g.mesh.position.y = y;
       g.mesh.material.color.setHex(colour);
-      g.mesh.material.opacity = 0.7;
+      g.mesh.material.opacity = 0.45; // calmer flash (was 0.7 — too distracting)
       g.mesh.visible = true;
       g.life = GLOW_LIFE;
       // Scale grows gently with DPS but is hard-clamped so it never balloons.
@@ -4843,9 +4834,9 @@ function setupBurnNoise() {
 
 function updateBurnHiss(intensity) {
   if (!burnGain) return;
-  // intensity: 0 to 1 (fraction of enemies being burned). Kept subtle; the
-  // crackle pops carry the character.
-  burnGain.gain.value = Math.min(0.06, intensity * 0.08);
+  // intensity: 0 to 1 (fraction of enemies being burned). Quieter now — the
+  // burn sizzle was distracting; keep it a faint bed under the crackle.
+  burnGain.gain.value = Math.min(0.03, intensity * 0.04);
 }
 
 // --- Prism chime: short bell ---
@@ -5178,7 +5169,7 @@ function updateCrackle(burningShips) {
     if (voice) {
       // Scale volume and pop rate by heat (0 to 1)
       const heat = Math.min(1, ship.heat);
-      voice.gain.gain.value = 0.03 + heat * 0.07; // hiss volume
+      voice.gain.gain.value = 0.015 + heat * 0.035; // hiss volume (quieter)
       voice.popRate = 2 + heat * 4; // 2 to 6 pops/sec
     }
   }
@@ -5237,7 +5228,7 @@ function fireCracklePop(voice) {
   bp.frequency.value = 800 + Math.random() * 1200; // 800-2000 Hz
   bp.Q.value = 2 + Math.random() * 3;
   const g = ctx.createGain();
-  g.gain.setValueAtTime(0.08 + Math.random() * 0.12, ctx.currentTime);
+  g.gain.setValueAtTime(0.04 + Math.random() * 0.06, ctx.currentTime); // softer pops
   g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
   src.connect(bp).connect(g).connect(masterGain);
   src.start();
@@ -5450,16 +5441,14 @@ function updateDamage(dt) {
       // been off the target for HEAT_DECAY_GRACE seconds.
       enemy.heatGrace = HEAT_DECAY_GRACE;
 
-      // ALL hit feedback lives HERE, at the exact beam-hull contact point — the
-      // beam itself stays a slender uniform strip. A small localized burn glow
-      // + rising sparks (and an occasional smoke wisp), throttled so it reads as
-      // a lively burn mark rather than a swelling blob.
-      if (Math.random() < dt * 18) {
-        spawnContactGlow(contactX, contactY, hitColour || 0xffaa00, 40);
-        spawnSparks(contactX, contactY, hitColour || 0xffcc66, 3);
+      // Contact feedback at the exact hit point — kept SUBTLE (calmer, not
+      // distracting): slower spawn rate, smaller/dimmer glow, fewer sparks.
+      if (Math.random() < dt * 9) {
+        spawnContactGlow(contactX, contactY, hitColour || 0xffaa00, 18);
+        spawnSparks(contactX, contactY, hitColour || 0xffcc66, 1);
       }
-      if (Math.random() < dt * 4) {
-        spawnSmoke(contactX, contactY, 1, 0x5a5048); // faint rising smoke wisp
+      if (Math.random() < dt * 2) {
+        spawnSmoke(contactX, contactY, 1, 0x5a5048); // occasional faint smoke wisp
       }
 
       if (enemy.heat >= enemy.maxHp) {
