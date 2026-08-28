@@ -76,7 +76,13 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
     colour,
     intensity,
     bounces: bouncesUsed,
-    preSplit: !!preSplit
+    preSplit: !!preSplit,
+    // "active" = this beam is doing work (contacting a target). activeSeed is
+    // the part known at solve time: the raw sun column (preSplit) and any
+    // segment terminating on the prism. Ship/altar contact is OR-ed in each
+    // frame by damage.js / foundry.js (into seg.active). Idle beams stay dim.
+    activeSeed: !!preSplit || hit.type === 'prism',
+    active: !!preSplit || hit.type === 'prism'
   });
   if (hit.type === 'mirror' && bouncesLeft > 0) {
     // Record for resonance detection

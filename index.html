@@ -291,9 +291,13 @@ const WORLD_HEIGHT = 100;
 const SUN_Y = 48;              // sun/beam source (top)
 const SHIP_SPAWN_Y = 40;       // ships appear near top
 const PRISM_Y = 30;            // prism splits light here
-const MIRROR_FIELD_TOP = -15;  // top of mirror zone (player area, bottom of screen)
-const MIRROR_FIELD_BOT = -35;  // bottom of mirror zone
-const WALL_Y = -40;            // wall/breach line (ships breach here)
+// RAM_LINE_Y is the crash line: ships stop, explode, and damage the wall HERE,
+// which sits ABOVE the mirror zone so ships never descend into / overlap the
+// mirror discs (finger taps always land on mirrors, never on a boat).
+const RAM_LINE_Y = -6;
+const MIRROR_FIELD_TOP = -12;  // top of mirror zone (raised off the bottom HUD)
+const MIRROR_FIELD_BOT = -30;  // bottom of mirror zone
+const WALL_Y = -40;            // fortress/battlement backdrop line
 const ENEMY_LANE_COUNT = 5;
 
 // --- DEV flags ---
@@ -435,9 +439,9 @@ const COLOUR_GREY   = 0x333333;
 
 // --- Sockets (mirror field at bottom) ---
 const SOCKET_POSITIONS = [
-  [-15, -18], [0, -18], [15, -18],
-  [-15, -25], [0, -25], [15, -25],
-  [-15, -32], [0, -32], [15, -32],
+  [-15, -12], [0, -12], [15, -12],
+  [-15, -19], [0, -19], [15, -19],
+  [-15, -26], [0, -26], [15, -26],
 ];
 const DEFAULT_PRISM_SOCKET = 1; // (0, -18) — but prism placed at PRISM_Y separately
 const DEFAULT_MIRROR_SOCKETS = [3, 4, 5]; // 3 starting mirrors
@@ -794,6 +798,10 @@ const MAX_DUST = 20;
 // Smoke plumes (persistent for stages 3-4)
 const smokePlumes = [];
 
+// Localized battlement impact flashes (one per ship crash, at its X lane)
+const impactFlashes = [];
+const MAX_IMPACT_FLASHES = 12;
+
 function initFortress() {
   const scene = getScene();
   const ww = getWorldWidth();
@@ -864,6 +872,38 @@ function updateFortress(dt) {
       }
     }
   }
+
+  // Update localized impact flashes (fade + slight grow)
+  for (let i = impactFlashes.length - 1; i >= 0; i--) {
+    const f = impactFlashes[i];
+    f.life -= dt;
+    if (f.life <= 0) {
+      f.mesh.visible = false;
+      impactFlashes.splice(i, 1);
+    } else {
+      const t = f.life / f.maxLife; // 1 -> 0
+      f.mesh.material.opacity = t * 0.85;
+      const s = 1 + (1 - t) * 0.6;
+      f.mesh.scale.set(s, s, 1);
+    }
+  }
+}
+
+// Localized stone flash/pulse at a specific X-lane on the battlement, fired
+// when an individual ship crashes into the wall.
+function triggerImpactFlash(x) {
+  if (impactFlashes.length >= MAX_IMPACT_FLASHES) return;
+  const scene = getScene();
+  const geo = new THREE.PlaneGeometry(7, 5);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xffb347, transparent: true, opacity: 0.85, depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  // Sit on the battlement top (a little above WALL_Y), in front of the fort
+  mesh.position.set(x, WALL_Y + 2, -6);
+  scene.add(mesh);
+  impactFlashes.push({ mesh, life: 0.35, maxLife: 0.35 });
 }
 
 // Called from session.js when a breach happens
@@ -1868,7 +1908,13 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
     colour,
     intensity,
     bounces: bouncesUsed,
-    preSplit: !!preSplit
+    preSplit: !!preSplit,
+    // "active" = this beam is doing work (contacting a target). activeSeed is
+    // the part known at solve time: the raw sun column (preSplit) and any
+    // segment terminating on the prism. Ship/altar contact is OR-ed in each
+    // frame by damage.js / foundry.js (into seg.active). Idle beams stay dim.
+    activeSeed: !!preSplit || hit.type === 'prism',
+    active: !!preSplit || hit.type === 'prism'
   });
   if (hit.type === 'mirror' && bouncesLeft > 0) {
     // Record for resonance detection
@@ -2165,8 +2211,15 @@ function rebuildBeams(segments) {
         opacityMult = 0.7 + 0.3 * Math.sin(pulseTime * 2.5);
       }
 
-      const coreW = BEAM_WIDTH * widthMult;
-      const glowW = BEAM_GLOW_WIDTH * widthMult;
+      // Active/idle visual tiers: beams contacting a ship/prism/altar stay at
+      // full opacity + width; idle reflected beams drop to 40% with a thinner
+      // core so active damage lines stand out from the background clutter.
+      const isActive = seg.active !== false; // undefined (older segs) treated active
+      const tierOpacity = isActive ? 1.0 : 0.4;
+      const tierWidth = isActive ? 1.0 : 0.6;
+
+      const coreW = BEAM_WIDTH * widthMult * tierWidth;
+      const glowW = BEAM_GLOW_WIDTH * widthMult * tierWidth;
 
       // Edge fade: reduce opacity if segment ends near world boundary
       const hh = WORLD_HEIGHT / 2;
@@ -2176,7 +2229,7 @@ function rebuildBeams(segments) {
         hh - Math.abs(seg.end.y) + edgeMargin
       );
       const edgeFade = Math.min(1, Math.max(0.1, endDistFromEdge / edgeMargin));
-      const finalOpacity = opacityMult * edgeFade;
+      const finalOpacity = opacityMult * edgeFade * tierOpacity;
 
       positionQuad(entry.core, seg.start, seg.end, coreW);
       positionQuad(entry.glow, seg.start, seg.end, glowW);
@@ -2369,9 +2422,9 @@ function addMirror() {
     // The field is short, so with many mirrors some proximity is unavoidable —
     // but the chosen spot is always the most separated one available.
     const halfW = Math.min(ww / 2 - 6, 26);
-    const rows = [-29, -20];  // prefer the lower row (listed first) on ties
+    const rows = [-26, -14];  // prefer the lower row (listed first) on ties
     const STEPS = 13;
-    let best = { x: 0, y: -29, score: -Infinity };
+    let best = { x: 0, y: -26, score: -Infinity };
     for (const cy of rows) {
       for (let s = 0; s < STEPS; s++) {
         const cx = -halfW + (2 * halfW) * (s / (STEPS - 1));
@@ -2772,6 +2825,10 @@ function updatePrismGlow(segments) {
 
 
 
+// Breach events from the most recent updateEnemies() call, for per-lane feedback.
+const lastBreaches = [];
+function getLastBreaches() { return lastBreaches; }
+
 const pool = [];
 let enemyGroup = null;
 const shipTextures = {};
@@ -3065,6 +3122,9 @@ function spawnEnemy(type, lane, hpMultiplier, yOffset) {
 // Ships move DOWNWARD (negative Y)
 function updateEnemies(dt) {
   let wallDamage = 0;
+  lastBreaches.length = 0;
+  const ww = getWorldWidth();
+  const lw = ww / ENEMY_LANE_COUNT;
   for (let i = 0; i < pool.length; i++) {
     const e = pool[i];
     if (!e.active) continue;
@@ -3112,11 +3172,16 @@ function updateEnemies(dt) {
       e.mesh.rotation.z = Math.sin(e.oarPhase * 0.7) * 0.015; // very slight roll
     }
 
-    if (e.y <= WALL_Y) {
-      // Breach: ship reached the wall
+    if (e.y <= RAM_LINE_Y) {
+      // Crash: ship reaches the ram line (above the mirror zone), explodes,
+      // and damages the wall. It never enters the mirror field.
       const dmg = BREACH_DAMAGE[e.type] || 10;
       const heatFrac = Math.min(1, (e.heat || 0) / e.maxHp);
       wallDamage += dmg * Math.max(0.2, 1 - heatFrac);
+      const cx = -ww / 2 + lw * (e.lane + 0.5) + (e.driftX || 0) + (e.pullX || 0);
+      const heavy = (e.type === 'flagship' || e.type === 'quadrireme');
+      spawnDestruction(cx, RAM_LINE_Y, heavy); // crash burst at the ram line
+      lastBreaches.push({ x: cx, lane: e.lane });
       deactivateEnemy(e);
       continue;
     }
@@ -3443,6 +3508,7 @@ function doSpawn() {
 
 
 
+
 let resources = { brass: 0, bronze: 0, silver: 0, gold: 0 };
 let faith = 0;
 const altars = [];
@@ -3564,7 +3630,8 @@ function updateFoundries(dt) {
       if (segments[s].preSplit) continue;
       if (segHitsBox(segments[s], altar.x, altar.y, ALTAR_HW, ALTAR_HH)) {
         altar.lit = true;
-        break;
+        segments[s].active = true; // beam feeding an altar → full-opacity tier
+        // don't break: mark all segments feeding this altar
       }
     }
     if (altar.lit) altar.everLit = true;
@@ -3650,7 +3717,16 @@ function updateFoundries(dt) {
     }
   }
 
-  // Faith is now generated by the Helios ability (see helios.js), not passively.
+  // Passive Faith trickle: +0.5 Faith/s per actively burning ship, so Faith
+  // builds naturally toward the ultimates even before a Helios cast.
+  // (Helios still grants its burst on top of this.)
+  let burning = 0;
+  const pool = getEnemyPool();
+  for (let i = 0; i < pool.length; i++) {
+    const e = pool[i];
+    if (e.active && e.heat > 0 && !e.shieldBlocking) burning++;
+  }
+  faith += burning * 0.5 * dt;
 }
 
 // Segment-vs-AABB intersection test
@@ -4705,6 +4781,10 @@ function updateDamage(dt) {
   const worldWidth = getWorldWidth();
   const laneWidth = worldWidth / ENEMY_LANE_COUNT;
 
+  // Reset each beam's "active" flag to its solve-time seed; ship contact below
+  // (and altar contact in foundry) re-adds it. Drives the beam opacity tiers.
+  for (let s = 0; s < segments.length; s++) segments[s].active = segments[s].activeSeed || false;
+
   for (let i = 0; i < pool.length; i++) {
     const enemy = pool[i];
     if (!enemy.active) continue;
@@ -4756,6 +4836,7 @@ function updateDamage(dt) {
           }
         }
         totalBeamsHitting++;
+        seg.active = true; // beam is contacting a hull → full-opacity tier
         hitColour = seg.colour;
         if (!haveContact) {
           const cp = segmentBoxEntry(seg, ex, ey, ENEMY_HIT_HALF_W, ENEMY_HIT_HALF_H);
@@ -5035,10 +5116,15 @@ function getWallShake() {
 }
 function tickWallShake(dt) { if (wallShakeTimer > 0) wallShakeTimer -= dt; }
 
+// Quick notch flash on the wall bar when the wall takes a hit.
+let wallBarNotch = 0;
+function flashWallBarNotch() { wallBarNotch = 0.35; }
+
 let wallHitFlash = 0;
 function getWallHitFlash() { return wallHitFlash; }
 function decayWallFlash(dt) {
   if (wallHitFlash > 0) wallHitFlash -= dt;
+  if (wallBarNotch > 0) wallBarNotch -= dt;
   // Drive the red screen flash: subtle, peaks ~0.32 and fades with wallHitFlash.
   if (wallFlashMesh) {
     const a = Math.max(0, wallHitFlash) / 0.3; // 0..1 over the flash life
@@ -5085,6 +5171,14 @@ function drawWallBar() {
   } else {
     hudCtx.fillStyle = fill;
     roundRect(hudCtx, bx, by, Math.max(0, barW * frac), barH, 3);
+    hudCtx.fill();
+  }
+
+  // Quick notch flash across the bar when the wall was just hit
+  if (wallBarNotch > 0) {
+    const a = (wallBarNotch / 0.35) * 0.6;
+    hudCtx.fillStyle = `rgba(255,255,255,${a})`;
+    roundRect(hudCtx, bx, by, barW * frac, barH, 3);
     hudCtx.fill();
   }
 
@@ -5164,6 +5258,7 @@ function resetSession() {
   devourerKilled = false;
   wallHitFlash = 0;
   wallShakeTimer = 0;
+  wallBarNotch = 0;
   if (wallFlashMesh) { wallFlashMesh.material.opacity = 0; wallFlashMesh.visible = false; }
   // Each reset wrapped so one failure can't leave the overlay stuck
   try { resetEnemies(); } catch (e) { console.error('resetEnemies', e); }
@@ -5994,6 +6089,11 @@ function loop(now) {
     addBreaches(newBreaches);
     triggerBreachShake(newBreaches);
     playWallHit();
+    // Per-impact feedback: localized battlement flash at each crash lane +
+    // a quick notch flash on the top wall bar.
+    const breaches = getLastBreaches();
+    for (const b of breaches) triggerImpactFlash(b.x);
+    if (breaches.length > 0) flashWallBarNotch();
   }
 
   // Damage

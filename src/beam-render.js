@@ -61,8 +61,15 @@ export function rebuildBeams(segments) {
         opacityMult = 0.7 + 0.3 * Math.sin(pulseTime * 2.5);
       }
 
-      const coreW = BEAM_WIDTH * widthMult;
-      const glowW = BEAM_GLOW_WIDTH * widthMult;
+      // Active/idle visual tiers: beams contacting a ship/prism/altar stay at
+      // full opacity + width; idle reflected beams drop to 40% with a thinner
+      // core so active damage lines stand out from the background clutter.
+      const isActive = seg.active !== false; // undefined (older segs) treated active
+      const tierOpacity = isActive ? 1.0 : 0.4;
+      const tierWidth = isActive ? 1.0 : 0.6;
+
+      const coreW = BEAM_WIDTH * widthMult * tierWidth;
+      const glowW = BEAM_GLOW_WIDTH * widthMult * tierWidth;
 
       // Edge fade: reduce opacity if segment ends near world boundary
       const hh = WORLD_HEIGHT / 2;
@@ -72,7 +79,7 @@ export function rebuildBeams(segments) {
         hh - Math.abs(seg.end.y) + edgeMargin
       );
       const edgeFade = Math.min(1, Math.max(0.1, endDistFromEdge / edgeMargin));
-      const finalOpacity = opacityMult * edgeFade;
+      const finalOpacity = opacityMult * edgeFade * tierOpacity;
 
       positionQuad(entry.core, seg.start, seg.end, coreW);
       positionQuad(entry.glow, seg.start, seg.end, glowW);

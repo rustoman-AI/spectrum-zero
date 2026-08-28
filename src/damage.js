@@ -39,6 +39,10 @@ export function updateDamage(dt) {
   const worldWidth = getWorldWidth();
   const laneWidth = worldWidth / ENEMY_LANE_COUNT;
 
+  // Reset each beam's "active" flag to its solve-time seed; ship contact below
+  // (and altar contact in foundry) re-adds it. Drives the beam opacity tiers.
+  for (let s = 0; s < segments.length; s++) segments[s].active = segments[s].activeSeed || false;
+
   for (let i = 0; i < pool.length; i++) {
     const enemy = pool[i];
     if (!enemy.active) continue;
@@ -90,6 +94,7 @@ export function updateDamage(dt) {
           }
         }
         totalBeamsHitting++;
+        seg.active = true; // beam is contacting a hull → full-opacity tier
         hitColour = seg.colour;
         if (!haveContact) {
           const cp = segmentBoxEntry(seg, ex, ey, ENEMY_HIT_HALF_W, ENEMY_HIT_HALF_H);

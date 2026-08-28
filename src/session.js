@@ -108,10 +108,15 @@ export function getWallShake() {
 }
 export function tickWallShake(dt) { if (wallShakeTimer > 0) wallShakeTimer -= dt; }
 
+// Quick notch flash on the wall bar when the wall takes a hit.
+let wallBarNotch = 0;
+export function flashWallBarNotch() { wallBarNotch = 0.35; }
+
 let wallHitFlash = 0;
 export function getWallHitFlash() { return wallHitFlash; }
 export function decayWallFlash(dt) {
   if (wallHitFlash > 0) wallHitFlash -= dt;
+  if (wallBarNotch > 0) wallBarNotch -= dt;
   // Drive the red screen flash: subtle, peaks ~0.32 and fades with wallHitFlash.
   if (wallFlashMesh) {
     const a = Math.max(0, wallHitFlash) / 0.3; // 0..1 over the flash life
@@ -158,6 +163,14 @@ function drawWallBar() {
   } else {
     hudCtx.fillStyle = fill;
     roundRect(hudCtx, bx, by, Math.max(0, barW * frac), barH, 3);
+    hudCtx.fill();
+  }
+
+  // Quick notch flash across the bar when the wall was just hit
+  if (wallBarNotch > 0) {
+    const a = (wallBarNotch / 0.35) * 0.6;
+    hudCtx.fillStyle = `rgba(255,255,255,${a})`;
+    roundRect(hudCtx, bx, by, barW * frac, barH, 3);
     hudCtx.fill();
   }
 
@@ -237,6 +250,7 @@ export function resetSession() {
   devourerKilled = false;
   wallHitFlash = 0;
   wallShakeTimer = 0;
+  wallBarNotch = 0;
   if (wallFlashMesh) { wallFlashMesh.material.opacity = 0; wallFlashMesh.visible = false; }
   // Each reset wrapped so one failure can't leave the overlay stuck
   try { resetEnemies(); } catch (e) { console.error('resetEnemies', e); }

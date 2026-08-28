@@ -37,6 +37,10 @@ const MAX_DUST = 20;
 // Smoke plumes (persistent for stages 3-4)
 const smokePlumes = [];
 
+// Localized battlement impact flashes (one per ship crash, at its X lane)
+const impactFlashes = [];
+const MAX_IMPACT_FLASHES = 12;
+
 export function initFortress() {
   const scene = getScene();
   const ww = getWorldWidth();
@@ -107,6 +111,38 @@ export function updateFortress(dt) {
       }
     }
   }
+
+  // Update localized impact flashes (fade + slight grow)
+  for (let i = impactFlashes.length - 1; i >= 0; i--) {
+    const f = impactFlashes[i];
+    f.life -= dt;
+    if (f.life <= 0) {
+      f.mesh.visible = false;
+      impactFlashes.splice(i, 1);
+    } else {
+      const t = f.life / f.maxLife; // 1 -> 0
+      f.mesh.material.opacity = t * 0.85;
+      const s = 1 + (1 - t) * 0.6;
+      f.mesh.scale.set(s, s, 1);
+    }
+  }
+}
+
+// Localized stone flash/pulse at a specific X-lane on the battlement, fired
+// when an individual ship crashes into the wall.
+export function triggerImpactFlash(x) {
+  if (impactFlashes.length >= MAX_IMPACT_FLASHES) return;
+  const scene = getScene();
+  const geo = new THREE.PlaneGeometry(7, 5);
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xffb347, transparent: true, opacity: 0.85, depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  // Sit on the battlement top (a little above WALL_Y), in front of the fort
+  mesh.position.set(x, WALL_Y + 2, -6);
+  scene.add(mesh);
+  impactFlashes.push({ mesh, life: 0.35, maxLife: 0.35 });
 }
 
 // Called from session.js when a breach happens

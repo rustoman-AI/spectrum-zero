@@ -132,9 +132,9 @@ export function addMirror() {
     // The field is short, so with many mirrors some proximity is unavoidable —
     // but the chosen spot is always the most separated one available.
     const halfW = Math.min(ww / 2 - 6, 26);
-    const rows = [-29, -20];  // prefer the lower row (listed first) on ties
+    const rows = [-26, -14];  // prefer the lower row (listed first) on ties
     const STEPS = 13;
-    let best = { x: 0, y: -29, score: -Infinity };
+    let best = { x: 0, y: -26, score: -Infinity };
     for (const cy of rows) {
       for (let s = 0; s < STEPS; s++) {
         const cx = -halfW + (2 * halfW) * (s / (STEPS - 1));

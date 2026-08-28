@@ -3,12 +3,16 @@
 // ============================================================
 
 import {
-  ENEMY_POOL_SIZE, ENEMY_TYPES, SHIP_SPAWN_Y, WALL_Y,
+  ENEMY_POOL_SIZE, ENEMY_TYPES, SHIP_SPAWN_Y, WALL_Y, RAM_LINE_Y,
   ENEMY_LANE_COUNT, WORLD_HEIGHT, BREACH_DAMAGE
 } from './config.js';
 import { getScene, getWorldWidth } from './renderer.js';
 import { addKillReward } from './foundry.js';
-import { spawnSparks, spawnContactGlow } from './effects.js';
+import { spawnSparks, spawnContactGlow, spawnDestruction } from './effects.js';
+
+// Breach events from the most recent updateEnemies() call, for per-lane feedback.
+const lastBreaches = [];
+export function getLastBreaches() { return lastBreaches; }
 
 const pool = [];
 let enemyGroup = null;
@@ -303,6 +307,9 @@ export function spawnEnemy(type, lane, hpMultiplier, yOffset) {
 // Ships move DOWNWARD (negative Y)
 export function updateEnemies(dt) {
   let wallDamage = 0;
+  lastBreaches.length = 0;
+  const ww = getWorldWidth();
+  const lw = ww / ENEMY_LANE_COUNT;
   for (let i = 0; i < pool.length; i++) {
     const e = pool[i];
     if (!e.active) continue;
@@ -350,11 +357,16 @@ export function updateEnemies(dt) {
       e.mesh.rotation.z = Math.sin(e.oarPhase * 0.7) * 0.015; // very slight roll
     }
 
-    if (e.y <= WALL_Y) {
-      // Breach: ship reached the wall
+    if (e.y <= RAM_LINE_Y) {
+      // Crash: ship reaches the ram line (above the mirror zone), explodes,
+      // and damages the wall. It never enters the mirror field.
       const dmg = BREACH_DAMAGE[e.type] || 10;
       const heatFrac = Math.min(1, (e.heat || 0) / e.maxHp);
       wallDamage += dmg * Math.max(0.2, 1 - heatFrac);
+      const cx = -ww / 2 + lw * (e.lane + 0.5) + (e.driftX || 0) + (e.pullX || 0);
+      const heavy = (e.type === 'flagship' || e.type === 'quadrireme');
+      spawnDestruction(cx, RAM_LINE_Y, heavy); // crash burst at the ram line
+      lastBreaches.push({ x: cx, lane: e.lane });
       deactivateEnemy(e);
       continue;
     }

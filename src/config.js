@@ -13,9 +13,13 @@ export const WORLD_HEIGHT = 100;
 export const SUN_Y = 48;              // sun/beam source (top)
 export const SHIP_SPAWN_Y = 40;       // ships appear near top
 export const PRISM_Y = 30;            // prism splits light here
-export const MIRROR_FIELD_TOP = -15;  // top of mirror zone (player area, bottom of screen)
-export const MIRROR_FIELD_BOT = -35;  // bottom of mirror zone
-export const WALL_Y = -40;            // wall/breach line (ships breach here)
+// RAM_LINE_Y is the crash line: ships stop, explode, and damage the wall HERE,
+// which sits ABOVE the mirror zone so ships never descend into / overlap the
+// mirror discs (finger taps always land on mirrors, never on a boat).
+export const RAM_LINE_Y = -6;
+export const MIRROR_FIELD_TOP = -12;  // top of mirror zone (raised off the bottom HUD)
+export const MIRROR_FIELD_BOT = -30;  // bottom of mirror zone
+export const WALL_Y = -40;            // fortress/battlement backdrop line
 export const ENEMY_LANE_COUNT = 5;
 
 // --- DEV flags ---
@@ -157,9 +161,9 @@ export const COLOUR_GREY   = 0x333333;
 
 // --- Sockets (mirror field at bottom) ---
 export const SOCKET_POSITIONS = [
-  [-15, -18], [0, -18], [15, -18],
-  [-15, -25], [0, -25], [15, -25],
-  [-15, -32], [0, -32], [15, -32],
+  [-15, -12], [0, -12], [15, -12],
+  [-15, -19], [0, -19], [15, -19],
+  [-15, -26], [0, -26], [15, -26],
 ];
 export const DEFAULT_PRISM_SOCKET = 1; // (0, -18) — but prism placed at PRISM_Y separately
 export const DEFAULT_MIRROR_SOCKETS = [3, 4, 5]; // 3 starting mirrors

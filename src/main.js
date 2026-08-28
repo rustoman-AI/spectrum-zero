@@ -9,12 +9,12 @@ import { solve, isDirty, getSegments, markDirty } from './beam.js';
 import { initSockets, initMirrors, updateAllMirrorGeometries, getMirrors, updateMirrorTweens } from './mirror.js';
 import { initPrisms, getPrisms, updatePrismGlow } from './prism.js';
 import { initInput, tickDebug } from './input.js';
-import { initEnemies, updateEnemies, applySlowStates, getEnemyPool } from './enemy.js';
+import { initEnemies, updateEnemies, applySlowStates, getEnemyPool, getLastBreaches } from './enemy.js';
 import { updateSpawner, resetSpawner } from './enemy-spawner.js';
 import { updateDamage, getKillCount, updateBlockedLabels } from './damage.js';
-import { initSession, updateSession, addBreaches, isGameOver, getElapsed, updateHud, handleRestartTap, decayWallFlash, getWallHitFlash, getWallShake, tickWallShake } from './session.js';
+import { initSession, updateSession, addBreaches, isGameOver, getElapsed, updateHud, handleRestartTap, decayWallFlash, getWallHitFlash, getWallShake, tickWallShake, flashWallBarNotch } from './session.js';
 import { initFoundries, updateFoundries, getFoundryColliders, getAltarAudioState } from './foundry.js';
-import { initFortress, updateFortress, triggerBreachShake } from './fortress.js';
+import { initFortress, updateFortress, triggerBreachShake, triggerImpactFlash } from './fortress.js';
 import { initCrafting, updateCraftingTray, isZeusAffordable } from './crafting.js';
 import { initBackground, updateBackground } from './background.js';
 import { initEffects, updateEffects } from './effects.js';
@@ -112,6 +112,11 @@ function loop(now) {
     addBreaches(newBreaches);
     triggerBreachShake(newBreaches);
     playWallHit();
+    // Per-impact feedback: localized battlement flash at each crash lane +
+    // a quick notch flash on the top wall bar.
+    const breaches = getLastBreaches();
+    for (const b of breaches) triggerImpactFlash(b.x);
+    if (breaches.length > 0) flashWallBarNotch();
   }
 
   // Damage
