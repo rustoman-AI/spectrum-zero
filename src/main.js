@@ -22,6 +22,7 @@ import { initAudio, updateHum, updateBurnHiss, updateAltarTone, updateCrackle, p
 import { initZeus, updateZeus, getZeusFlash, getZeusShake, isZeusReady } from './zeus.js';
 import { initPoseidon, updatePoseidon } from './poseidon.js';
 import { initHelios, updateHelios } from './helios.js';
+import { initTutorial, updateTutorial } from './tutorial.js';
 
 // --- Source state ---
 let sourceX = 0;
@@ -55,6 +56,7 @@ export function init() {
   initEffects();
   initAudio();
   initSession();
+  initTutorial();
   resetSpawner();
 
   const canvas = getRenderer().domElement;
@@ -186,6 +188,8 @@ function loop(now) {
   // HUD + crafting tray
   updateHud();
   updateCraftingTray();
+  // Onboarding micro-tutorial (fades after 6s or the first ship sunk).
+  updateTutorial(dt, getKillCount());
   tickDebug(dt);
 
   // Camera shake from wall damage

@@ -44,6 +44,12 @@ let canvasEl = null;
 // Selection highlight ring
 let highlightMesh = null;
 let highlight2Mesh = null;  // second finger highlight
+// Rotation indicator: a dotted arc + curved arrows drawn on a canvas texture,
+// shown around the selected mirror to teach "swipe to rotate". Slowly spins to
+// hint the rotation direction.
+let rotIndicatorMesh = null;
+let rotIndicatorTex = null;
+let rotIndicatorSpin = 0;
 // Drop-target highlight (shown during drag at nearest socket)
 let dropTargetMesh = null;
 // --- Debug overlay ---
@@ -87,6 +93,88 @@ function createHighlight() {
   dropTargetMesh.position.z = 0.5;
   dropTargetMesh.visible = false;
   getScene().add(dropTargetMesh);
+
+  createRotIndicator();
+}
+
+// Build the dotted rotation arc + curved arrowheads on a small canvas texture.
+// A green (matching the selection ring) dashed arc sweeping most of the circle,
+// with an arrowhead at each end to read as "rotate this way".
+function createRotIndicator() {
+  const cv = document.createElement('canvas');
+  cv.width = 128; cv.height = 128;
+  const c = cv.getContext('2d');
+  const cx = 64, cy = 64, r = 50;
+  c.clearRect(0, 0, 128, 128);
+  c.strokeStyle = '#00ff88';
+  c.lineWidth = 4;
+  c.lineCap = 'round';
+  // Dotted arc: short dashes over ~300 degrees, leaving a gap at the top.
+  c.setLineDash([6, 9]);
+  const a0 = -Math.PI * 0.5 + 0.5; // start just after top
+  const a1 = a0 + Math.PI * 1.7;   // sweep ~306 degrees clockwise
+  c.beginPath();
+  c.arc(cx, cy, r, a0, a1);
+  c.stroke();
+  c.setLineDash([]);
+  // Curved arrowhead at the leading (end) tip, pointing along the sweep.
+  drawArrowHead(c, cx, cy, r, a1, 1);
+  // A second arrowhead at the start tip, pointing the other way, so the hint
+  // reads as bidirectional (rotate either way).
+  drawArrowHead(c, cx, cy, r, a0, -1);
+
+  rotIndicatorTex = new THREE.CanvasTexture(cv);
+  rotIndicatorTex.minFilter = THREE.LinearFilter;
+  const geo = new THREE.PlaneGeometry(11, 11); // ~ around the 5u mirror disc
+  const mat = new THREE.MeshBasicMaterial({
+    map: rotIndicatorTex, transparent: true, opacity: 0.85, depthWrite: false,
+  });
+  rotIndicatorMesh = new THREE.Mesh(geo, mat);
+  rotIndicatorMesh.position.z = 0.45; // just under the crisp selection ring
+  rotIndicatorMesh.visible = false;
+  getScene().add(rotIndicatorMesh);
+}
+
+// Draw a small arrowhead tangent to the circle at angle `a`. `dir` = +1 draws
+// it pointing along increasing angle, -1 the opposite way.
+function drawArrowHead(c, cx, cy, r, a, dir) {
+  const px = cx + Math.cos(a) * r;
+  const py = cy + Math.sin(a) * r;
+  // Tangent direction at this point (perpendicular to the radius).
+  const tx = -Math.sin(a) * dir;
+  const ty = Math.cos(a) * dir;
+  // Inward radial direction (toward centre) for the head's width.
+  const rx = -Math.cos(a);
+  const ry = -Math.sin(a);
+  const len = 11, wid = 7;
+  const bx = px - tx * len;
+  const by = py - ty * len;
+  c.fillStyle = '#00ff88';
+  c.beginPath();
+  c.moveTo(px, py);                                   // tip
+  c.lineTo(bx + rx * wid, by + ry * wid);             // one wing (inner)
+  c.lineTo(bx - rx * wid, by - ry * wid);             // other wing (outer)
+  c.closePath();
+  c.fill();
+}
+
+// Follow the selected mirror and spin slowly to hint rotation. Called each
+// frame. `mirror` is the currently selected mirror (or null to hide).
+function updateRotIndicator(dt, mirror) {
+  if (!rotIndicatorMesh) return;
+  if (!mirror) { rotIndicatorMesh.visible = false; return; }
+  const mx = FREE_PLACEMENT ? mirror.freeX : SOCKET_POSITIONS[mirror.socketIndex][0];
+  const my = FREE_PLACEMENT ? mirror.freeY : SOCKET_POSITIONS[mirror.socketIndex][1];
+  rotIndicatorMesh.position.x = mx;
+  rotIndicatorMesh.position.y = my;
+  rotIndicatorMesh.visible = true;
+  // Slow continuous spin so the dashed arc appears to "turn", reinforcing the
+  // rotate gesture. Gentle so it doesn't distract.
+  rotIndicatorSpin += dt * 0.9;
+  rotIndicatorMesh.rotation.z = rotIndicatorSpin;
+  // Soft opacity breathe so it reads as a live hint, not a static ring.
+  const pulse = 0.6 + 0.25 * Math.sin(Date.now() * 0.005);
+  rotIndicatorMesh.material.opacity = pulse;
 }
 function showHighlight(obj) {
   const hx = FREE_PLACEMENT ? obj.freeX : SOCKET_POSITIONS[obj.socketIndex][0];
@@ -109,6 +197,7 @@ function deselect() {
   selectedType = null;
   state = STATE_IDLE;
   hideHighlight();
+  if (rotIndicatorMesh) rotIndicatorMesh.visible = false;
 }
 // Reset all input state on session restart — clears selection highlight,
 // drag state, and both pointer trackers so nothing carries into the new run.
@@ -482,6 +571,10 @@ function updateDebug() {
 // Called from main loop each frame so overlay stays current when visible
 export function tickDebug(dt) {
   updateRotationSmoothing(dt);
+  // Rotation hint follows the selected mirror; hidden otherwise (incl. while
+  // actively dragging, so it doesn't clutter a reposition).
+  const showRot = selectedObject && selectedType === 'mirror' && state !== STATE_DRAG;
+  updateRotIndicator(dt, showRot ? selectedObject : null);
   updateDebug();
 }
 

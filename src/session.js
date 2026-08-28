@@ -21,6 +21,7 @@ import { resetZeus } from './zeus.js';
 import { resetPoseidon } from './poseidon.js';
 import { resetHelios } from './helios.js';
 import { resetInput } from './input.js';
+import { resetTutorial } from './tutorial.js';
 import { MSG_LOSE, RES_SLAG_SHORT, RES_INSIGHT_SHORT, RES_RECOMBO_SHORT } from './strings.js';
 
 let elapsed = 0;
@@ -304,6 +305,7 @@ export function resetSession() {
   try { resetPoseidon(); } catch (e) { console.error('resetPoseidon', e); }
   try { resetHelios(); } catch (e) { console.error('resetHelios', e); }
   try { resetInput(); } catch (e) { console.error('resetInput', e); }
+  try { resetTutorial(); } catch (e) { console.error('resetTutorial', e); }
   markDirty();
   // Restore visibility + opacity faded out on the end screen
   if (typeof setBeamsVisible === 'function') setBeamsVisible(true);
