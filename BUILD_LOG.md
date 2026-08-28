@@ -393,3 +393,21 @@ All procedural canvas drawing at load time — zero image files, zip size unchan
 **Verified:** `node build.js` -> 220.6 KB, exit 0. Rotation 11/11, smoke 29/29. Ram-line and shake numbers checked (breach line -39, 9u below mirrors; shake cut 70%). The audio (sea bed, wooden/drum wall hit, bronze clang, temple horn, thunderclap), the beam-centre anchoring, and the shop-text crispness were reasoned/verified in code but not heard/seen on device — worth a playtest pass, especially confirming the new audio reads as "Greek nautical" and that beams visibly meet at the disc centres.
 
 **Note:** This reverts the prior "ships stop above the mirror discs" decision. Ships now pass through the mirror field to reach the battlement, so a hull can visually overlap a disc that's placed in an active lane. That's the explicit trade the new spec chose (breach must read at the wall); flagged in case the overlap needs revisiting.
+
+---
+
+## 2026-08-25 — Procedural Greek Acoustic Audio (precise synthesis specs)
+
+**Asked:** Overhaul audio.js to replace synth-y sounds with procedural Mediterranean/Ancient-Greek acoustic instruments, to specific recipes: (1) sea ambience = continuous filtered pink noise with gain modulated by a 0.1Hz LFO; (2) wall breach = tympanon war drum, exponential pitch drop 120->45Hz over 0.2s + lowpass; (3) shield deflection = bronze plate, inharmonic sine cluster at 420/680/1150Hz; (4) ship burn = organic timber crackle via short noise-burst pulses (no square waves); (5) Helios/Priest = resonant temple bell with decaying harmonic overtones; (6) Zeus = deep acoustic thunder via a modulated low-frequency noise sweep.
+
+**Generated (all in `src/audio.js`, refining the prior pass to the exact specs):**
+- **Sea (item 1):** Replaced the timer-fired discrete wave-washes with a *continuous* bed of true pink noise (Paul Kellet's economical filter, 4s loop) through a 900Hz lowpass into `breezeGain` (0.05). A 0.1Hz sine LFO (one full swell every 10s) drives `waveLfoGain` (±0.035) summed into `breezeGain.gain`, so the ocean rhythmically washes in and out. `updateSeaAmbience` is now a no-op (fully LFO-driven). Silence zeros the LFO depth first (so it can't push the level back up) then the base; reset restores both.
+- **Wall breach / Tympanon (item 2):** `playWallHit` is a sine at 120Hz dropping exponentially to 45Hz over 0.2s through a lowpass (320->120Hz) for a warm hollow membrane, with a short wooden-crunch noise burst layered on top for the hull hit.
+- **Shield / bronze plate (item 3):** `playRicochet` is three inharmonic sines at exactly 420 / 680 / 1150 Hz (decays 0.35 / 0.28 / 0.20s) plus a brief metallic strike transient, with a tiny per-strike detune so repeats aren't mechanical.
+- **Burn / timber (item 4):** The continuous burn hiss moved from a thin 3kHz highpass to a woody 1.2kHz bandpass (Q 0.6). The organic pops are carried by the existing per-ship crackle pulse system (short band-passed noise bursts) — no square waves anywhere.
+- **Helios temple bell (item 5):** `playHeliosHorn` is now a struck bell: a 392Hz fundamental with a harmonic overtone stack (1x-6x), each higher partial quieter and faster-decaying (3.2s down to 0.8s), plus a soft mallet transient — a warm, sacred ring-out.
+- **Zeus thunder (item 6):** `playZeusThunder` is a short crack transient seating the strike, then a long low-passed noise bed sweeping 320->55Hz, whose gain is modulated by a tremolo LFO (5.5Hz slowing to 2.5Hz, depth fading) so the rumble "rolls" and recedes like natural thunder.
+
+**Verified:** `node build.js` -> 221.9 KB, exit 0 (the strict-mode lint confirms the new synthesis code is valid and all refs resolve). Rotation 11/11, smoke 29/29. The LFO->AudioParam connections (sea swell, Zeus tremolo) are standard WebAudio (the oscillator sums into the param's value).
+
+**Honest caveat:** Audio cannot be heard in this environment — every sound here was designed by synthesis recipe and frequency, not auditioned. This is the one area I can't self-verify. A device playtest is needed to confirm the sea reads as gentle surf, the tympanon/bronze/bell/thunder land as intended, and levels sit right against the master gain (0.5). If anything is too loud/quiet or off-character, the per-sound gains and decay times are simple to tune.
