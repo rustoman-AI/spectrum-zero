@@ -165,14 +165,20 @@ export function updatePoseidon(dt) {
     e.mesh.rotation.z = e.mesh.rotation.z * 0.85 + tiltTarget * 0.15;
   }
 
-  // End
+  // End: the vortex expires. Ships must NEVER snap back to their lanes — their
+  // current lateral offset (pullX) is COMMITTED as permanent. We simply stop
+  // applying pull and clear the wind slow; because world-X is always computed
+  // as laneCentre + driftX + pullX, leaving pullX untouched keeps each ship
+  // exactly where the vortex left it, and normal downward sailing continues
+  // from there (e.y -= speed * dt) with no teleport or rubber-banding.
   if (timer <= 0) {
     active = false;
     setWindActive(false);
-    // Gradually release pull
     const pool2 = getEnemyPool();
     for (const e of pool2) {
-      if (e.active) e.pullX = 0; // release instantly (ships snap back to lanes)
+      if (!e.active) continue;
+      e.mesh.rotation.z = 0; // level out any lingering vortex tilt (visual only)
+      // pullX intentionally left as-is — the shifted position is now permanent.
     }
   }
 }

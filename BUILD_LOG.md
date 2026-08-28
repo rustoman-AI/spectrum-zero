@@ -548,3 +548,17 @@ All procedural canvas drawing at load time — zero image files, zip size unchan
 **Verified:** `node build.js` -> 241.1 KB, exit 0. Rotation 11/11, smoke 29/29 (all changes are visual; no gameplay math touched).
 
 **Honest caveat:** These are rendering changes I can't view here — the gradient colours and V-wake motion were reasoned from the canvas/particle params, not seen. Worth a device pass to confirm the azure→turquoise reads well (and stays below the beam-brightness ceiling), the wake looks like a proper spreading V behind ships, and the 48-slot smoke pool holds up under a heavy wave without wakes starving the destruction smoke.
+
+---
+
+## 2026-08-25 — Poseidon Vortex Release: Commit Position (no snap-back)
+
+**Asked:** When a whirlpool ends, ships must NOT snap/interpolate back to their original lanes. Commit their current (X, Y) as the new starting point and resume normal downward sailing from there — no teleport or rubber-banding.
+
+**Root cause:** A ship's world-X is computed everywhere as `laneCentre(lane) + driftX + pullX`, and the whirlpool accumulates its lateral shove into `pullX`. On expiry, `updatePoseidon`'s End block did `e.pullX = 0` for every ship — instantly zeroing the offset, which teleported each ship back to its lane centre (the comment even said "ships snap back to lanes").
+
+**Generated:** Removed the `pullX = 0` reset. On vortex expiry the code now just deactivates the whirlpool and clears the wind slow, leaving each ship's accumulated `pullX` untouched. Because world-X is `laneCentre + driftX + pullX` every frame, keeping `pullX` holds the ship exactly where the vortex left it, and the normal `e.y -= speed * dt` descent in `updateEnemies` continues straight down from that committed position — no snap, no interpolation. Also levels any lingering vortex tilt (`mesh.rotation.z = 0`, purely cosmetic; the propulsion animation overwrites it anyway). The breach-X clamp already keeps a far-shoved ship's eventual impact on-screen.
+
+**Verified:** `node build.js` -> 241.6 KB, exit 0. Rotation 11/11, smoke 29/29. The smoke test's "Poseidon pull" case (sailed pullX 14, oared -6) still passes — the pull *accumulation* is unchanged; only the release behaviour changed (it no longer resets).
+
+**Honest caveat:** Verified by the code path + tests, not viewed on device — worth a quick check that ships dragged by the vortex stay put when it ends and sail straight down from there (no visible jump back toward their lanes).
