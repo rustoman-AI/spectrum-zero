@@ -239,3 +239,19 @@ All procedural canvas drawing at load time — zero image files, zip size unchan
 **Missteps (caught by the build lint, not shipped):** `src/helios.js` is concatenated into the same IIFE as the other modules, so its module-level names share one scope. The first build failed with "Identifier 'active' has already been declared" — Poseidon already owns a module-level `let active`. A second latent collision was a non-exported `getACtx()` duplicated in `zeus.js`. Fixed by prefixing all Helios module state (`heliosActive`, `heliosTimer`, `heliosFaithRemaining`, `heliosACtx`, `heliosHumOsc`, `heliosHumGain`) and renaming the audio helper to `getHeliosCtx()`. This is exactly the class of bug the strict-mode VM lint in `build.js` exists to catch, and it did.
 
 **Verified:** `node build.js` → 192.1 KB, exit 0. `test_rotation.js` 11/11, `test_smoke.js` 29/29. An honest note on the smoke test: its "Shop purchases" and "Shield-bearer deflection" cases use a *local* mock `SHOP` (which still lists the old priest) and mock enemies — they exercise the resource-math and angle primitives, not the new shop wiring or Helios. To cover the actual new logic I ran a separate headless check (6/6): tier-locking removes owned prism tiers and shows none at tier 6, and Helios grants exactly 15 Faith over 5s. The visual bloom, the on-hull contact spark position, and the audio (solar hum, defeat-time cutoff) were reasoned about but not seen/heard in this environment — worth a manual on-device pass.
+
+---
+
+## 2026-08-25 — Contact Flash Too Big (regression from previous FX change)
+
+**Asked:** The white contact flash is way too massive — clamp it to at most ~1.2x the target ship size, keep it decaying smoothly within 0.15s, and stop it compounding in scale when multiple beam ticks land.
+
+**Root cause (my own regression):** In the previous "contact-point FX" change I spawned a glow *every frame* at `raw * 1.5` DPS. `spawnContactGlow` scaled the sprite by `0.5 + min(dps/50, 2)` on a 3x3-unit base plane, so any real hit maxed the scale (7.5-unit glow), and `updateEffects` then grew it another 50% as it decayed. Spawning every frame kept one pool slot pinned at peak opacity — a constant swelling blob over the centre beam.
+
+**Fixed:**
+- Base glow plane shrunk 3x3 -> 1.5x1.5 units.
+- Scale formula changed to `min(2.6, 1 + dps/120)` — a hard cap. Peak rendered size = 1.5 * 2.6 = 3.9u (~1.2x a mid 3.5u ship); the everyday contact spark (dps 40) renders at 2.0u, smaller than every ship type.
+- Removed the decay-time scale growth in `updateEffects`; scale is now set once at spawn and held, so repeated ticks can't compound it. Opacity fades linearly to 0 over the fixed 0.15s life (`GLOW_LIFE`).
+- `damage.js` no longer spawns a glow every frame — the contact glow/sparks are throttled (~18/s) with a modest fixed DPS, so it reads as a lively spark rather than a persistent flash.
+
+**Verified:** `node build.js` -> 192.7 KB, exit 0. Rotation 11/11, smoke 29/29. Scale math checked numerically: contact spark = 2.0u (0.25x-0.8x ship size across all types), absolute max glow = 3.9u (1.0-1.2x a mid ship) even for destruction/huge DPS. Not yet eyeballed on-device.

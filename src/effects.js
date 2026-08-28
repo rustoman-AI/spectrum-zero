@@ -8,6 +8,11 @@ import { getScene } from './renderer.js';
 // --- Contact glow pool (beam hitting enemy) ---
 const GLOW_POOL_SIZE = 8;
 const glowPool = [];
+const GLOW_LIFE = 0.15;      // seconds — fixed flash lifetime
+const GLOW_BASE = 1.5;       // base plane size (world units)
+// Cap so peak rendered glow (GLOW_BASE * scale) stays ~1.2x a mid ship (~3.5u):
+// 1.5 * 2.6 = 3.9 units. Never dwarfs the ship or its neighbours.
+const GLOW_MAX_SCALE = 2.6;
 
 // --- Spark pool (short-lived particles on damage) ---
 const SPARK_POOL_SIZE = 24;
@@ -22,9 +27,9 @@ let audioCtx = null;
 
 export function initEffects() {
   const scene = getScene();
-  // Contact glows
+  // Contact glows (small base — clamped so the flash never dwarfs a ship)
   for (let i = 0; i < GLOW_POOL_SIZE; i++) {
-    const geo = new THREE.PlaneGeometry(3, 3);
+    const geo = new THREE.PlaneGeometry(1.5, 1.5);
     const mat = new THREE.MeshBasicMaterial({
       color: 0xffffff, transparent: true, opacity: 0,
       blending: THREE.AdditiveBlending, depthWrite: false
@@ -63,12 +68,14 @@ export function initEffects() {
 }
 
 export function updateEffects(dt) {
-  // Glows: fade out
+  // Glows: smooth opacity fade over the fixed 0.15s life. Scale is set once at
+  // spawn and held constant — no growth-on-decay, so repeated beam ticks can't
+  // compound the flash into a swelling blob.
   for (const g of glowPool) {
     if (g.life > 0) {
       g.life -= dt;
-      g.mesh.material.opacity = Math.max(0, g.life * 2);
-      g.mesh.scale.set(g.scale * (1 + (1 - g.life) * 0.5), g.scale * (1 + (1 - g.life) * 0.5), 1);
+      g.mesh.material.opacity = Math.max(0, (g.life / GLOW_LIFE) * 0.7);
+      g.mesh.scale.set(g.scale, g.scale, 1);
       if (g.life <= 0) g.mesh.visible = false;
     }
   }
@@ -104,10 +111,11 @@ export function spawnContactGlow(x, y, colour, dps) {
       g.mesh.position.x = x;
       g.mesh.position.y = y;
       g.mesh.material.color.setHex(colour);
-      g.mesh.material.opacity = 0.6;
+      g.mesh.material.opacity = 0.7;
       g.mesh.visible = true;
-      g.life = 0.15;
-      g.scale = 0.5 + Math.min(dps / 50, 2);
+      g.life = GLOW_LIFE;
+      // Scale grows gently with DPS but is hard-clamped so it never balloons.
+      g.scale = Math.min(GLOW_MAX_SCALE, 1.0 + dps / 120);
       g.colour = colour;
       return;
     }

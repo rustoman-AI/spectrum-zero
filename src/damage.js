@@ -142,11 +142,11 @@ export function updateDamage(dt) {
       enemy.heat += dmg * dt;
       enemy.burn = enemy.heat / enemy.maxHp;
 
-      // Intense contact FX at the exact beam-hull contact point.
-      // A bright white-hot core glow every frame plus throttled sparks.
-      spawnContactGlow(contactX, contactY, 0xffffff, raw * 1.5);
-      if (Math.random() < dt * 20) {
-        spawnContactGlow(contactX, contactY, hitColour || 0xffaa00, raw);
+      // Contact FX at the exact beam-hull contact point. Throttled (not every
+      // frame) so the small clamped glow reads as a lively spark, not a
+      // constant blob. A modest DPS value keeps the flash well under ship size.
+      if (Math.random() < dt * 18) {
+        spawnContactGlow(contactX, contactY, hitColour || 0xffaa00, 40);
         spawnSparks(contactX, contactY, hitColour || 0xffcc66, 3);
       }
 
