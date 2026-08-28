@@ -510,3 +510,15 @@ All procedural canvas drawing at load time — zero image files, zip size unchan
 **Verified:** `node build.js` -> 240.6 KB, exit 0. Rotation 11/11, smoke 29/29 (purely a sprite change — the shield *deflection-angle* logic is untouched, so the shield-bearer deflection test still passes). Arc reduction is 7→2 ≈ 71%, matching the ~70% target.
 
 **Honest caveat:** This is a canvas-art change I can't view here — I reasoned the geometry from the ellipse parameters. Worth a device look to confirm the plates now read as clean flat mantlet shields hugging the deck (not stacked umbrellas) and the bronze rims still clearly signal armour.
+
+---
+
+## 2026-08-25 — Mirror Ray-Anchor Perspective Offset
+
+**Asked:** Beams connecting to the mirror discs look offset because the tilted perspective shifts the perceived disc centre toward the bottom rim. Offset the incident-ray connection point Y from `mirror.position.y` to `mirror.position.y - (mirrorRadius * 0.35)` so the ray terminates inside the illuminated centre ellipse of the gold disc rather than clipping the far rim.
+
+**Generated:** In `beam.js castRay`, the mirror-hit anchor `center` (midpoint of p1/p2, used both as the incident segment's visible end and the reflected ray's origin) now nudges its Y down by `mirrorRadius * 0.35`, where `mirrorRadius = mirror.length / 2` (5 → offset 1.75u). Using the mirror's own `length` field keeps it correct without importing/hardcoding. The incident beam now lands in the disc's centre ellipse and the reflected beam emanates from the same corrected point, so both read as cleanly connected to the disc middle.
+
+**Verified:** `node build.js` -> 241.0 KB, exit 0. Rotation 11/11, smoke 29/29 — the offset only shifts the visual endpoint/origin, not the reflection-direction math (which uses the surface normal), so gameplay is unchanged. Offset value = 5 * 0.35 = 1.75u, matching the spec.
+
+**Honest caveat:** This is a perceptual/visual tweak I can't view here — the 0.35 factor was applied exactly as specified. Worth a device look to confirm the ray now terminates cleanly inside the gold disc's lit centre at all rotation angles (and that the reflected beam still visibly bounces from the same spot). If it now sits a touch high/low, the 0.35 multiplier is the single knob.

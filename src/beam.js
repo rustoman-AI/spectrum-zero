@@ -169,7 +169,15 @@ function castRay(origin, direction, mirrors, prisms, foundryColliders, worldWidt
       // Anchor point = the mirror's CENTRE (midpoint of p1/p2 = the gold disc
       // centre), so incident and reflected rays always meet at the disc middle
       // rather than detaching at the rim, at any rotation angle.
-      const center = { x: (mirror.p1.x + mirror.p2.x) / 2, y: (mirror.p1.y + mirror.p2.y) / 2 };
+      // Perspective correction: the tilted disc art reads as centred slightly
+      // LOWER than the geometric midpoint, so nudge the anchor Y down by
+      // ~0.35 of the disc radius. This lands the ray in the illuminated centre
+      // ellipse of the gold texture instead of clipping the far rim.
+      const mirrorRadius = (mirror.length || 10) / 2;
+      const center = {
+        x: (mirror.p1.x + mirror.p2.x) / 2,
+        y: (mirror.p1.y + mirror.p2.y) / 2 - mirrorRadius * 0.35,
+      };
       nearest = { type: 'mirror', point: result.point, center, normal: mirror.normal, object: mirror };
     }
   }
