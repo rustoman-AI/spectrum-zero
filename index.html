@@ -2340,21 +2340,24 @@ function addMirror() {
   mirror.angle = 0; // horizontal — immediately useful (reflects beams upward)
 
   if (FREE_PLACEMENT) {
-    // Spread new mirrors across the field: pick the candidate x-slot that is
-    // furthest from every existing mirror, so they never pile up in the centre.
-    const halfW = Math.min(ww / 2 - 6, 26); // keep clear of the screen edges
-    const rowY = [-20, -28]; // two stagger rows so near-x mirrors don't overlap
-    let best = { x: 0, y: rowY[0], score: -Infinity };
-    const STEPS = 9; // candidate columns across the width
-    for (let r = 0; r < rowY.length; r++) {
+    // Place the new mirror at the emptiest spot in the field: scan a grid of
+    // candidate positions and pick the one whose nearest existing mirror is
+    // furthest away. This never drops a mirror onto an occupied coordinate and
+    // spreads purchases across the width. The starting mirrors sit at
+    // x=-15/0/+15 on y=-25; new ones prefer the lower row (-29, whose sprite
+    // still stays inside the field, spanning -35..-23) and the width extremes.
+    // The field is short, so with many mirrors some proximity is unavoidable —
+    // but the chosen spot is always the most separated one available.
+    const halfW = Math.min(ww / 2 - 6, 26);
+    const rows = [-29, -20];  // prefer the lower row (listed first) on ties
+    const STEPS = 13;
+    let best = { x: 0, y: -29, score: -Infinity };
+    for (const cy of rows) {
       for (let s = 0; s < STEPS; s++) {
         const cx = -halfW + (2 * halfW) * (s / (STEPS - 1));
-        const cy = rowY[r];
-        // Score = distance to the nearest existing mirror (bigger = emptier spot)
         let nearest = Infinity;
         for (const m of mirrors) {
-          const mx = m.freeX, my = m.freeY;
-          const d = Math.hypot(cx - mx, cy - my);
+          const d = Math.hypot(cx - m.freeX, cy - m.freeY);
           if (d < nearest) nearest = d;
         }
         if (nearest > best.score) best = { x: cx, y: cy, score: nearest };
@@ -3452,8 +3455,10 @@ function initFoundries() {
     const lGeo = new THREE.PlaneGeometry(7, 1.8);
     const lMat = new THREE.MeshBasicMaterial({ map: lTex, transparent: true, alphaTest: 0.05, depthWrite: false });
     const labelMesh = new THREE.Mesh(lGeo, lMat);
-    // Place in overlay scene so mirrors never cover the labels
-    labelMesh.position.set(def.x, def.y + ALTAR_HH + 1.5, 0.2);
+    // Place in the overlay scene (renders on top of all mirrors) and pin the
+    // label just below the mirror movement zone (MIRROR_FIELD_BOT = -35) at a
+    // high z, so no mirror row can ever sit over the resource name.
+    labelMesh.position.set(def.x, MIRROR_FIELD_BOT - 1.5, 10);
     getOverlayScene().add(labelMesh);
 
     // --- Overheat arc (RingGeometry with partial theta) ---
@@ -3658,7 +3663,7 @@ let poseidonCooldown = 0;
 let heliosCooldown = 0;
 const ZEUS_COOLDOWN_TIME = 8;     // seconds
 const POSEIDON_COOLDOWN_TIME = 10;
-const HELIOS_COOLDOWN_TIME = 12;
+const HELIOS_COOLDOWN_TIME = 7;
 const prevAffordable = [];  // track per-button affordability for pulse
 const pulseTimes = [];      // countdown for 300ms pulse animation
 

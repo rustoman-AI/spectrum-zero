@@ -268,3 +268,16 @@ All procedural canvas drawing at load time — zero image files, zip size unchan
 - **Per-currency red text:** Replaced the single `costStr` line with `drawCostTokens`, which draws each currency token separately, centred, and colours each one individually — light grey if the player has enough of that currency, red (`#ff5555`) if short. This is driven by the actual `res`/`faith` balances (independent of cooldown), so during a cooldown a player with enough resources still sees green tokens ("you can afford it, just wait"), while a missing currency always shows red.
 
 **Verified:** `node build.js` -> 194.3 KB, exit 0. Rotation 11/11, smoke 29/29. Cost indexing checked numerically (9/9): every god's repeat cast is constant at the specified price across casts #2 through #8. The red-token rendering and the cooldown-dimming were reasoned about from the draw code but not eyeballed — worth a quick on-device look (cast a god, watch the button grey during cooldown then light up, and check a short currency shows red).
+
+---
+
+## 2026-08-25 — Mirror Spawn Spread, Helios Cooldown 7s, Altar Label Depth
+
+**Asked:** (1) A purchased Mirror must not spawn on the occupied default-left coordinate — assign an unoccupied, cleanly offset slot so mirrors never stack. (2) Helios cooldown 12s -> 7s so a run can fit 2-3 solar stuns. (3) Altar names (BRASS/BRONZE/SILVER/GOLD) must stay visible when all mirrors are deployed — top layer or below the mirror bounds.
+
+**Generated:**
+- **Mirror spawn:** `addMirror` now places each new mirror at the *emptiest* spot found by scanning a 13-column x 2-row grid and choosing the candidate whose nearest existing mirror is furthest away. It never reuses an occupied coordinate. New mirrors prefer the lower row (y=-29, whose 12-unit sprite still stays inside the field, spanning -35..-23) and the width extremes. Verified numerically: the first four buys land at x=-7.4/7.4/-22.1/22.1 on the offset row, ~8.7-8.9u from the nearest neighbour, and the default-left (x=-15,y=-25) is never reused. Honest limit: the mirror field is only 20 units tall (-15..-35) and sprites are 12 wide, so at high mirror counts some edge proximity is physically unavoidable — but the placement always maximises separation and never exact-stacks, which was the actual bug.
+- **Helios cooldown:** `HELIOS_COOLDOWN_TIME` 12 -> 7.
+- **Altar labels:** Labels already lived in the overlay scene (which renders in a second pass on top of the main scene), so they were on the top layer. To make it bulletproof I also pinned them just below the mirror movement zone (`MIRROR_FIELD_BOT - 1.5 = -36.5`) at z=10 (topmost within the overlay scene). Combined with the lower mirror row now bottoming out at exactly -35, the labels sit cleanly below every mirror sprite AND render above them regardless. `MIRROR_FIELD_BOT` imported into foundry.js.
+
+**Verified:** `node build.js` -> 194.6 KB, exit 0. Rotation 11/11, smoke 29/29. Mirror spread checked numerically (above). The altar-label visibility and the on-screen mirror spacing were reasoned from coordinates/render order, not eyeballed — worth a quick device check with several mirrors bought and all four altars lit.

@@ -9,7 +9,7 @@
 
 import {
   ALTAR_RATES, ALTAR_POSITIONS, ALTAR_HW, ALTAR_HH,
-  ALTAR_OVERHEAT_TIME, ALTAR_RECOVER_TIME
+  ALTAR_OVERHEAT_TIME, ALTAR_RECOVER_TIME, MIRROR_FIELD_BOT
 } from './config.js';
 import { getScene, getWorldWidth, getOverlayScene } from './renderer.js';
 import { getSegments } from './beam.js';
@@ -96,8 +96,10 @@ export function initFoundries() {
     const lGeo = new THREE.PlaneGeometry(7, 1.8);
     const lMat = new THREE.MeshBasicMaterial({ map: lTex, transparent: true, alphaTest: 0.05, depthWrite: false });
     const labelMesh = new THREE.Mesh(lGeo, lMat);
-    // Place in overlay scene so mirrors never cover the labels
-    labelMesh.position.set(def.x, def.y + ALTAR_HH + 1.5, 0.2);
+    // Place in the overlay scene (renders on top of all mirrors) and pin the
+    // label just below the mirror movement zone (MIRROR_FIELD_BOT = -35) at a
+    // high z, so no mirror row can ever sit over the resource name.
+    labelMesh.position.set(def.x, MIRROR_FIELD_BOT - 1.5, 10);
     getOverlayScene().add(labelMesh);
 
     // --- Overheat arc (RingGeometry with partial theta) ---

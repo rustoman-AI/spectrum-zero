@@ -30,7 +30,7 @@ let poseidonCooldown = 0;
 let heliosCooldown = 0;
 const ZEUS_COOLDOWN_TIME = 8;     // seconds
 const POSEIDON_COOLDOWN_TIME = 10;
-const HELIOS_COOLDOWN_TIME = 12;
+const HELIOS_COOLDOWN_TIME = 7;
 const prevAffordable = [];  // track per-button affordability for pulse
 const pulseTimes = [];      // countdown for 300ms pulse animation
 

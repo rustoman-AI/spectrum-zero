@@ -123,21 +123,24 @@ export function addMirror() {
   mirror.angle = 0; // horizontal — immediately useful (reflects beams upward)
 
   if (FREE_PLACEMENT) {
-    // Spread new mirrors across the field: pick the candidate x-slot that is
-    // furthest from every existing mirror, so they never pile up in the centre.
-    const halfW = Math.min(ww / 2 - 6, 26); // keep clear of the screen edges
-    const rowY = [-20, -28]; // two stagger rows so near-x mirrors don't overlap
-    let best = { x: 0, y: rowY[0], score: -Infinity };
-    const STEPS = 9; // candidate columns across the width
-    for (let r = 0; r < rowY.length; r++) {
+    // Place the new mirror at the emptiest spot in the field: scan a grid of
+    // candidate positions and pick the one whose nearest existing mirror is
+    // furthest away. This never drops a mirror onto an occupied coordinate and
+    // spreads purchases across the width. The starting mirrors sit at
+    // x=-15/0/+15 on y=-25; new ones prefer the lower row (-29, whose sprite
+    // still stays inside the field, spanning -35..-23) and the width extremes.
+    // The field is short, so with many mirrors some proximity is unavoidable —
+    // but the chosen spot is always the most separated one available.
+    const halfW = Math.min(ww / 2 - 6, 26);
+    const rows = [-29, -20];  // prefer the lower row (listed first) on ties
+    const STEPS = 13;
+    let best = { x: 0, y: -29, score: -Infinity };
+    for (const cy of rows) {
       for (let s = 0; s < STEPS; s++) {
         const cx = -halfW + (2 * halfW) * (s / (STEPS - 1));
-        const cy = rowY[r];
-        // Score = distance to the nearest existing mirror (bigger = emptier spot)
         let nearest = Infinity;
         for (const m of mirrors) {
-          const mx = m.freeX, my = m.freeY;
-          const d = Math.hypot(cx - mx, cy - my);
+          const d = Math.hypot(cx - m.freeX, cy - m.freeY);
           if (d < nearest) nearest = d;
         }
         if (nearest > best.score) best = { x: cx, y: cy, score: nearest };
