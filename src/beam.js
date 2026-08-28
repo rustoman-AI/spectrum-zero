@@ -70,9 +70,11 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
     return;
   }
   const hit = castRay(origin, direction, mirrors, prisms, foundryColliders, worldWidth, excludePrism);
-  // For mirror hits, anchor the visible segment end at the disc CENTRE so the
-  // ray always terminates at the middle of the gold disc, never at the rim.
-  const endPoint = (hit.type === 'mirror' && hit.center) ? hit.center : hit.point;
+  // The incident beam ALWAYS terminates at the true collision point. No centre
+  // snapping — that offset caused beams to graze/pass through the disc. Any
+  // visual "centre" alignment is handled purely in the mirror sprite texture,
+  // never in the collision/termination coordinates.
+  const endPoint = hit.point;
   segments.push({
     start: { x: origin.x, y: origin.y },
     end: { x: endPoint.x, y: endPoint.y },
@@ -117,18 +119,14 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
     reflected.y /= len;
     const newBounces = bouncesUsed + 1;
     if (newBounces > maxBouncesUsed) maxBouncesUsed = newBounces;
-    // Reflect from the disc CENTRE (so incident + reflected visually meet at the
-    // middle of the disc, per the aesthetic requirement), nudged a small step
-    // ALONG the reflected direction so the new ray never sits ON its own mirror
-    // segment. Without the nudge, a bare centre origin lies exactly on the
-    // segment line; when the reflected ray runs near-parallel to the mirror
-    // (e.g. the right disc angled toward the Gold altar) the beam would emit
-    // straight down the disc face instead of bouncing cleanly outward.
-    const anchor = hit.center || hit.point;
-    const EPS = 0.4; // must exceed the castRay dist>0.1 self-hit guard margin
+    // Reflect from the TRUE collision point, nudged a tiny step along the
+    // reflected direction so the new ray leaves the surface and never re-hits
+    // its own segment (standard raytracer epsilon offset). Origin is the actual
+    // hit point on the mirror — never a centre-snapped coordinate.
+    const EPS = 0.2; // > castRay's dist>0.1 self-hit guard
     const reflectOrigin = {
-      x: anchor.x + reflected.x * EPS,
-      y: anchor.y + reflected.y * EPS,
+      x: hit.point.x + reflected.x * EPS,
+      y: hit.point.y + reflected.y * EPS,
     };
     traceBeam(reflectOrigin, reflected, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, null, newBounces, preSplit, wide);
   } else if (hit.type === 'prism') {
@@ -166,19 +164,9 @@ function castRay(origin, direction, mirrors, prisms, foundryColliders, worldWidt
     const result = raySegmentIntersect(origin, direction, mirror.p1, mirror.p2);
     if (result && result.dist > 0.1 && result.dist < nearestDist) {
       nearestDist = result.dist;
-      // Anchor point = the mirror's CENTRE (midpoint of p1/p2 = the gold disc
-      // centre), so incident and reflected rays always meet at the disc middle
-      // rather than detaching at the rim, at any rotation angle.
-      // Perspective correction: the tilted disc art reads as centred slightly
-      // LOWER than the geometric midpoint, so nudge the anchor Y down by
-      // ~0.35 of the disc radius. This lands the ray in the illuminated centre
-      // ellipse of the gold texture instead of clipping the far rim.
-      const mirrorRadius = (mirror.length || 10) / 2;
-      const center = {
-        x: (mirror.p1.x + mirror.p2.x) / 2,
-        y: (mirror.p1.y + mirror.p2.y) / 2 - mirrorRadius * 0.35,
-      };
-      nearest = { type: 'mirror', point: result.point, center, normal: mirror.normal, object: mirror };
+      // Collision anchor is strictly the true intersection point on the mirror
+      // segment. The beam terminates here and the reflection originates here.
+      nearest = { type: 'mirror', point: result.point, normal: mirror.normal, object: mirror };
     }
   }
   // Test prisms

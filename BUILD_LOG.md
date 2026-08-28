@@ -513,12 +513,18 @@ All procedural canvas drawing at load time — zero image files, zip size unchan
 
 ---
 
-## 2026-08-25 — Mirror Ray-Anchor Perspective Offset
+## 2026-08-25 — Revert Mirror Centre-Anchor (beams were passing through discs)
 
-**Asked:** Beams connecting to the mirror discs look offset because the tilted perspective shifts the perceived disc centre toward the bottom rim. Offset the incident-ray connection point Y from `mirror.position.y` to `mirror.position.y - (mirrorRadius * 0.35)` so the ray terminates inside the illuminated centre ellipse of the gold disc rather than clipping the far rim.
+**Asked (bug report):** Beams were passing straight through mirrors without reflecting. Revert the broken raycast offset logic — the primary beam MUST intersect the mirror at `mirror.position`, terminate there, and the reflected beam must originate there per the mirror's rotation. Keep the collision anchor strictly at the true point; any visual alignment belongs in the texture, never the raycast.
 
-**Generated:** In `beam.js castRay`, the mirror-hit anchor `center` (midpoint of p1/p2, used both as the incident segment's visible end and the reflected ray's origin) now nudges its Y down by `mirrorRadius * 0.35`, where `mirrorRadius = mirror.length / 2` (5 → offset 1.75u). Using the mirror's own `length` field keeps it correct without importing/hardcoding. The incident beam now lands in the disc's centre ellipse and the reflected beam emanates from the same corrected point, so both read as cleanly connected to the disc middle.
+**Root cause:** A prior "beams meet at the disc CENTRE" change had `castRay` return a `center` (midpoint of p1/p2) that `traceBeam` used for BOTH the incident segment's visible end AND the reflected ray's origin. Anchoring the reflected ray's origin to a point that lies exactly ON the mirror segment meant that at certain rotations the reflected ray ran along/through the disc instead of bouncing out — reading as the beam passing straight through. (The user had also just reverted an additional Y-offset experiment on that same anchor.)
 
-**Verified:** `node build.js` -> 241.0 KB, exit 0. Rotation 11/11, smoke 29/29 — the offset only shifts the visual endpoint/origin, not the reflection-direction math (which uses the surface normal), so gameplay is unchanged. Offset value = 5 * 0.35 = 1.75u, matching the spec.
+**Generated (fix):**
+- Incident beam now terminates at the TRUE collision point (`hit.point`), not a centre-snapped coordinate.
+- Reflected beam now originates at the TRUE collision point, nudged by a tiny `EPS = 0.2` along the reflected direction (a standard raytracer self-intersection epsilon — clears the `dist > 0.1` guard so the new ray leaves the surface and never re-hits its own segment).
+- Removed the `center` field from the `castRay` mirror hit entirely — the collision anchor is strictly the intersection point. No offset logic remains in the raycast.
+- Did NOT touch collision math for any "visual" reason; per the instruction, texture alignment (if ever needed) stays in the sprite drawing only.
 
-**Honest caveat:** This is a perceptual/visual tweak I can't view here — the 0.35 factor was applied exactly as specified. Worth a device look to confirm the ray now terminates cleanly inside the gold disc's lit centre at all rotation angles (and that the reflected beam still visibly bounces from the same spot). If it now sits a touch high/low, the 0.35 multiplier is the single knob.
+**Verified:** `node build.js` -> 240.2 KB, exit 0. Rotation 11/11, smoke 29/29. Simulated the default layout (left/right flank bands correctly hit their flank mirrors; the centre band goes straight down past the *vertical* centre mirror by design — parallel, needs player rotation) and swept the right mirror through rotations toward the Gold altar: every incident hit now produces a clean reflection with NO self-re-hit / pass-through.
+
+**Honest caveat:** Verified by the intersection/reflection simulation and the tests; not viewed on device. Worth a quick check that beams visibly stop at each mirror and bounce out at the current rotation, with no beam continuing down to the battlement through a disc.
