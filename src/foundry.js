@@ -80,30 +80,25 @@ export function initFoundries() {
     mesh.position.set(def.x, def.y, -0.1);
     scene.add(mesh);
 
-    // --- Engraved pedestal label ---
-    // The metal name is carved into the altar's stone keystone (chiselled look:
-    // dark recessed text with a faint highlight), sitting ON the altar itself —
-    // not a floating tag above the wall. Always visible.
-    const lCanvas = document.createElement('canvas');
-    lCanvas.width = 96; lCanvas.height = 24;
-    const lCtx = lCanvas.getContext('2d');
-    lCtx.font = 'bold 11px monospace';
-    lCtx.textAlign = 'center';
-    lCtx.textBaseline = 'middle';
-    const lbl = def.label || def.type.toUpperCase();
-    // Chiselled engraving: dark recessed glyphs + a 1px lighter bevel below-right.
-    lCtx.fillStyle = 'rgba(255,255,255,0.18)'; // faint bevel highlight
-    lCtx.fillText(lbl, 48, 13);
-    lCtx.fillStyle = '#1a1206';                // dark carved recess
-    lCtx.fillText(lbl, 48, 12);
-    const lTex = new THREE.CanvasTexture(lCanvas);
-    lTex.minFilter = THREE.LinearFilter;
-    lTex.premultiplyAlpha = false;
-    const lGeo = new THREE.PlaneGeometry(6.5, 1.6);
-    const lMat = new THREE.MeshBasicMaterial({ map: lTex, transparent: true, alphaTest: 0.05, depthWrite: false });
-    const labelMesh = new THREE.Mesh(lGeo, lMat);
-    // Engraved onto the pedestal: sits on the altar body, just in front of it.
-    labelMesh.position.set(def.x, def.y, 0.05);
+    // --- Ceremonial brazier + eternal flame ---
+    // A small Greek fire-bowl on the altar with a per-metal coloured flame, so
+    // the altars instantly read as divine generating shrines. Drawn on a canvas
+    // texture (bowl + layered flame gradient) and gently flickered per frame.
+    const braMesh = makeBrazierMesh(def);
+    // Sit the brazier on the altar body, just above its centre.
+    braMesh.position.set(def.x, def.y + 0.8, 0.06);
+    scene.add(braMesh);
+
+    // --- High-contrast label + resource-tick indicator ---
+    // Bold near-black name with a crisp white outline (strokeText) for legibility
+    // against any background, plus a "+N <Metal>/s" tick so players instantly
+    // know what the altar generates. Positioned ABOVE the altar (and clear of the
+    // shop tray boundary at ~y-44.5), so the ability tray never covers it.
+    const labelMesh = makeAltarLabelMesh(def);
+    // ~y-41: above the altar + brazier and well clear of the shop tray top
+    // (~y-44.5), so the ability tray can never cover the label, while staying
+    // below the battlement line (y-40) so it doesn't float up onto the wall.
+    labelMesh.position.set(def.x, def.y + 3.0, 0.07);
     scene.add(labelMesh);
 
     // --- Overheat arc (RingGeometry with partial theta) ---
@@ -121,10 +116,131 @@ export function initFoundries() {
       type: def.type, colour: def.colour,
       x: def.x, y: def.y,
       mesh, glowMesh, arcMesh, arcRadius, labelMesh,
+      braMesh, flameMesh: braMesh.userData.flameMesh,
       lit: false, everLit: false,
       litTime: 0, overheated: false, cooldown: 0
     });
   }
+}
+
+// Build a small ceremonial brazier (fire-bowl + eternal flame) as a canvas
+// texture on a plane. Returns the mesh; the animated flame plane is stashed on
+// mesh.userData.flameMesh so updateFoundries can flicker it. `def.flame` is the
+// metal-specific flame colour; the bowl is tinted from `def.colour`.
+function makeBrazierMesh(def) {
+  const group = new THREE.Group();
+
+  // --- Bowl (metal fire-bowl on a short stem) ---
+  const bowlCv = document.createElement('canvas');
+  bowlCv.width = 128; bowlCv.height = 96;
+  const b = bowlCv.getContext('2d');
+  const metal = '#' + def.colour.toString(16).padStart(6, '0');
+  // Stem
+  b.fillStyle = 'rgba(0,0,0,0.35)';
+  b.fillRect(58, 60, 12, 30);
+  b.fillStyle = metal;
+  b.fillRect(56, 58, 16, 30);
+  // Base foot
+  b.fillRect(44, 86, 40, 8);
+  // Bowl: a shallow metallic cup with a rim highlight.
+  b.beginPath();
+  b.moveTo(28, 54);
+  b.quadraticCurveTo(64, 82, 100, 54); // rounded underside
+  b.lineTo(96, 46);
+  b.quadraticCurveTo(64, 60, 32, 46);  // inner lip
+  b.closePath();
+  b.fillStyle = metal;
+  b.fill();
+  // Rim highlight (metallic sheen)
+  b.strokeStyle = 'rgba(255,255,255,0.55)';
+  b.lineWidth = 2.5;
+  b.beginPath();
+  b.moveTo(30, 47);
+  b.quadraticCurveTo(64, 61, 98, 47);
+  b.stroke();
+  const bowlTex = new THREE.CanvasTexture(bowlCv);
+  bowlTex.minFilter = THREE.LinearFilter;
+  const bowlMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(4.2, 3.15),
+    new THREE.MeshBasicMaterial({ map: bowlTex, transparent: true, depthWrite: false })
+  );
+  bowlMesh.position.set(0, -0.5, 0);
+  group.add(bowlMesh);
+
+  // --- Flame (additive, layered teardrop in the metal's flame colour) ---
+  const flCv = document.createElement('canvas');
+  flCv.width = 64; flCv.height = 96;
+  const f = flCv.getContext('2d');
+  const drawFlame = (cx, topY, wid, hgt, col, a) => {
+    f.beginPath();
+    f.moveTo(cx, topY);                                   // pointed tip
+    f.quadraticCurveTo(cx + wid, topY + hgt * 0.55, cx, topY + hgt); // right edge to base
+    f.quadraticCurveTo(cx - wid, topY + hgt * 0.55, cx, topY);       // left edge back to tip
+    f.closePath();
+    f.fillStyle = col;
+    f.globalAlpha = a;
+    f.fill();
+  };
+  // Outer coloured flame, then a hot white-ish core.
+  drawFlame(32, 8, 20, 78, def.flame, 0.85);
+  drawFlame(32, 24, 11, 56, '#fff6d8', 0.9);
+  f.globalAlpha = 1;
+  const flTex = new THREE.CanvasTexture(flCv);
+  flTex.minFilter = THREE.LinearFilter;
+  const flameMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.1, 3.15),
+    new THREE.MeshBasicMaterial({
+      map: flTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.9,
+    })
+  );
+  // Flame rises from inside the bowl.
+  flameMesh.position.set(0, 1.4, 0.02);
+  group.add(flameMesh);
+
+  group.userData.flameMesh = flameMesh;
+  return group;
+}
+
+// Build the high-contrast altar label + resource-tick as a single canvas texture
+// plane. Bold near-black glyphs with a crisp white outline; a "+N <Metal>/s"
+// line beneath in the metal's tint so the generated currency is unmistakable.
+function makeAltarLabelMesh(def) {
+  const cv = document.createElement('canvas');
+  cv.width = 256; cv.height = 96;
+  const c = cv.getContext('2d');
+  c.textAlign = 'center';
+  c.textBaseline = 'middle';
+  c.lineJoin = 'round';
+
+  const name = def.label || def.type.toUpperCase();
+  // Name: crisp white outline + near-black fill for max contrast on any bg.
+  c.font = 'bold 34px monospace';
+  c.lineWidth = 6;
+  c.strokeStyle = '#f2f2f2';
+  c.strokeText(name, 128, 30);
+  c.fillStyle = '#111111';
+  c.fillText(name, 128, 30);
+
+  // Resource tick: "+N <Metal>/s" using the altar's LIT generation rate, in the
+  // metal's tint with a dark outline so it stays legible.
+  const rate = (ALTAR_RATES[def.type] && ALTAR_RATES[def.type].lit) || 1;
+  const tick = '+' + rate + ' ' + (def.short || def.type) + '/s';
+  const metal = '#' + def.colour.toString(16).padStart(6, '0');
+  c.font = 'bold 22px monospace';
+  c.lineWidth = 5;
+  c.strokeStyle = '#0a0a0a';
+  c.strokeText(tick, 128, 68);
+  c.fillStyle = metal;
+  c.fillText(tick, 128, 68);
+
+  const tex = new THREE.CanvasTexture(cv);
+  tex.minFilter = THREE.LinearFilter;
+  // Plane aspect 256:96 -> keep it readable but compact over the altar.
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(9.5, 3.56),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.02, depthWrite: false })
+  );
+  return mesh;
 }
 
 export function updateFoundries(dt) {
@@ -223,6 +339,22 @@ export function updateFoundries(dt) {
       if (altar.overheated) altar.arcMesh.material.color.setHex(0xcc4444);
     } else {
       altar.arcMesh.visible = false;
+    }
+
+    // 4. Eternal flame flicker. Gentle idle flicker; taller/brighter while the
+    // altar is actively lit by a beam (it's "receiving offering"), calmer when
+    // overheated. Two out-of-phase sines keep the motion organic, not periodic.
+    if (altar.flameMesh) {
+      const fl = altar.flameMesh;
+      const seed = altar.x * 0.7;
+      const flick = 0.5 + 0.5 * Math.sin(time * 9 + seed) * Math.sin(time * 5.3 + seed * 1.7);
+      let baseScale = altar.lit ? (altar.overheated ? 1.05 : 1.35) : 1.0;
+      const sy = baseScale * (0.9 + flick * 0.22);
+      const sx = 0.9 + flick * 0.12;
+      fl.scale.set(sx, sy, 1);
+      fl.material.opacity = (altar.lit ? 0.95 : 0.8) * (0.82 + flick * 0.18);
+      // Slight vertical bob so the tip dances above the bowl rim.
+      fl.position.y = 1.4 + (sy - 1) * 1.2;
     }
   }
 
