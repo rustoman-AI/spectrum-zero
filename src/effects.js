@@ -58,7 +58,8 @@ const DEBRIS_POOL_SIZE = 16;
 const debrisPool = [];
 
 // --- Smoke puff pool (drifting smoke on hits/destruction + ship wakes) ---
-const SMOKE_POOL_SIZE = 32;
+// Larger now that wakes spawn V-shaped pairs behind every moving ship.
+const SMOKE_POOL_SIZE = 48;
 const smokePool = [];
 
 // --- WebAudio context (created on first user interaction) ---
@@ -202,21 +203,29 @@ export function spawnSmoke(x, y, count, colour) {
 
 // Spawn a light, short-lived foam WAKE puff behind a moving ship. Small and
 // quick so the shared pool recycles fast even with many ships on screen.
+// Spawn a V-SHAPED foam wake behind a moving ship: two small foam puffs at the
+// stern that drift outward-and-behind (ships travel downward, so "behind" is
+// upward), tracing the spreading V of a bow/stern wave. Small + short so the
+// shared pool recycles fast even with many ships on screen.
 export function spawnWake(x, y, colour) {
+  const col = (colour != null) ? colour : 0x9fb8c4;
+  let placed = 0;
   for (const p of smokePool) {
+    if (placed >= 2) break;
     if (p.life <= 0) {
-      p.mesh.position.set(x, y, 0.32);
-      p.mesh.material.color.setHex(colour != null ? colour : 0x9fb8c4);
+      const side = placed === 0 ? -1 : 1; // left arm then right arm of the V
+      p.mesh.position.set(x + side * 0.6, y, 0.32);
+      p.mesh.material.color.setHex(col);
       p.mesh.material.opacity = 0.3;
       p.mesh.visible = true;
-      p.life = p.maxLife = 0.5 + Math.random() * 0.3;
-      p.vx = (Math.random() - 0.5) * 1.5;
-      p.vy = 1.5 + Math.random() * 1.5; // gentle rise
-      p.size0 = 0.7 + Math.random() * 0.4;
-      p.grow = 1.0;
-      p.spin = (Math.random() - 0.5) * 0.8;
+      p.life = p.maxLife = 0.55 + Math.random() * 0.3;
+      p.vx = side * (2.5 + Math.random() * 1.5);  // spread outward → the V opens
+      p.vy = 2.5 + Math.random() * 1.5;           // trail behind (upward)
+      p.size0 = 0.6 + Math.random() * 0.3;
+      p.grow = 1.2;                               // widen slightly as it trails
+      p.spin = 0;
       p.mesh.scale.set(p.size0, p.size0, 1);
-      return;
+      placed++;
     }
   }
 }

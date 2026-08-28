@@ -528,3 +528,23 @@ All procedural canvas drawing at load time — zero image files, zip size unchan
 **Verified:** `node build.js` -> 240.2 KB, exit 0. Rotation 11/11, smoke 29/29. Simulated the default layout (left/right flank bands correctly hit their flank mirrors; the centre band goes straight down past the *vertical* centre mirror by design — parallel, needs player rotation) and swept the right mirror through rotations toward the Gold altar: every incident hit now produces a clean reflection with NO self-re-hit / pass-through.
 
 **Honest caveat:** Verified by the intersection/reflection simulation and the tests; not viewed on device. Worth a quick check that beams visibly stop at each mirror and bounce out at the current rotation, with no beam continuing down to the battlement through a disc.
+
+---
+
+## 2026-08-25 — Visual Polish Overhaul (audit + water gradient + V-wake)
+
+**Asked:** A bundle of aesthetic upgrades: (1) mantlet-style ship shields with bronze rims, (2) V-shaped foam wake trails behind moving ships, (3) hull charring toward black + ember glow with Heat, (4) water vertical depth gradient (dark azure at spawn → bright turquoise at the battlement) + wave shimmer + foam crest, (5) soft additive beam glow, (6) charcoal-smoke + golden-ember hit particles.
+
+**Audited first — already done from prior polish passes (left unchanged):**
+- Shields (1): flat mantlet plates (shallow ARC=2, tight spacing) with bronze `#EEDD88` rims lined along the hull.
+- Charring (3): hull sprite colour multiplies to ~0.12 charcoal as `burn` rises, with an additive ember glow ramping past ~55% heat toward hot white-orange.
+- Beam glow (5): beam quads carry a cross-beam gradient texture (transparent edges → bright centre) with additive blending + a glow layer — soft focused-sunlight edges.
+- Hit particles (6): destruction and contact spawn rising embers (soft round glow sprites, buoyant + flicker) and drifting smoke puffs; no boxy particles remain.
+
+**Refined this pass:**
+- **Water gradient (4):** `drawSeaBase` reworked to a true depth gradient — deep dark azure (`#0a1a2e`) at the top/spawn fading through teal to a bright turquoise harbour (`#1f8f8a`) at the battlement. Wave-crest shimmer recoloured to a soft turquoise (`rgba(120,200,210,...)`) so it reads against the new gradient. The breathing white foam crest at the waterline (foamLine) already existed.
+- **V-shaped wake (2):** `spawnWake` now emits a symmetric PAIR of foam puffs at the stern that spread outward (`side * ±vx`) while trailing behind (upward, since ships descend), tracing the opening V of a bow/stern wave — instead of a single puff. Smoke pool bumped 32 → 48 to cover the doubled wake emission across many ships.
+
+**Verified:** `node build.js` -> 241.1 KB, exit 0. Rotation 11/11, smoke 29/29 (all changes are visual; no gameplay math touched).
+
+**Honest caveat:** These are rendering changes I can't view here — the gradient colours and V-wake motion were reasoned from the canvas/particle params, not seen. Worth a device pass to confirm the azure→turquoise reads well (and stays below the beam-brightness ceiling), the wake looks like a proper spreading V behind ships, and the 48-slot smoke pool holds up under a heavy wave without wakes starving the destruction smoke.

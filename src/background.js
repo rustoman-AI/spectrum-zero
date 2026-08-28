@@ -156,12 +156,14 @@ export function updateBackground(dt) {
 // --- Sea drawing ---
 
 function drawSeaBase(ctx, w, h) {
-  // Vertical gradient: dark at top (#12303F), lighter toward shore (#1A4257)
+  // Vertical DEPTH gradient (canvas top = spawn/open sea, bottom = battlement
+  // harbour): deep Mediterranean azure up top fading to a brighter turquoise
+  // harbour near the stone wall. Kept below the beam-brightness ceiling.
   const grad = ctx.createLinearGradient(0, 0, 0, h);
-  grad.addColorStop(0, '#0c1e2a');  // darkest at top (deep sea, horizon)
-  grad.addColorStop(0.4, '#12303F');
-  grad.addColorStop(0.85, '#1A4257');
-  grad.addColorStop(1.0, '#1a4257'); // stays at limit, no brighter
+  grad.addColorStop(0.0, '#0a1a2e');  // deep dark azure (open sea, top/spawn)
+  grad.addColorStop(0.35, '#123a52'); // mid azure
+  grad.addColorStop(0.7, '#186b74');  // teal transition
+  grad.addColorStop(1.0, '#1f8f8a');  // bright turquoise harbour (battlement)
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, w, h);
 }
@@ -174,9 +176,9 @@ function drawWaveCrests(ctx, w, h, offset) {
   ctx.save();
   for (let i = 0; i < NUM_CRESTS; i++) {
     const baseY = ((i * spacing + offset) % h);
-    // Varying opacity per crest (some subtle, some slightly brighter)
-    const alpha = 0.06 + 0.03 * Math.sin(i * 1.7);
-    ctx.strokeStyle = `rgba(50, 100, 130, ${alpha})`;
+    // Varying opacity per crest — a soft turquoise shimmer against the gradient.
+    const alpha = 0.07 + 0.04 * Math.sin(i * 1.7);
+    ctx.strokeStyle = `rgba(120, 200, 210, ${alpha})`;
     ctx.lineWidth = 1.2;
     ctx.beginPath();
     for (let x = 0; x < w; x++) {
