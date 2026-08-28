@@ -242,14 +242,14 @@ export function updateHud() {
   drawWallBar();
 
   // Resource row (bottom): 3 metals + Faith, as one clean, evenly balanced
-  // row — Bz / Si / Au / Fa — each centred in its quarter of the 512px bar.
-  // No debug hint text: ability cost recipes live exclusively on the shop
-  // buttons now, so the HUD stays uncluttered.
+  // row — Bz / Si / Gd / Fa — each centred in its quarter of the 512px bar.
+  // Gaming abbreviations (Gd for gold, not the chemical "Au"). No debug hint
+  // text: ability cost recipes live exclusively on the shop buttons now.
   const faithVal = Math.floor(getFaith());
   const cells = [
     { label: 'Bz:', val: Math.floor(res.bronze), col: '#cc8833' },
     { label: 'Si:', val: Math.floor(res.silver), col: '#cccccc' },
-    { label: 'Au:', val: Math.floor(res.gold),   col: '#ffdd00' },
+    { label: 'Gd:', val: Math.floor(res.gold),   col: '#ffdd00' },
     { label: 'Fa:', val: faithVal,               col: '#aa88ff' },
   ];
   hudCtx.font = 'bold 14px monospace';

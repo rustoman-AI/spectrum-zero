@@ -348,7 +348,7 @@ export function isZeusAffordable() {
 }
 
 function costStr(cost) {
-  const labels = { bronze: 'Bz', silver: 'Si', gold: 'Au', faith: 'Fa' };
+  const labels = { bronze: 'Bz', silver: 'Si', gold: 'Gd', faith: 'Fa' };
   const parts = [];
   for (const k in cost) {
     parts.push(cost[k] + (labels[k] || k[0]));
@@ -425,7 +425,7 @@ function drawAbilityIcon(id, cx, cy, s, col) {
   trayCtx.restore();
 }
 
-const COST_LABELS = { bronze: 'Bz', silver: 'Si', gold: 'Au', faith: 'Fa' };
+const COST_LABELS = { bronze: 'Bz', silver: 'Si', gold: 'Gd', faith: 'Fa' };
 const COST_SEP = ' + '; // explicit separator, e.g. "15Si + 20Bz"
 // Draw the cost as clean colour-coded tokens on ONE line joined by " + ", e.g.
 // "15Si + 20Bz". Affordable currencies render light; short ones render red so

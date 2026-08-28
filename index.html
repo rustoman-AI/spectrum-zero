@@ -320,7 +320,7 @@ const ALTAR_RECOVER_TIME = 10;    // seconds to recover from overheat
 const ALTAR_POSITIONS = [
   { x: -18, y: -44, type: 'bronze', label: 'BRONZE', colour: 0xcc8833, flame: '#ff8a2a', short: 'Bz', popup: '#ffb14a' },
   { x: 0,   y: -44, type: 'silver', label: 'SILVER', colour: 0xcccccc, flame: '#7ff0e0', short: 'Si', popup: '#d6fbff' },
-  { x: 18,  y: -44, type: 'gold',   label: 'GOLD',   colour: 0xffdd00, flame: '#ffe24a', short: 'Au', popup: '#ffe870' },
+  { x: 18,  y: -44, type: 'gold',   label: 'GOLD',   colour: 0xffdd00, flame: '#ffe24a', short: 'Gd', popup: '#ffe870' },
 ];
 const ALTAR_HW = 4;
 const ALTAR_HH = 2.5;
@@ -3757,7 +3757,7 @@ const altars = [];
 // --- Floating "+1 <metal>" combat text ---
 // A small pool of textured sprite planes that rise, expand and fade over ~0.7s
 // whenever a lit altar generates a whole unit. Textures are pre-rendered per
-// metal type (fixed strings "+1 Bz/Si/Au") and shared; the pool just animates
+// metal type (fixed strings "+1 Bz/Si/Gd") and shared; the pool just animates
 // position/scale/opacity. Expired popups are hidden (removed from the render).
 const POPUP_LIFE = 0.7;      // seconds
 const POPUP_RISE = 5.0;      // world units risen over the life (~25px at this scale)
@@ -3880,7 +3880,7 @@ function initFoundries() {
   initResourcePopups();
 }
 
-// Pre-render the "+1 Bz/Si/Au" textures (one per metal) and build a reusable
+// Pre-render the "+1 Bz/Si/Gd" textures (one per metal) and build a reusable
 // pool of sprite planes. Colours come from each altar def's `popup`.
 function initResourcePopups() {
   const oScene = getOverlayScene();
@@ -4633,7 +4633,7 @@ function isZeusAffordable() {
 }
 
 function costStr(cost) {
-  const labels = { bronze: 'Bz', silver: 'Si', gold: 'Au', faith: 'Fa' };
+  const labels = { bronze: 'Bz', silver: 'Si', gold: 'Gd', faith: 'Fa' };
   const parts = [];
   for (const k in cost) {
     parts.push(cost[k] + (labels[k] || k[0]));
@@ -4710,7 +4710,7 @@ function drawAbilityIcon(id, cx, cy, s, col) {
   trayCtx.restore();
 }
 
-const COST_LABELS = { bronze: 'Bz', silver: 'Si', gold: 'Au', faith: 'Fa' };
+const COST_LABELS = { bronze: 'Bz', silver: 'Si', gold: 'Gd', faith: 'Fa' };
 const COST_SEP = ' + '; // explicit separator, e.g. "15Si + 20Bz"
 // Draw the cost as clean colour-coded tokens on ONE line joined by " + ", e.g.
 // "15Si + 20Bz". Affordable currencies render light; short ones render red so
@@ -6524,14 +6524,14 @@ function updateHud() {
   drawWallBar();
 
   // Resource row (bottom): 3 metals + Faith, as one clean, evenly balanced
-  // row — Bz / Si / Au / Fa — each centred in its quarter of the 512px bar.
-  // No debug hint text: ability cost recipes live exclusively on the shop
-  // buttons now, so the HUD stays uncluttered.
+  // row — Bz / Si / Gd / Fa — each centred in its quarter of the 512px bar.
+  // Gaming abbreviations (Gd for gold, not the chemical "Au"). No debug hint
+  // text: ability cost recipes live exclusively on the shop buttons now.
   const faithVal = Math.floor(getFaith());
   const cells = [
     { label: 'Bz:', val: Math.floor(res.bronze), col: '#cc8833' },
     { label: 'Si:', val: Math.floor(res.silver), col: '#cccccc' },
-    { label: 'Au:', val: Math.floor(res.gold),   col: '#ffdd00' },
+    { label: 'Gd:', val: Math.floor(res.gold),   col: '#ffdd00' },
     { label: 'Fa:', val: faithVal,               col: '#aa88ff' },
   ];
   hudCtx.font = 'bold 14px monospace';

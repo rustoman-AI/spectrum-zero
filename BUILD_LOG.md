@@ -747,3 +747,21 @@ All procedural canvas drawing at load time — zero image files, zip size unchan
 **Verified:** `node build.js` -> 280.8 KB, exit 0. Rotation 11/11, smoke 29/29. Diagnostics clean on foundry + config. Grepped index.html to confirm the popup init/spawn/update + intAccum tick hook are bundled.
 
 **Honest caveat:** Can't see the render here. Device check worth doing for: (a) the "+1" text is legible and clearly rises/fades above each altar without cluttering (bronze pops ~6/s — if that feels too busy, we can pop only every Nth unit or throttle by time), (b) the rise distance (5 world units) matches the intended "~25px" feel at the game's on-screen scale — it's a one-constant tweak (`POPUP_RISE`), and (c) popups sit above the brazier/label and don't collide with the wall. Pool size 24 comfortably covers the combined tick rate; if ever exhausted, extra ticks are simply skipped that frame (no growth).
+
+---
+
+## 2026-08-25 — Currency ticker unification: gold "Au" -> "Gd" everywhere
+
+**Asked:** Replace legacy chemical tickers with unified gaming abbreviations — Bronze "Bz", Silver "Si", Gold "Gd" (was the chemical "Au"), Faith "Fa". Top HUD must read `Bz | Si | Gd | Fa`; altar floating popups must read "+1 Bz / +1 Si / +1 Gd".
+
+**Generated:** Bz/Si/Fa were already correct; the only chemical ticker in use was gold's "Au". Changed gold's abbreviation to "Gd" at every source of truth:
+- **`session.js`** HUD resource row: `'Au:'` -> `'Gd:'` (row now Bz: / Si: / Gd: / Fa:).
+- **`config.js`** altar def `short: 'Au'` -> `'Gd'`. This single field drives BOTH the altar's `+N Gd/s` engraved tick and the floating `+1 Gd` popup (the popup text is built as `'+1 ' + def.short`), so both sync automatically.
+- **`crafting.js`** shop cost maps `COST_LABELS` and `costStr` labels: `gold: 'Au'` -> `'Gd'`, so shop button cost tokens (e.g. Zeus repeat cost) show Gd.
+- Updated the two "+1 Bz/Si/Au" comments in foundry.js to "Gd".
+
+Swept all src for `\bAu\b` / `\bAz\b` afterward — only remaining hit is an explanatory comment ("Gd for gold, not the chemical Au"). No functional chemical tickers remain.
+
+**Verified:** `node build.js` -> 280.8 KB, exit 0. Rotation 11/11, smoke 29/29. Diagnostics clean on session/config/crafting/foundry. Grepped index.html to confirm HUD `Gd:`, altar `short:'Gd'`, and both cost maps `gold:'Gd'` are bundled. HUD reads `Bz: Si: Gd: Fa:`; altar popups/label ticks derive "Gd" from config. Underlying resource keys stay bronze/silver/gold/faith (only the display ticker changed), so no logic/balance impact.
+
+**Honest caveat:** Can't see the render here — a quick device look confirms the HUD shows "Gd:" and a lit gold altar pops "+1 Gd", but the change is a pure display-string swap so behaviour is unaffected.

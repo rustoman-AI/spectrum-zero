@@ -22,7 +22,7 @@ const altars = [];
 // --- Floating "+1 <metal>" combat text ---
 // A small pool of textured sprite planes that rise, expand and fade over ~0.7s
 // whenever a lit altar generates a whole unit. Textures are pre-rendered per
-// metal type (fixed strings "+1 Bz/Si/Au") and shared; the pool just animates
+// metal type (fixed strings "+1 Bz/Si/Gd") and shared; the pool just animates
 // position/scale/opacity. Expired popups are hidden (removed from the render).
 const POPUP_LIFE = 0.7;      // seconds
 const POPUP_RISE = 5.0;      // world units risen over the life (~25px at this scale)
@@ -145,7 +145,7 @@ export function initFoundries() {
   initResourcePopups();
 }
 
-// Pre-render the "+1 Bz/Si/Au" textures (one per metal) and build a reusable
+// Pre-render the "+1 Bz/Si/Gd" textures (one per metal) and build a reusable
 // pool of sprite planes. Colours come from each altar def's `popup`.
 function initResourcePopups() {
   const oScene = getOverlayScene();
