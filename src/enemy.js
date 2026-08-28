@@ -8,7 +8,7 @@ import {
 } from './config.js';
 import { getScene, getWorldWidth } from './renderer.js';
 import { addKillReward } from './foundry.js';
-import { spawnSparks, spawnContactGlow, spawnDestruction } from './effects.js';
+import { spawnSparks, spawnContactGlow, spawnDestruction, spawnSmoke, spawnWake, getGlowTex } from './effects.js';
 
 // Breach events from the most recent updateEnemies() call, for per-lane feedback.
 const lastBreaches = [];
@@ -186,6 +186,19 @@ export function initEnemies() {
     spriteMesh.position.z = 0.01;
     mesh.add(spriteMesh);
 
+    // Emissive ember glow behind the hull — an additive orange halo that ramps
+    // up as the ship approaches ignition (charring). Uses the shared soft glow
+    // texture so it reads as a hot edge glow, not a flat rectangle.
+    const emberGlow = new THREE.Mesh(
+      new THREE.PlaneGeometry(7, 7),
+      new THREE.MeshBasicMaterial({
+        map: getGlowTex(), color: 0xff6600, transparent: true, opacity: 0,
+        blending: THREE.AdditiveBlending, depthWrite: false
+      })
+    );
+    emberGlow.position.z = -0.02; // just behind the sprite
+    mesh.add(emberGlow);
+
     mesh.visible = false;
 
     // Burn meter bar
@@ -263,7 +276,7 @@ export function initEnemies() {
       speed: 0, baseSpeed: 0,
       burn: 0, slowed: false,
       bandsHitting: 0, lastHitColour: 0,
-      mesh, barFill, shieldPlate, oarMeshes, spriteMat, hullMat: spriteMat
+      mesh, barFill, shieldPlate, oarMeshes, spriteMat, hullMat: spriteMat, emberGlow
     });
   }
 }
@@ -324,10 +337,24 @@ export function updateEnemies(dt) {
     if (!e.active) continue;
     e.slowed = false;
     // Zeus stun: skip movement while stunned
+    let moving = false;
     if (e.stunTimer && e.stunTimer > 0) {
       e.stunTimer -= dt;
     } else {
       e.y -= e.speed * dt; // descend
+      moving = e.speed > 0.1;
+    }
+
+    // Trailing wake: faint foam puffs behind a moving hull (above it, since
+    // ships travel downward). Throttled per ship so the pool isn't flooded.
+    if (moving) {
+      e.wakeTimer = (e.wakeTimer || 0) - dt;
+      if (e.wakeTimer <= 0) {
+        e.wakeTimer = 0.22 + Math.random() * 0.12;
+        const wx = -ww / 2 + lw * (e.lane + 0.5) + (e.driftX || 0) + (e.pullX || 0);
+        const wy = e.y + shipHalfHeight(e.type) * 0.7; // behind (above) the hull
+        spawnWake(wx, wy, 0x9fb8c4); // pale foam-blue, small quick puff
+      }
     }
 
     // Zeus charring: deferred kill stage (electric arcs then heat)
@@ -470,17 +497,39 @@ function updateEnemyVisual(e) {
     e.spriteMat.needsUpdate = true;
   }
 
-  // Burn tint on sprite
+  // --- Charring: hull darkens toward charcoal as heat fills. The sprite colour
+  // multiplies from white (1) down toward near-black charcoal (0.12) by burn.
+  // A brief coloured lick from the last beam hit rides on top for feedback.
+  const char = 1 - e.burn * 0.88;           // 1 → 0.12
+  let cr = char, cg = char, cb = char;
   if (e.bandsHitting > 0 && e.lastHitColour !== 0) {
     const r = ((e.lastHitColour >> 16) & 0xff) / 255;
     const g = ((e.lastHitColour >> 8) & 0xff) / 255;
     const b = (e.lastHitColour & 0xff) / 255;
-    const t = Math.min(0.3 + e.burn * 0.7, 1.0);
-    e.spriteMat.color.setRGB(1*(1-t)+r*t, 1*(1-t)+g*t, 1*(1-t)+b*t);
+    const t = 0.25; // subtle beam-colour lick over the charred hull
+    cr = char * (1 - t) + r * t;
+    cg = char * (1 - t) + g * t;
+    cb = char * (1 - t) + b * t;
   } else if (e.slowed) {
-    e.spriteMat.color.setRGB(0.7, 0.9, 0.5);
-  } else {
-    e.spriteMat.color.setRGB(1, 1, 1); // neutral (texture has its own colours)
+    cr = char * 0.7; cg = char * 0.9; cb = char * 0.5; // frosty gold-slow tint
+  }
+  e.spriteMat.color.setRGB(cr, cg, cb);
+
+  // --- Emissive orange edge glow that ramps up just before ignition. Starts
+  // appearing past ~55% heat and pulses hotter (toward white-orange) near 100%.
+  if (e.emberGlow) {
+    if (e.burn > 0.55) {
+      const ign = (e.burn - 0.55) / 0.45;              // 0..1 over the last 45%
+      const flick = 0.8 + 0.2 * Math.sin(performance.now() * 0.02 + e.oarPhase);
+      e.emberGlow.material.opacity = Math.min(0.9, ign * 0.9) * flick;
+      // Shift hue from ember-orange toward hot white-orange as it peaks.
+      const g = 0.4 + ign * 0.5; // green channel rises → whiter/hotter
+      e.emberGlow.material.color.setRGB(1, g, 0.1 + ign * 0.2);
+      const gs = 1 + ign * 0.25;
+      e.emberGlow.scale.set(gs, gs, 1);
+    } else {
+      e.emberGlow.material.opacity = 0;
+    }
   }
 
   const s = SHIP_SIZE[e.type] || 3;

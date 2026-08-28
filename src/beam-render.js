@@ -98,9 +98,39 @@ export function rebuildBeams(segments) {
   }
 }
 
+// Soft cross-beam gradient texture: bright down the centre line, fading to
+// transparent at the top/bottom edges (across the beam WIDTH, which is the
+// quad's local Y after scaling). Gives beams a luminous concentrated-sunbeam
+// look with soft edge falloff instead of a flat solid bar. Length axis (X) is
+// uniform so the beam reads continuous end-to-end.
+let beamTexture = null;
+function getBeamTexture() {
+  if (beamTexture) return beamTexture;
+  const h = 64, w = 8;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  // Vertical gradient (across width): centre bright -> edges transparent.
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0.0, 'rgba(255,255,255,0)');
+  grad.addColorStop(0.32, 'rgba(255,255,255,0.55)');
+  grad.addColorStop(0.5, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.68, 'rgba(255,255,255,0.55)');
+  grad.addColorStop(1.0, 'rgba(255,255,255,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+  beamTexture = new THREE.CanvasTexture(c);
+  beamTexture.minFilter = THREE.LinearFilter;
+  beamTexture.magFilter = THREE.LinearFilter;
+  return beamTexture;
+}
+
 function createQuadMesh(opacity) {
   const geo = new THREE.PlaneGeometry(1, 1);
+  // The plane's local Y (UV v) is the beam-width axis, so the vertical texture
+  // gradient produces the across-beam edge falloff; length (X) stays uniform.
   const mat = new THREE.MeshBasicMaterial({
+    map: getBeamTexture(),
     color: 0xffffff,
     transparent: true,
     opacity,

@@ -561,6 +561,8 @@ let seaW = 64;
 let seaH = 512;
 let reduceMotion = false;
 let waveOffset = 0;
+let foamLine = null;
+let foamPhase = 0;
 
 function initBackground() {
   const scene = getScene();
@@ -599,9 +601,16 @@ function initBackground() {
   seaCtx = seaCanvas.getContext('2d');
   drawSeaBase(seaCtx, seaW, seaH);
 
+  // Bake the wave crests into the texture ONCE, then animate via cheap UV
+  // scrolling (texture.offset) instead of redrawing the canvas every frame.
+  drawWaveCrests(seaCtx, seaW, seaH, 0);
   seaTexture = new THREE.CanvasTexture(seaCanvas);
   seaTexture.minFilter = THREE.LinearFilter;
   seaTexture.magFilter = THREE.LinearFilter;
+  seaTexture.wrapS = THREE.RepeatWrapping;
+  seaTexture.wrapT = THREE.RepeatWrapping;
+  // Repeat vertically a bit so scrolling reveals continuous ripples.
+  seaTexture.repeat.set(1, 1.5);
 
   const seaGeo = new THREE.PlaneGeometry(ww + 4, seaH_world);
   const seaMat = new THREE.MeshBasicMaterial({ map: seaTexture, depthWrite: false });
@@ -616,6 +625,25 @@ function initBackground() {
   const foamMesh = new THREE.Mesh(foamGeo, foamMat);
   foamMesh.position.set(0, WALL_Y + foamH / 2, -9.8);
   scene.add(foamMesh);
+
+  // Bright white foam line: a soft glowing strip where the water washes against
+  // the lower battlement. Its opacity breathes with the wave rhythm.
+  const foamLineH = 0.6;
+  const flCanvas = document.createElement('canvas');
+  flCanvas.width = 64; flCanvas.height = 8;
+  const flCtx = flCanvas.getContext('2d');
+  const flGrad = flCtx.createLinearGradient(0, 0, 0, 8);
+  flGrad.addColorStop(0, 'rgba(255,255,255,0)');
+  flGrad.addColorStop(0.5, 'rgba(235,245,250,0.9)');
+  flGrad.addColorStop(1, 'rgba(255,255,255,0)');
+  flCtx.fillStyle = flGrad; flCtx.fillRect(0, 0, 64, 8);
+  const flTex = new THREE.CanvasTexture(flCanvas);
+  flTex.minFilter = THREE.LinearFilter;
+  const foamLineGeo = new THREE.PlaneGeometry(ww + 4, foamLineH);
+  const foamLineMat = new THREE.MeshBasicMaterial({ map: flTex, transparent: true, opacity: 0.6, depthWrite: false });
+  foamLine = new THREE.Mesh(foamLineGeo, foamLineMat);
+  foamLine.position.set(0, WALL_Y + 0.5, -9.6);
+  scene.add(foamLine);
 
   // Thin foam edge
   const edgeH = 0.3;
@@ -644,13 +672,20 @@ function initBackground() {
 function updateBackground(dt) {
   if (!seaTexture || reduceMotion) return;
 
-  // Scroll wave crests by redrawing with offset
-  waveOffset += dt * 12; // pixels per second scroll speed
-  if (waveOffset > seaH) waveOffset -= seaH;
+  // Cheap animated ripple: scroll the baked wave texture's UVs. A slight
+  // secondary horizontal sway adds a shimmer so it doesn't look like a
+  // straight conveyor. No per-frame canvas redraw.
+  waveOffset += dt * 0.03; // UV units/sec (texture is normalised 0..1)
+  seaTexture.offset.y = (seaTexture.offset.y + dt * 0.03) % 1;
+  seaTexture.offset.x = Math.sin(waveOffset * 6) * 0.012;
 
-  drawSeaBase(seaCtx, seaW, seaH);
-  drawWaveCrests(seaCtx, seaW, seaH, waveOffset);
-  seaTexture.needsUpdate = true;
+  // Foam line breathes with the wave rhythm (in sync with the 0.1Hz sea audio
+  // feel): opacity + a tiny vertical bob as the surf washes the stone.
+  if (foamLine) {
+    foamPhase += dt;
+    foamLine.material.opacity = 0.45 + 0.35 * (0.5 + 0.5 * Math.sin(foamPhase * 0.8));
+    foamLine.position.y = WALL_Y + 0.5 + Math.sin(foamPhase * 0.8) * 0.15;
+  }
 }
 
 // --- Sea drawing ---
@@ -2169,9 +2204,39 @@ function rebuildBeams(segments) {
   }
 }
 
+// Soft cross-beam gradient texture: bright down the centre line, fading to
+// transparent at the top/bottom edges (across the beam WIDTH, which is the
+// quad's local Y after scaling). Gives beams a luminous concentrated-sunbeam
+// look with soft edge falloff instead of a flat solid bar. Length axis (X) is
+// uniform so the beam reads continuous end-to-end.
+let beamTexture = null;
+function getBeamTexture() {
+  if (beamTexture) return beamTexture;
+  const h = 64, w = 8;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  // Vertical gradient (across width): centre bright -> edges transparent.
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0.0, 'rgba(255,255,255,0)');
+  grad.addColorStop(0.32, 'rgba(255,255,255,0.55)');
+  grad.addColorStop(0.5, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.68, 'rgba(255,255,255,0.55)');
+  grad.addColorStop(1.0, 'rgba(255,255,255,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+  beamTexture = new THREE.CanvasTexture(c);
+  beamTexture.minFilter = THREE.LinearFilter;
+  beamTexture.magFilter = THREE.LinearFilter;
+  return beamTexture;
+}
+
 function createQuadMesh(opacity) {
   const geo = new THREE.PlaneGeometry(1, 1);
+  // The plane's local Y (UV v) is the beam-width axis, so the vertical texture
+  // gradient produces the across-beam edge falloff; length (X) stays uniform.
   const mat = new THREE.MeshBasicMaterial({
+    map: getBeamTexture(),
     color: 0xffffff,
     transparent: true,
     opacity,
@@ -2306,6 +2371,26 @@ function createMirror(socketIndex) {
   mesh.rotation.z = angle;
   mirrorMeshGroup.add(mesh);
 
+  // Dynamic specular highlight: a soft additive glint sprite over the bronze
+  // disc. As the disc rotates, the glint slides across its face (as if catching
+  // a fixed overhead sun), and it flares brightest when the disc faces up.
+  const hlCanvas = document.createElement('canvas');
+  hlCanvas.width = 32; hlCanvas.height = 32;
+  const hlCtx = hlCanvas.getContext('2d');
+  const hlGrad = hlCtx.createRadialGradient(16, 16, 0, 16, 16, 16);
+  hlGrad.addColorStop(0, 'rgba(255,250,230,0.95)');
+  hlGrad.addColorStop(0.5, 'rgba(255,240,200,0.35)');
+  hlGrad.addColorStop(1, 'rgba(255,240,200,0)');
+  hlCtx.fillStyle = hlGrad; hlCtx.fillRect(0, 0, 32, 32);
+  const hlTex = new THREE.CanvasTexture(hlCanvas);
+  hlTex.minFilter = THREE.LinearFilter;
+  const highlight = new THREE.Mesh(
+    new THREE.PlaneGeometry(3.2, 3.2),
+    new THREE.MeshBasicMaterial({ map: hlTex, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })
+  );
+  highlight.position.set(sx, sy, 0.05);
+  mirrorMeshGroup.add(highlight);
+
   return {
     id: socketIndex,
     socketIndex,
@@ -2317,6 +2402,7 @@ function createMirror(socketIndex) {
     freeX: sx,
     freeY: sy,
     mesh,
+    highlight,
     p1: { x: 0, y: 0 },
     p2: { x: 0, y: 0 },
     normal: { x: 0, y: 0 },
@@ -2449,6 +2535,17 @@ function updateMirrorGeometry(mirror) {
 
   mirror.mesh.position.set(sx, sy, 0);
   mirror.mesh.rotation.z = mirror.angle;
+
+  // Specular glint: slides along the disc's surface normal and flares brightest
+  // when the normal faces up toward a virtual overhead sun (normal.y -> 1).
+  if (mirror.highlight) {
+    const nx = mirror.normal.x, ny = mirror.normal.y;
+    const off = 1.6; // how far along the normal the glint sits
+    mirror.highlight.position.set(sx + nx * off, sy + ny * off, 0.05);
+    // Brightness peaks when the polished face tilts toward the sun (ny high).
+    const facing = Math.max(0, ny);              // 0..1
+    mirror.highlight.material.opacity = 0.2 + 0.65 * facing;
+  }
 }
 
 // Free placement: move mirror to position, clamped to mirror field
@@ -2506,6 +2603,10 @@ function updateMirrorTweens(dt) {
     tw.mirror.p1 = { x: x - halfLen * cos, y: y - halfLen * sin };
     tw.mirror.p2 = { x: x + halfLen * cos, y: y + halfLen * sin };
     tw.mirror.normal = { x: -sin, y: cos };
+    // Keep the specular glint tracking the disc during the tween.
+    if (tw.mirror.highlight) {
+      tw.mirror.highlight.position.set(x + (-sin) * 1.6, y + cos * 1.6, 0.05);
+    }
 
     markDirty(); // re-solve beam every frame during tween
     anyActive = true;
@@ -2605,6 +2706,15 @@ function resetMirrors() {
       if (m.mesh.material) {
         if (m.mesh.material.map) m.mesh.material.map.dispose();
         m.mesh.material.dispose();
+      }
+    }
+    // Also tear down the specular highlight sprite.
+    if (m.highlight) {
+      if (mirrorMeshGroup) mirrorMeshGroup.remove(m.highlight);
+      if (m.highlight.geometry) m.highlight.geometry.dispose();
+      if (m.highlight.material) {
+        if (m.highlight.material.map) m.highlight.material.map.dispose();
+        m.highlight.material.dispose();
       }
     }
   }
@@ -2926,6 +3036,19 @@ function initEnemies() {
     spriteMesh.position.z = 0.01;
     mesh.add(spriteMesh);
 
+    // Emissive ember glow behind the hull — an additive orange halo that ramps
+    // up as the ship approaches ignition (charring). Uses the shared soft glow
+    // texture so it reads as a hot edge glow, not a flat rectangle.
+    const emberGlow = new THREE.Mesh(
+      new THREE.PlaneGeometry(7, 7),
+      new THREE.MeshBasicMaterial({
+        map: getGlowTex(), color: 0xff6600, transparent: true, opacity: 0,
+        blending: THREE.AdditiveBlending, depthWrite: false
+      })
+    );
+    emberGlow.position.z = -0.02; // just behind the sprite
+    mesh.add(emberGlow);
+
     mesh.visible = false;
 
     // Burn meter bar
@@ -3003,7 +3126,7 @@ function initEnemies() {
       speed: 0, baseSpeed: 0,
       burn: 0, slowed: false,
       bandsHitting: 0, lastHitColour: 0,
-      mesh, barFill, shieldPlate, oarMeshes, spriteMat, hullMat: spriteMat
+      mesh, barFill, shieldPlate, oarMeshes, spriteMat, hullMat: spriteMat, emberGlow
     });
   }
 }
@@ -3064,10 +3187,24 @@ function updateEnemies(dt) {
     if (!e.active) continue;
     e.slowed = false;
     // Zeus stun: skip movement while stunned
+    let moving = false;
     if (e.stunTimer && e.stunTimer > 0) {
       e.stunTimer -= dt;
     } else {
       e.y -= e.speed * dt; // descend
+      moving = e.speed > 0.1;
+    }
+
+    // Trailing wake: faint foam puffs behind a moving hull (above it, since
+    // ships travel downward). Throttled per ship so the pool isn't flooded.
+    if (moving) {
+      e.wakeTimer = (e.wakeTimer || 0) - dt;
+      if (e.wakeTimer <= 0) {
+        e.wakeTimer = 0.22 + Math.random() * 0.12;
+        const wx = -ww / 2 + lw * (e.lane + 0.5) + (e.driftX || 0) + (e.pullX || 0);
+        const wy = e.y + shipHalfHeight(e.type) * 0.7; // behind (above) the hull
+        spawnWake(wx, wy, 0x9fb8c4); // pale foam-blue, small quick puff
+      }
     }
 
     // Zeus charring: deferred kill stage (electric arcs then heat)
@@ -3210,17 +3347,39 @@ function updateEnemyVisual(e) {
     e.spriteMat.needsUpdate = true;
   }
 
-  // Burn tint on sprite
+  // --- Charring: hull darkens toward charcoal as heat fills. The sprite colour
+  // multiplies from white (1) down toward near-black charcoal (0.12) by burn.
+  // A brief coloured lick from the last beam hit rides on top for feedback.
+  const char = 1 - e.burn * 0.88;           // 1 → 0.12
+  let cr = char, cg = char, cb = char;
   if (e.bandsHitting > 0 && e.lastHitColour !== 0) {
     const r = ((e.lastHitColour >> 16) & 0xff) / 255;
     const g = ((e.lastHitColour >> 8) & 0xff) / 255;
     const b = (e.lastHitColour & 0xff) / 255;
-    const t = Math.min(0.3 + e.burn * 0.7, 1.0);
-    e.spriteMat.color.setRGB(1*(1-t)+r*t, 1*(1-t)+g*t, 1*(1-t)+b*t);
+    const t = 0.25; // subtle beam-colour lick over the charred hull
+    cr = char * (1 - t) + r * t;
+    cg = char * (1 - t) + g * t;
+    cb = char * (1 - t) + b * t;
   } else if (e.slowed) {
-    e.spriteMat.color.setRGB(0.7, 0.9, 0.5);
-  } else {
-    e.spriteMat.color.setRGB(1, 1, 1); // neutral (texture has its own colours)
+    cr = char * 0.7; cg = char * 0.9; cb = char * 0.5; // frosty gold-slow tint
+  }
+  e.spriteMat.color.setRGB(cr, cg, cb);
+
+  // --- Emissive orange edge glow that ramps up just before ignition. Starts
+  // appearing past ~55% heat and pulses hotter (toward white-orange) near 100%.
+  if (e.emberGlow) {
+    if (e.burn > 0.55) {
+      const ign = (e.burn - 0.55) / 0.45;              // 0..1 over the last 45%
+      const flick = 0.8 + 0.2 * Math.sin(performance.now() * 0.02 + e.oarPhase);
+      e.emberGlow.material.opacity = Math.min(0.9, ign * 0.9) * flick;
+      // Shift hue from ember-orange toward hot white-orange as it peaks.
+      const g = 0.4 + ign * 0.5; // green channel rises → whiter/hotter
+      e.emberGlow.material.color.setRGB(1, g, 0.1 + ign * 0.2);
+      const gs = 1 + ign * 0.25;
+      e.emberGlow.scale.set(gs, gs, 1);
+    } else {
+      e.emberGlow.material.opacity = 0;
+    }
   }
 
   const s = SHIP_SIZE[e.type] || 3;
@@ -4091,6 +4250,41 @@ function drawCostTokens(cost, res, faith, centreX, y, btnW) {
 
 
 
+// --- Soft radial sprite textures (shared) ---
+// A round soft glow (bright centre → transparent edge) used for glows/embers,
+// and a softer, fuzzier puff used for smoke. Replaces flat square particles.
+let _glowTex = null, _smokeTex = null;
+function radialTexture(stops) {
+  const s = 64;
+  const c = document.createElement('canvas');
+  c.width = s; c.height = s;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+  for (const [pos, col] of stops) g.addColorStop(pos, col);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, s, s);
+  const tex = new THREE.CanvasTexture(c);
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  return tex;
+}
+function getGlowTex() {
+  if (!_glowTex) _glowTex = radialTexture([
+    [0.0, 'rgba(255,255,255,1)'],
+    [0.35, 'rgba(255,255,255,0.7)'],
+    [1.0, 'rgba(255,255,255,0)'],
+  ]);
+  return _glowTex;
+}
+function getSmokeTex() {
+  if (!_smokeTex) _smokeTex = radialTexture([
+    [0.0, 'rgba(255,255,255,0.55)'],
+    [0.5, 'rgba(255,255,255,0.28)'],
+    [1.0, 'rgba(255,255,255,0)'],
+  ]);
+  return _smokeTex;
+}
+
 // --- Contact glow pool (beam hitting enemy) ---
 const GLOW_POOL_SIZE = 8;
 const glowPool = [];
@@ -4108,16 +4302,20 @@ const sparkPool = [];
 const DEBRIS_POOL_SIZE = 16;
 const debrisPool = [];
 
+// --- Smoke puff pool (drifting smoke on hits/destruction + ship wakes) ---
+const SMOKE_POOL_SIZE = 32;
+const smokePool = [];
+
 // --- WebAudio context (created on first user interaction) ---
 let audioCtx = null;
 
 function initEffects() {
   const scene = getScene();
-  // Contact glows (small base — clamped so the flash never dwarfs a ship)
+  // Contact glows — soft round radial sprite (not a flat square).
   for (let i = 0; i < GLOW_POOL_SIZE; i++) {
     const geo = new THREE.PlaneGeometry(1.5, 1.5);
     const mat = new THREE.MeshBasicMaterial({
-      color: 0xffffff, transparent: true, opacity: 0,
+      map: getGlowTex(), color: 0xffffff, transparent: true, opacity: 0,
       blending: THREE.AdditiveBlending, depthWrite: false
     });
     const mesh = new THREE.Mesh(geo, mat);
@@ -4126,18 +4324,31 @@ function initEffects() {
     scene.add(mesh);
     glowPool.push({ mesh, life: 0, colour: 0xffffff, scale: 1 });
   }
-  // Sparks
+  // Embers — soft round glowing motes that rise and arc (was flat sparks).
   for (let i = 0; i < SPARK_POOL_SIZE; i++) {
-    const geo = new THREE.PlaneGeometry(0.6, 0.6);
+    const geo = new THREE.PlaneGeometry(0.7, 0.7);
     const mat = new THREE.MeshBasicMaterial({
-      color: 0xffcc00, transparent: true, opacity: 0,
+      map: getGlowTex(), color: 0xffcc00, transparent: true, opacity: 0,
       blending: THREE.AdditiveBlending, depthWrite: false
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.visible = false;
     mesh.position.z = 0.5;
     scene.add(mesh);
-    sparkPool.push({ mesh, life: 0, vx: 0, vy: 0 });
+    sparkPool.push({ mesh, life: 0, maxLife: 0.4, vx: 0, vy: 0, baseSize: 0.7 });
+  }
+  // Smoke puffs — soft grey radial, drift up + grow + fade (normal blending).
+  for (let i = 0; i < SMOKE_POOL_SIZE; i++) {
+    const geo = new THREE.PlaneGeometry(1, 1);
+    const mat = new THREE.MeshBasicMaterial({
+      map: getSmokeTex(), color: 0x4a4038, transparent: true, opacity: 0,
+      depthWrite: false
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.visible = false;
+    mesh.position.z = 0.35;
+    scene.add(mesh);
+    smokePool.push({ mesh, life: 0, maxLife: 1, vx: 0, vy: 0, size0: 1, grow: 2, spin: 0 });
   }
   // Debris
   for (let i = 0; i < DEBRIS_POOL_SIZE; i++) {
@@ -4165,15 +4376,37 @@ function updateEffects(dt) {
       if (g.life <= 0) g.mesh.visible = false;
     }
   }
-  // Sparks: move + fade
+  // Embers: rise + arc + gentle flicker, warm fade. Slight upward buoyancy
+  // (negative gravity pull) so they float up like sparks off a fire.
   for (const s of sparkPool) {
     if (s.life > 0) {
       s.life -= dt;
       s.mesh.position.x += s.vx * dt;
       s.mesh.position.y += s.vy * dt;
-      s.vy -= 30 * dt; // gravity
-      s.mesh.material.opacity = Math.max(0, s.life * 3);
+      s.vy += 6 * dt;   // buoyancy: drift upward over time
+      s.vx *= 0.96;     // air drag
+      const t = s.life / s.maxLife; // 1 -> 0
+      const flicker = 0.75 + 0.25 * Math.sin(performance.now() * 0.03 + s.mesh.id);
+      s.mesh.material.opacity = Math.max(0, t) * flicker;
+      const size = s.baseSize * (0.6 + 0.4 * t);
+      s.mesh.scale.set(size, size, 1);
       if (s.life <= 0) s.mesh.visible = false;
+    }
+  }
+  // Smoke puffs: drift up, expand, fade out.
+  for (const p of smokePool) {
+    if (p.life > 0) {
+      p.life -= dt;
+      p.mesh.position.x += p.vx * dt;
+      p.mesh.position.y += p.vy * dt;
+      p.vy += 3 * dt;   // rise faster as it lifts
+      p.vx *= 0.97;
+      const t = p.life / p.maxLife; // 1 -> 0
+      const size = p.size0 + (1 - t) * p.grow; // grows as it ages
+      p.mesh.scale.set(size, size, 1);
+      p.mesh.rotation.z += p.spin * dt;
+      p.mesh.material.opacity = Math.max(0, t) * 0.5; // never fully opaque
+      if (p.life <= 0) p.mesh.visible = false;
     }
   }
   // Debris: move + gravity + fade
@@ -4186,6 +4419,49 @@ function updateEffects(dt) {
       d.mesh.material.opacity = Math.max(0, d.life / 1.5);
       d.mesh.rotation.z += 3 * dt;
       if (d.life <= 0) d.mesh.visible = false;
+    }
+  }
+}
+
+// Spawn drifting smoke puffs at a position (dark combustion smoke).
+function spawnSmoke(x, y, count, colour) {
+  let spawned = 0;
+  for (const p of smokePool) {
+    if (spawned >= count) break;
+    if (p.life <= 0) {
+      p.mesh.position.set(x + (Math.random() - 0.5) * 1.5, y, 0.35);
+      p.mesh.material.color.setHex(colour != null ? colour : 0x4a4038);
+      p.mesh.material.opacity = 0.5;
+      p.mesh.visible = true;
+      p.life = p.maxLife = 0.9 + Math.random() * 0.8;
+      p.vx = (Math.random() - 0.5) * 4;
+      p.vy = 4 + Math.random() * 4;
+      p.size0 = 1.2 + Math.random() * 0.8;
+      p.grow = 2.5 + Math.random() * 2;
+      p.spin = (Math.random() - 0.5) * 1.5;
+      p.mesh.scale.set(p.size0, p.size0, 1);
+      spawned++;
+    }
+  }
+}
+
+// Spawn a light, short-lived foam WAKE puff behind a moving ship. Small and
+// quick so the shared pool recycles fast even with many ships on screen.
+function spawnWake(x, y, colour) {
+  for (const p of smokePool) {
+    if (p.life <= 0) {
+      p.mesh.position.set(x, y, 0.32);
+      p.mesh.material.color.setHex(colour != null ? colour : 0x9fb8c4);
+      p.mesh.material.opacity = 0.3;
+      p.mesh.visible = true;
+      p.life = p.maxLife = 0.5 + Math.random() * 0.3;
+      p.vx = (Math.random() - 0.5) * 1.5;
+      p.vy = 1.5 + Math.random() * 1.5; // gentle rise
+      p.size0 = 0.7 + Math.random() * 0.4;
+      p.grow = 1.0;
+      p.spin = (Math.random() - 0.5) * 0.8;
+      p.mesh.scale.set(p.size0, p.size0, 1);
+      return;
     }
   }
 }
@@ -4208,19 +4484,21 @@ function spawnContactGlow(x, y, colour, dps) {
   }
 }
 
-// Spawn sparks at position
+// Spawn rising embers at position (soft round glowing motes).
 function spawnSparks(x, y, colour, count) {
   for (let n = 0; n < count; n++) {
     for (const s of sparkPool) {
       if (s.life <= 0) {
-        s.mesh.position.x = x;
-        s.mesh.position.y = y;
+        s.mesh.position.set(x, y, 0.5);
         s.mesh.material.color.setHex(colour);
         s.mesh.material.opacity = 1;
         s.mesh.visible = true;
-        s.life = 0.2 + Math.random() * 0.2;
-        s.vx = (Math.random() - 0.5) * 30;
-        s.vy = Math.random() * 20;
+        s.life = s.maxLife = 0.4 + Math.random() * 0.4;
+        s.baseSize = 0.5 + Math.random() * 0.5;
+        // Fan outward but biased upward so they read as rising embers.
+        s.vx = (Math.random() - 0.5) * 16;
+        s.vy = 6 + Math.random() * 14;
+        s.mesh.scale.set(s.baseSize, s.baseSize, 1);
         break;
       }
     }
@@ -4232,6 +4510,9 @@ function spawnSparks(x, y, colour, count) {
 function spawnDestruction(x, y, heavy) {
   // Flash (large bright glow)
   spawnContactGlow(x, y, 0xffffff, heavy ? 160 : 100);
+  // Rising embers + drifting smoke puffs for an organic burn/explosion.
+  spawnSparks(x, y, 0xffaa33, heavy ? 10 : 6);
+  spawnSmoke(x, y, heavy ? 5 : 3);
   // Debris particles
   for (let i = 0; i < 8; i++) {
     for (const d of debrisPool) {
@@ -4307,6 +4588,7 @@ function resetEffects() {
   for (const g of glowPool) { g.life = 0; g.mesh.visible = false; }
   for (const s of sparkPool) { s.life = 0; s.mesh.visible = false; }
   for (const d of debrisPool) { d.life = 0; d.mesh.visible = false; }
+  for (const p of smokePool) { p.life = 0; p.mesh.visible = false; }
 }
 
 

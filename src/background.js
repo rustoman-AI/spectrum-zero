@@ -26,6 +26,8 @@ let seaW = 64;
 let seaH = 512;
 let reduceMotion = false;
 let waveOffset = 0;
+let foamLine = null;
+let foamPhase = 0;
 
 export function initBackground() {
   const scene = getScene();
@@ -64,9 +66,16 @@ export function initBackground() {
   seaCtx = seaCanvas.getContext('2d');
   drawSeaBase(seaCtx, seaW, seaH);
 
+  // Bake the wave crests into the texture ONCE, then animate via cheap UV
+  // scrolling (texture.offset) instead of redrawing the canvas every frame.
+  drawWaveCrests(seaCtx, seaW, seaH, 0);
   seaTexture = new THREE.CanvasTexture(seaCanvas);
   seaTexture.minFilter = THREE.LinearFilter;
   seaTexture.magFilter = THREE.LinearFilter;
+  seaTexture.wrapS = THREE.RepeatWrapping;
+  seaTexture.wrapT = THREE.RepeatWrapping;
+  // Repeat vertically a bit so scrolling reveals continuous ripples.
+  seaTexture.repeat.set(1, 1.5);
 
   const seaGeo = new THREE.PlaneGeometry(ww + 4, seaH_world);
   const seaMat = new THREE.MeshBasicMaterial({ map: seaTexture, depthWrite: false });
@@ -81,6 +90,25 @@ export function initBackground() {
   const foamMesh = new THREE.Mesh(foamGeo, foamMat);
   foamMesh.position.set(0, WALL_Y + foamH / 2, -9.8);
   scene.add(foamMesh);
+
+  // Bright white foam line: a soft glowing strip where the water washes against
+  // the lower battlement. Its opacity breathes with the wave rhythm.
+  const foamLineH = 0.6;
+  const flCanvas = document.createElement('canvas');
+  flCanvas.width = 64; flCanvas.height = 8;
+  const flCtx = flCanvas.getContext('2d');
+  const flGrad = flCtx.createLinearGradient(0, 0, 0, 8);
+  flGrad.addColorStop(0, 'rgba(255,255,255,0)');
+  flGrad.addColorStop(0.5, 'rgba(235,245,250,0.9)');
+  flGrad.addColorStop(1, 'rgba(255,255,255,0)');
+  flCtx.fillStyle = flGrad; flCtx.fillRect(0, 0, 64, 8);
+  const flTex = new THREE.CanvasTexture(flCanvas);
+  flTex.minFilter = THREE.LinearFilter;
+  const foamLineGeo = new THREE.PlaneGeometry(ww + 4, foamLineH);
+  const foamLineMat = new THREE.MeshBasicMaterial({ map: flTex, transparent: true, opacity: 0.6, depthWrite: false });
+  foamLine = new THREE.Mesh(foamLineGeo, foamLineMat);
+  foamLine.position.set(0, WALL_Y + 0.5, -9.6);
+  scene.add(foamLine);
 
   // Thin foam edge
   const edgeH = 0.3;
@@ -109,13 +137,20 @@ export function initBackground() {
 export function updateBackground(dt) {
   if (!seaTexture || reduceMotion) return;
 
-  // Scroll wave crests by redrawing with offset
-  waveOffset += dt * 12; // pixels per second scroll speed
-  if (waveOffset > seaH) waveOffset -= seaH;
+  // Cheap animated ripple: scroll the baked wave texture's UVs. A slight
+  // secondary horizontal sway adds a shimmer so it doesn't look like a
+  // straight conveyor. No per-frame canvas redraw.
+  waveOffset += dt * 0.03; // UV units/sec (texture is normalised 0..1)
+  seaTexture.offset.y = (seaTexture.offset.y + dt * 0.03) % 1;
+  seaTexture.offset.x = Math.sin(waveOffset * 6) * 0.012;
 
-  drawSeaBase(seaCtx, seaW, seaH);
-  drawWaveCrests(seaCtx, seaW, seaH, waveOffset);
-  seaTexture.needsUpdate = true;
+  // Foam line breathes with the wave rhythm (in sync with the 0.1Hz sea audio
+  // feel): opacity + a tiny vertical bob as the surf washes the stone.
+  if (foamLine) {
+    foamPhase += dt;
+    foamLine.material.opacity = 0.45 + 0.35 * (0.5 + 0.5 * Math.sin(foamPhase * 0.8));
+    foamLine.position.y = WALL_Y + 0.5 + Math.sin(foamPhase * 0.8) * 0.15;
+  }
 }
 
 // --- Sea drawing ---

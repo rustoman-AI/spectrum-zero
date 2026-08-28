@@ -91,6 +91,26 @@ function createMirror(socketIndex) {
   mesh.rotation.z = angle;
   mirrorMeshGroup.add(mesh);
 
+  // Dynamic specular highlight: a soft additive glint sprite over the bronze
+  // disc. As the disc rotates, the glint slides across its face (as if catching
+  // a fixed overhead sun), and it flares brightest when the disc faces up.
+  const hlCanvas = document.createElement('canvas');
+  hlCanvas.width = 32; hlCanvas.height = 32;
+  const hlCtx = hlCanvas.getContext('2d');
+  const hlGrad = hlCtx.createRadialGradient(16, 16, 0, 16, 16, 16);
+  hlGrad.addColorStop(0, 'rgba(255,250,230,0.95)');
+  hlGrad.addColorStop(0.5, 'rgba(255,240,200,0.35)');
+  hlGrad.addColorStop(1, 'rgba(255,240,200,0)');
+  hlCtx.fillStyle = hlGrad; hlCtx.fillRect(0, 0, 32, 32);
+  const hlTex = new THREE.CanvasTexture(hlCanvas);
+  hlTex.minFilter = THREE.LinearFilter;
+  const highlight = new THREE.Mesh(
+    new THREE.PlaneGeometry(3.2, 3.2),
+    new THREE.MeshBasicMaterial({ map: hlTex, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })
+  );
+  highlight.position.set(sx, sy, 0.05);
+  mirrorMeshGroup.add(highlight);
+
   return {
     id: socketIndex,
     socketIndex,
@@ -102,6 +122,7 @@ function createMirror(socketIndex) {
     freeX: sx,
     freeY: sy,
     mesh,
+    highlight,
     p1: { x: 0, y: 0 },
     p2: { x: 0, y: 0 },
     normal: { x: 0, y: 0 },
@@ -234,6 +255,17 @@ export function updateMirrorGeometry(mirror) {
 
   mirror.mesh.position.set(sx, sy, 0);
   mirror.mesh.rotation.z = mirror.angle;
+
+  // Specular glint: slides along the disc's surface normal and flares brightest
+  // when the normal faces up toward a virtual overhead sun (normal.y -> 1).
+  if (mirror.highlight) {
+    const nx = mirror.normal.x, ny = mirror.normal.y;
+    const off = 1.6; // how far along the normal the glint sits
+    mirror.highlight.position.set(sx + nx * off, sy + ny * off, 0.05);
+    // Brightness peaks when the polished face tilts toward the sun (ny high).
+    const facing = Math.max(0, ny);              // 0..1
+    mirror.highlight.material.opacity = 0.2 + 0.65 * facing;
+  }
 }
 
 // Free placement: move mirror to position, clamped to mirror field
@@ -291,6 +323,10 @@ export function updateMirrorTweens(dt) {
     tw.mirror.p1 = { x: x - halfLen * cos, y: y - halfLen * sin };
     tw.mirror.p2 = { x: x + halfLen * cos, y: y + halfLen * sin };
     tw.mirror.normal = { x: -sin, y: cos };
+    // Keep the specular glint tracking the disc during the tween.
+    if (tw.mirror.highlight) {
+      tw.mirror.highlight.position.set(x + (-sin) * 1.6, y + cos * 1.6, 0.05);
+    }
 
     markDirty(); // re-solve beam every frame during tween
     anyActive = true;
@@ -390,6 +426,15 @@ export function resetMirrors() {
       if (m.mesh.material) {
         if (m.mesh.material.map) m.mesh.material.map.dispose();
         m.mesh.material.dispose();
+      }
+    }
+    // Also tear down the specular highlight sprite.
+    if (m.highlight) {
+      if (mirrorMeshGroup) mirrorMeshGroup.remove(m.highlight);
+      if (m.highlight.geometry) m.highlight.geometry.dispose();
+      if (m.highlight.material) {
+        if (m.highlight.material.map) m.highlight.material.map.dispose();
+        m.highlight.material.dispose();
       }
     }
   }
