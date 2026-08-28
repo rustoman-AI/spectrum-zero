@@ -694,3 +694,21 @@ All procedural canvas drawing at load time — zero image files, zip size unchan
 **Verified:** `node build.js` -> 269.4 KB, exit 0. Rotation 11/11, smoke 29/29. Diagnostics clean on tutorial/input/config/crafting/strings/build. Grepped index.html to confirm the 4s progress-gated failsafe, the " + " separator, and dismissTutorial all bundled. Helios cost `{ silver:15, bronze:20 }` renders exactly "15Si + 20Bz" per the requested format.
 
 **Honest caveat:** Can't see render or hear audio here. Device check worth doing for: (a) tapping instantly clears the card and the crystal/first ship are unobstructed, (b) the raised spawn line gives a satisfying open-water opening kill (if ships now feel too close to the crystal, SHIP_SPAWN_Y is a one-line tweak), (c) the "15Si + 20Bz" fits the Helios button cleanly at the shrink font, and (d) MOST IMPORTANTLY the narration now plays to completion — I fixed the code path that cut it at 5s, but if the mp4 file itself is truncated at "According to...", the clip would still end there and we'd instead want to drop/replace the audio (the alternative the request allowed). Please confirm on a real load.
+
+---
+
+## 2026-08-25 — Победа: время увеличено до 3:00 (полноценный челлендж)
+
+**Запрос:** увеличить время до победы до 2:30–3:00 (полноценный челлендж). Взял верхнюю границу — 3:00 (180с).
+
+**Сделано (`config.js`, `session.js`):**
+- `VICTORY_TIME` 90 -> 180 (3:00). Теперь основной путь к победе — выжить со стеной до 3:00, пройдя Phase 1 (скиффы, 0–60с) и Phase 2 (бронированные галеры, 60–180с). Условие проверяется каждый кадр в `updateSession` при `wallIntegrity > 0`.
+- `VICTORY_KILLS` 45 -> 150. Это ключевой момент: за 180с спавнится ~120–140 кораблей (скриптовый опенинг ~43 за первые 90с + процедурный Phase 2 при интервале 1.5с и парных/формациях ещё ~80–100). Старый порог 45 срабатывал бы уже к ~40–50с и делал таймер бессмысленным. Подняв порог заметно выше реалистичного числа кораблей в окне, оставил килы как вторичный резерв «зачистил весь флот» — в обычной игре победа зарабатывается именно выживанием до 3:00.
+- Обновил устаревший комментарий в `updateSession` (был «survive to 1:30 OR sink 45»).
+- Победная карта показывает «SURVIVED <time>» из фактического `elapsed`, поэтому при таймерной победе автоматически покажет «SURVIVED 3:00» — хардкода «1:30» нигде нет.
+
+**Не трогал:** скриптовый опенинг (`SCRIPT_END = 90`) — он покрывает первые 90с, дальше процедурный спавнер (Phase 2 до 180с) сам держит челлендж смешанными типами; продление скрипта не требовалось. Эскалация HP `1 + (elapsed/600)*3` к 180с даёт ~1.9x — естественный рост сложности к концу забега.
+
+**Проверка:** `node build.js` -> 270.1 KB, exit 0. Rotation 11/11, smoke 29/29. Диагностика чистая (config, session). Грепом подтвердил VICTORY_TIME=180 / VICTORY_KILLS=150 в собранном index.html.
+
+**Честная оговорка:** не могу играть здесь, поэтому баланс «дойдёт ли средний игрок до 3:00, не потеряв стену под давлением Phase 2» нужно проверить на устройстве. Обе константы — правка в одну строку: если 3:00 окажется слишком тяжело, ставим 150 (2:30); если килы всё же обгоняют таймер при очень агрессивной игре — поднимаем VICTORY_KILLS ещё.

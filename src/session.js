@@ -66,8 +66,10 @@ export function updateSession(dt) {
   if (gameOver) return;
   elapsed += dt;
 
-  // --- Primary victory: survive to 1:30 OR sink 45 ships with the wall intact.
-  // Checked first so it wins the frame over the long-form session-end logic.
+  // --- Primary victory: survive to VICTORY_TIME (3:00) with the wall intact,
+  // or the VICTORY_KILLS fleet-clear fallback (set far above what spawns in the
+  // window, so surviving the timer is the real win path). Checked first so it
+  // wins the frame over the long-form session-end logic.
   if (wallIntegrity > 0 && (elapsed >= VICTORY_TIME || getKillCount() >= VICTORY_KILLS)) {
     triggerWin();
     return;

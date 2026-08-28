@@ -81,10 +81,18 @@ export const ESCALATION_HP_FACTOR = 3;
 export const SESSION_DURATION = 600;  // 10 minutes
 
 // --- Victory condition ---
-// The defence is "won" once the player survives to 1:30 (90s) OR sinks 45 ships,
-// provided the wall is still standing. Triggers the in-engine gold victory card.
-export const VICTORY_TIME = 90;   // seconds (1:30)
-export const VICTORY_KILLS = 45;  // ships sunk
+// The defence is "won" once the player survives to 3:00 (180s) with the wall
+// still standing — a full challenge run through Phase 1 (skiffs) into Phase 2
+// (armoured galleys, which begin at 60s and run to 180s). Triggers the in-engine
+// gold victory card.
+//
+// VICTORY_KILLS is a secondary "cleared the whole fleet" fallback set well above
+// the number of ships that actually spawn in 180s (~120-140), so in normal play
+// the win is earned by SURVIVING TO 3:00, not by an early kill-count trip. It
+// only fires if the player somehow out-sinks the entire scripted+procedural
+// fleet, which keeps the timer meaningful as the primary path.
+export const VICTORY_TIME = 180;   // seconds (3:00) — full challenge length
+export const VICTORY_KILLS = 150;  // ships sunk (fallback, effectively "clear all")
 
 // --- Multi-currency economy (altar zones require beam contact) ---
 // 20% passive, 80% only while a beam is held on the altar zone.
