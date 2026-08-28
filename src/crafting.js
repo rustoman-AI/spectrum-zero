@@ -80,10 +80,13 @@ export function initCrafting() {
   trayWidth = worldWidth * 0.95;
   trayY = -WORLD_HEIGHT / 2 + 3;
 
+  // 2x-resolution backing canvas (1024x80) drawn in a 512x40 logical space so
+  // the small cost text stays crisp when the tray plane is upscaled on a phone.
   trayCanvas = document.createElement('canvas');
-  trayCanvas.width = 512;
-  trayCanvas.height = 40;
+  trayCanvas.width = 1024;
+  trayCanvas.height = 80;
   trayCtx = trayCanvas.getContext('2d');
+  trayCtx.scale(2, 2); // logical coordinates remain 512x40
 
   trayTexture = new THREE.CanvasTexture(trayCanvas);
   trayTexture.minFilter = THREE.LinearFilter;
@@ -292,20 +295,20 @@ function costStr(cost) {
 // can afford render light; tokens they can't afford render red so it's obvious
 // which currency is short.
 const COST_LABELS = { brass: 'Br', bronze: 'Bz', silver: 'Si', gold: 'Au', faith: 'Fa' };
+// Draw the cost as clean, spaced tokens on a single line, e.g. "15 Si + 20 Bz".
+// Each currency is measured/positioned individually so tokens never run into
+// each other, and unaffordable ones render red. A "+" joins multiple currencies.
 function drawCostTokens(cost, res, faith, centreX, y, btnW) {
-  trayCtx.font = '7px monospace';
-  const sep = ' ';
+  trayCtx.font = 'bold 8px monospace';
+  // Build renderable pieces: [amount+label] tokens joined by " + " separators.
   const tokens = [];
   for (const k in cost) {
     const have = (k === 'faith') ? faith : (res[k] || 0);
-    tokens.push({
-      text: cost[k] + (COST_LABELS[k] || k[0]),
-      ok: have >= cost[k],
-    });
+    tokens.push({ text: cost[k] + ' ' + (COST_LABELS[k] || k[0]), ok: have >= cost[k] });
   }
   if (tokens.length === 0) return;
 
-  // Measure total width (tokens + separators) to centre the row.
+  const sep = ' + ';
   const sepW = trayCtx.measureText(sep).width;
   let totalW = 0;
   for (let t = 0; t < tokens.length; t++) {
@@ -316,10 +319,14 @@ function drawCostTokens(cost, res, faith, centreX, y, btnW) {
   trayCtx.textAlign = 'left';
   let cx = centreX - totalW / 2;
   for (let t = 0; t < tokens.length; t++) {
-    trayCtx.fillStyle = tokens[t].ok ? '#cccccc' : '#ff5555';
+    trayCtx.fillStyle = tokens[t].ok ? '#dddddd' : '#ff5555';
     trayCtx.fillText(tokens[t].text, cx, y);
     cx += trayCtx.measureText(tokens[t].text).width;
-    if (t < tokens.length - 1) cx += sepW;
+    if (t < tokens.length - 1) {
+      trayCtx.fillStyle = '#888888'; // neutral separator
+      trayCtx.fillText(sep, cx, y);
+      cx += sepW;
+    }
   }
   trayCtx.textAlign = 'center'; // restore for subsequent draws
 }

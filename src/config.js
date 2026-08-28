@@ -152,7 +152,7 @@ export const BREACH_DAMAGE = { skiff: 5, trireme: 15, quadrireme: 25, shieldbear
 // Breach is now a per-second CONTACT DRIP (not an instant chunk): each ship
 // pressed against the wall drains this % of max wall HP per second while it
 // sits there. Bigger ships drip faster. Shield-bearers still do 0.
-export const BREACH_DRIP_PCT = { skiff: 0.05, trireme: 0.06, quadrireme: 0.07, shieldbearer: 0, flagship: 0.08 };
+export const BREACH_DRIP_PCT = { skiff: 0.05, trireme: 0.06, quadrireme: 0.065, shieldbearer: 0, flagship: 0.07 };
 
 // --- Mirror ---
 export const MIRROR_MAX_HITS = 3;

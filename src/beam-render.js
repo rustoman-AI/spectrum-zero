@@ -63,10 +63,10 @@ export function rebuildBeams(segments) {
 
       // Active/idle visual tiers: beams contacting a ship/prism/altar stay at
       // full opacity + width with an intense core glow; idle reflected beams
-      // drop to 30% with a thinner stroke so active damage lines stand out.
+      // drop to 25% with a thinner stroke so active damage lines stand out.
       const isActive = seg.active !== false; // undefined (older segs) treated active
-      const tierOpacity = isActive ? 1.0 : 0.3;
-      const tierWidth = isActive ? 1.0 : 0.55;
+      const tierOpacity = isActive ? 1.0 : 0.25;
+      const tierWidth = isActive ? 1.0 : 0.5;
       const glowBoost = isActive ? 1.5 : 0.35; // intense core glow on active beams
       // High-tier focused rays (5/6-prism) render with a fatter core so the
       // tightened band cluster reads as a few substantial rays, not thin noodles.

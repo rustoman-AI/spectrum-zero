@@ -360,3 +360,19 @@ All procedural canvas drawing at load time — zero image files, zip size unchan
 **Verified:** `node build.js` -> 212.6 KB, exit 0. Rotation 11/11, smoke 29/29. Bounds and drip timing checked numerically (top gap 4u for all types; bottom gap = one hull-height; drip 20s/6.7s). The in-engine defeat fade, the sustained contact flash, and the removal of the defeat video were reasoned from code + verified by build; not viewed on device — worth confirming the defeat screen reads well (dark-red dim -> debris -> stats) and that a persistent ship pressed on the wall shows a steady stone flash matching the bar drop.
 
 **Note:** This supersedes the previous session's "instant breach, despawn once" model — breach is now a sustained drip per the new spec. Ships persist at the wall until killed, which changes the late-game feel (a wall of pinned ships is possible under heavy assault); flagged in case that pressure needs balancing.
+
+---
+
+## 2026-08-25 — RC Locks: Shop Text Fix, Bounds/Drip/Beam Confirmation
+
+**Asked:** (1) Fix the Helios cost rendering as glitched "1551 2082" — format as a clean single line like "15 Si + 20 Bz". (2) Strict ship Y-bounds (no crystal overlap; stop one hull-height above discs). (3) Wall damage as a smooth 5-7%/s bleed with a red danger flash + localized cracked-stone pulse. (4) 5-prism beam clarity: active 100%, idle 25%.
+
+**Root cause of the "1551 2082" glitch:** The shop tray canvas was 512x40 with **no DPR/resolution scaling**, then stretched over a tall tray plane on the phone. At that upscale the 7px cost text blurred so badly that "15 Si  20 Bz" smeared into unreadable digit-like blobs ("1551 2082"). It was a rendering-resolution problem, not a data problem — the numbers were always correct.
+
+**Generated:**
+- **Shop text (item 1):** Backing canvas bumped to 1024x80 with `ctx.scale(2,2)` so all existing 512x40 logical draw coords stay the same but render at 2x resolution (crisp text). Reformatted `drawCostTokens` to a clean single line with a neutral " + " separator and a space between amount and label — "15 Si + 20 Bz" — with each currency still individually coloured (grey if affordable, red if short). Verified every god cost string: helios "15 Si + 20 Bz", zeus "25 Br" / "15 Fa + 5 Au", poseidon "40 Br" / "20 Fa + 8 Au".
+- **Bounds (item 2):** Confirmed already enforced from the prior pass — `SHIP_TOP_BOUND = 44` clamps spawn so no hull crosses toward the crystal (48), and the crash stop line is disc-top + one full hull-height. No change needed; verified the code is present.
+- **Drip (item 3):** Already a continuous per-frame bleed (`WALL_MAX_HP * pct * dt`), not per-frame chunks. Tightened the rates into the requested 5-7% band (quadrireme 7%->6.5%, flagship 8%->7%). The full-screen red danger flash (topped up each drip frame) and the sustained localized battlement stone pulse (refreshed per contact frame) were already in place.
+- **Beam clarity (item 4):** Idle opacity tightened 0.30 -> 0.25 (25%) with a slightly thinner core (0.5x); active stays 1.0 with full glow. Applies at tier 5 and all tiers.
+
+**Verified:** `node build.js` -> 213.1 KB, exit 0. Rotation 11/11, smoke 29/29. Cost strings checked by simulation (clean, no run-together). The on-screen crispness of the 2x tray text and the 25% idle beam contrast were reasoned/verified in code but not viewed on device — worth a glance to confirm the Helios cost now reads cleanly.
