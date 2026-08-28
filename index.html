@@ -3132,33 +3132,43 @@ function initEnemies() {
     barFill.scale.x = 0;
     mesh.add(barFill);
 
-    // Shield plate (3-band armour, visible only on shield-bearer type)
+    // Shield plate: a row of sturdy, slightly-curved mantlet shields
+    // (Scutum/Aspis style) mounted flush along the deck — NOT stacked domes.
+    // Arc depth is shallow (~70% flatter than a full dome) and the bands sit
+    // tightly together so they read as a clean armoured wall, with bronze rims.
     const shieldCanvas = document.createElement('canvas');
     shieldCanvas.width = 64; shieldCanvas.height = 32;
     const shCtx = shieldCanvas.getContext('2d');
-    // Draw 3 overlapping curved plates in different metal tones
     const bandColors = ['#AA7733', '#CC9944', '#DDBB55'];
+    const ARC = 2;          // shallow arc depth (was 7 → ~70% flatter)
+    const SPACING = 4.5;    // tight vertical spacing (was 9 → plates hug the hull)
+    const BASE_Y = 20;      // sit low, flush against the deck profile
+    const RX = 29;          // plate half-width (spans the hull cleanly)
     for (let b = 0; b < 3; b++) {
-      const by = 4 + b * 9;
+      const cy = BASE_Y - b * SPACING; // stack upward but close, not flaring
+      // Plate body: a shallow rounded-rect-ish band via a squat top arc + flat base
       shCtx.fillStyle = bandColors[b];
       shCtx.beginPath();
-      shCtx.ellipse(32, by + 5, 28, 7, 0, Math.PI, 0); // curved band
+      shCtx.ellipse(32, cy, RX, ARC, 0, Math.PI, 0); // shallow top curve
+      shCtx.lineTo(32 + RX, cy + SPACING * 0.9);      // down the right edge
+      shCtx.lineTo(32 - RX, cy + SPACING * 0.9);      // flat base back to left
+      shCtx.closePath();
       shCtx.fill();
-      // Highlight edge
+      // Bronze rim highlight along the plate's top edge (instant "armoured" read).
       shCtx.strokeStyle = '#EEDD88';
-      shCtx.lineWidth = 0.8;
+      shCtx.lineWidth = 1.0;
       shCtx.beginPath();
-      shCtx.ellipse(32, by + 5, 28, 7, 0, Math.PI + 0.3, -0.3);
+      shCtx.ellipse(32, cy, RX, ARC, 0, Math.PI, 0);
       shCtx.stroke();
     }
     const shTex = new THREE.CanvasTexture(shieldCanvas);
     shTex.minFilter = THREE.LinearFilter;
     shTex.premultiplyAlpha = false;
     const shieldPlate = new THREE.Mesh(
-      new THREE.PlaneGeometry(5, 2.5),
+      new THREE.PlaneGeometry(5.4, 2.0),
       new THREE.MeshBasicMaterial({ map: shTex, transparent: true, alphaTest: 0.05, depthWrite: false })
     );
-    shieldPlate.position.y = 2.5;
+    shieldPlate.position.y = 1.8; // mounted lower, flush along the deck
     shieldPlate.position.z = 0.08;
     shieldPlate.visible = false;
     mesh.add(shieldPlate);

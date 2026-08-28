@@ -493,3 +493,20 @@ All procedural canvas drawing at load time — zero image files, zip size unchan
 **Verified:** `node build.js` -> 239.7 KB, exit 0. Rotation 11/11, smoke 29/29. Breach damage totals + same-frame removal confirmed by simulation.
 
 **Honest caveat:** The breach removal and damage math are verified; the shop-text/arc layout and the "calmer" FX levels are judgement calls I can't see or hear here. Worth a device pass to confirm no ship ever freezes at the wall, the Helios cost reads cleanly with no overlap, the cooldown arc stays inside its button, and the damage FX now feel supportive rather than distracting (the audio/glow constants are easy to nudge further either way).
+
+---
+
+## 2026-08-25 — Flatten Shield-Bearer Armour Plates (mantlet style)
+
+**Asked:** Refactor the armoured trireme (shield-bearer) shield mesh: (1) reduce the arc/curvature depth of the layered plates by ~70% so they read as sturdy, slightly-curved Greco-Roman mantlet shields (Scutum/Aspis) mounted cleanly along the vessel; (2) make the flattened layers hug the deck/hull rather than flaring out like stacked umbrellas, keeping the bronze rim highlights for instant "armoured" recognition.
+
+**Generated:** The shield is a canvas sprite (`enemy.js`, in the enemy mesh creation) — three stacked half-ellipse bands. Previously each band was `ellipse(..., 28, 7, 0, Math.PI, 0)` (arc depth 7) spaced 9px apart, so three domes stacked upward = the "umbrella" flare. Reworked:
+- **Arc depth 7 → 2** (~71% flatter) — each plate is now a shallow top curve, not a dome.
+- **Band spacing 9 → 4.5** and a lower base Y — the three plates sit tightly together, flush along the deck instead of towering up.
+- Each plate is now a shallow-arc-topped band with a flat base (a mantlet profile) rather than a bare thin arc.
+- Kept the **bronze rim highlight** (`#EEDD88`) stroked along each plate's top edge.
+- The plate mesh was retuned to match: `PlaneGeometry(5, 2.5) → (5.4, 2.0)` and lowered `y 2.5 → 1.8` so it mounts flush along the hull.
+
+**Verified:** `node build.js` -> 240.6 KB, exit 0. Rotation 11/11, smoke 29/29 (purely a sprite change — the shield *deflection-angle* logic is untouched, so the shield-bearer deflection test still passes). Arc reduction is 7→2 ≈ 71%, matching the ~70% target.
+
+**Honest caveat:** This is a canvas-art change I can't view here — I reasoned the geometry from the ellipse parameters. Worth a device look to confirm the plates now read as clean flat mantlet shields hugging the deck (not stacked umbrellas) and the bronze rims still clearly signal armour.
