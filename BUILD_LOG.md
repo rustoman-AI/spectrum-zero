@@ -330,3 +330,17 @@ All procedural canvas drawing at load time — zero image files, zip size unchan
 - **Battlement flash (item 6):** Retuned the per-lane impact flash from amber (0xffb347) to reddish-orange (0xff5522), slightly larger (8x6) and brighter (0.9), fired at the crash lane's X on the battlement — matching the wall-bar health drop.
 
 **Verified:** `node build.js` -> 209.8 KB, exit 0. Rotation 11/11, smoke 29/29. Ram-line clearance checked numerically (every ship stops 4u above the disc top; zero overlap). The visuals — focused high-tier rays, the 30%/100% beam contrast, the Poseidon ripple tracking the finger, the gold label reveal, and the reddish battlement flash — were reasoned from the code but not viewed on device; worth a manual pass, especially confirming the ripple follows touch smoothly and 6-prism no longer looks like noodle soup.
+
+---
+
+## 2026-08-25 — Breach Guard + Flank-Leak Clamp
+
+**Asked:** (1) When an enemy reaches the ram line it must deal wall damage exactly once and despawn with an explosion — no continuous per-frame damage. (2) Ships on the far edges must never slip past without a visible explosion; an edge/off-screen breach must still flash the correct battlement lane.
+
+**Investigated first:** Traced the existing breach path. `updateEnemies` already skipped inactive enemies (`if (!e.active) continue`), and the crash block called `deactivateEnemy(e)` + `continue`, so a normal breach charged once. I could not reproduce a literal double-charge in the code as written. The most plausible real-world "phantom damage" the report describes is a breach whose explosion/flash rendered *off-screen* — the wall bar drops with no visible cause — which happens when a ship is drifting (sailed sway) or pulled far off its lane by Poseidon. I fixed both the true-safety concern and the visibility concern.
+
+**Generated:**
+- **Exactly-once guard (item 1):** Added a per-enemy `breached` flag (reset on spawn). The crash block only fires when `leadingEdge <= RAM_STOP_EDGE && !e.breached`, sets `breached = true`, charges the wall once, explodes, and deactivates. This makes a second charge impossible even if some future path briefly left the enemy active. Verified by simulation: a ship descending (with a mid-descent stun) charges exactly once; and a deliberately-kept-active enemy at the line still charges only once (guard holds).
+- **Flank-leak clamp (item 2):** The crash X (`lane centre + driftX + pullX`) is now clamped to the visible battlement (`±(ww/2 - 2)`), so edge-lane ships and Poseidon-pulled ships always explode on-screen and the per-lane `triggerImpactFlash(cx)` reddish stone flash always lands on the fortress. Verified: a ship pulled 40u off-lane still resolves its explosion/flash at x=±26.1 (inside the ±28.1 half-width).
+
+**Verified:** `node build.js` -> 210.4 KB, exit 0. Rotation 11/11, smoke 29/29. Breach-once and edge-clamp checked numerically (charge count = 1 in both the normal and guard-only cases; clamped X stays on-screen for extreme pull). Not eyeballed on device — worth confirming an edge/pulled ship visibly explodes at the wall.

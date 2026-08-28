@@ -290,6 +290,7 @@ export function spawnEnemy(type, lane, hpMultiplier, yOffset) {
       e.pullX = 0; // Poseidon whirlpool pull (separate from animation drift)
       e.zeusCharring = 0; // charring stage before death (0 = not charring)
       e.zeusPendingHeat = 0;
+      e.breached = false; // wall-breach guard: damage fires exactly once
       e.lane = lane;
       e.y = SHIP_SPAWN_Y + (yOffset || 0);
       e.speed = template.speed;
@@ -366,14 +367,21 @@ export function updateEnemies(dt) {
     // Crash when the ship's LEADING (bottom) edge reaches the stop edge, which
     // sits a clear gap above the mirror discs. Per-ship half-height means big
     // ships stop earlier so no hull ever shares pixels with a disc.
+    // The `breached` guard makes damage fire EXACTLY ONCE — even if any code
+    // path briefly left the enemy active, it can never re-charge the wall.
     const leadingEdge = e.y - shipHalfHeight(e.type);
-    if (leadingEdge <= RAM_STOP_EDGE) {
+    if (leadingEdge <= RAM_STOP_EDGE && !e.breached) {
+      e.breached = true;
       // Snap to the exact stop position, then explode + damage the wall.
       e.y = RAM_STOP_EDGE + shipHalfHeight(e.type);
       const dmg = BREACH_DAMAGE[e.type] || 10;
       const heatFrac = Math.min(1, (e.heat || 0) / e.maxHp);
       wallDamage += dmg * Math.max(0.2, 1 - heatFrac);
-      const cx = -ww / 2 + lw * (e.lane + 0.5) + (e.driftX || 0) + (e.pullX || 0);
+      // Clamp the crash X to the visible battlement so edge/flank ships (and
+      // Poseidon-pulled ones) always explode on-screen with a matching flash.
+      const rawX = -ww / 2 + lw * (e.lane + 0.5) + (e.driftX || 0) + (e.pullX || 0);
+      const edge = ww / 2 - 2;
+      const cx = Math.max(-edge, Math.min(edge, rawX));
       const heavy = (e.type === 'flagship' || e.type === 'quadrireme');
       spawnDestruction(cx, e.y, heavy); // crash burst at the ship's stopped position
       lastBreaches.push({ x: cx, lane: e.lane });
