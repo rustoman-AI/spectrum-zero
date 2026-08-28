@@ -660,3 +660,20 @@ All procedural canvas drawing at load time — zero image files, zip size unchan
 **Verified:** `node build.js` -> 261.8 KB, exit 0 (strict new-Function lint would catch undefined refs; grepped index.html to confirm initTutorial/updateTutorial/createRotIndicator all bundled). Rotation 11/11, smoke 29/29. Diagnostics clean on tutorial/input/main/session. Fade logic traced: single fade-out latch, opacity captured at fade start, dismiss at opacity<=0.001; re-arm on reset.
 
 **Honest caveat:** Can't see the render here. Worth a device check that: (a) the banner is legible and the emoji render correctly at the plane's on-screen size (emoji glyph coverage varies by device/font — if a glyph shows as a box, we can swap to a drawn icon), (b) the banner position doesn't feel like it sits over the action for those first seconds, (c) the dashed rotation arc + arrowheads read clearly around the ~5u mirror disc and the slow spin looks like a hint rather than noise, and (d) the fade timings feel right. All are constant/asset tweaks.
+
+---
+
+## 2026-08-25 — HOTFIX: black screen after intro (tutorial module never bundled)
+
+**Symptom:** After the intro video the game boots to a black screen — nothing starts.
+
+**Root cause:** The previous commit added `src/tutorial.js` and wired `initTutorial()` / `updateTutorial()` / `resetTutorial()` into `main.js` and `session.js`, but `build.js`'s `SOURCE_FILES` list was never updated to include `src/tutorial.js`. The bundler concatenates only the files in that list, so the tutorial functions were CALLED but never DEFINED in the shipped `index.html`. At runtime `init()` hit `initTutorial()` -> ReferenceError -> the intro layer's `startGame()` try/catch swallowed it into the (hidden unless `?debug=1`) debug element, leaving a black screen. The build's strict lint didn't catch it because the lint defines top-level functions and runs module top-level code but never actually calls `init()`, so the undefined reference inside `init()`'s body was never exercised.
+
+**Fix:**
+- Added `src/tutorial.js` to `build.js` `SOURCE_FILES`, positioned before `session.js`/`input.js`/`main.js` (its callers). Bundle size 261.8 -> 267.3 KB confirms the ~5.5 KB module is now actually included; grepped index.html to confirm `function initTutorial` and `tutRoundRect` definitions are present, not just the call sites.
+- Renamed tutorial.js's two top-level identifiers that collided with `session.js` once both were in the shared bundle scope: `elapsed` -> `tutElapsed`, `roundRect` -> `tutRoundRect`. (Without this, bundling tutorial.js would now throw a duplicate-declaration SyntaxError.) Verified no other tutorial.js top-level names collide with any bundled module.
+- Added a build guard: every `src/*.js` on disk must appear in `SOURCE_FILES`, else the build fails with a clear message. This prevents the whole class of "new module added but not bundled -> black screen" from shipping again.
+
+**Verified:** `node build.js` -> 267.3 KB, exit 0 (new guard passes; all src files listed). Rotation 11/11, smoke 29/29. Diagnostics clean on tutorial.js + build.js.
+
+**Honest caveat:** I can't launch the browser here, so I've fixed and verified the actual defect (missing bundle entry -> undefined `initTutorial`) by build+grep+lint, but the final "boots past intro into gameplay" confirmation needs a device/browser load. If anything still black-screens, load with `?debug=1` to surface the caught init error message in the bottom-left overlay.

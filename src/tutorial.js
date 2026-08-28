@@ -19,7 +19,7 @@ let bannerCanvas = null;
 let bannerCtx = null;
 let bannerTexture = null;
 
-let elapsed = 0;         // seconds since the tutorial started
+let tutElapsed = 0;      // seconds since the tutorial started
 let dismissed = false;   // hard-off (fade-out complete)
 let opacity = 0;
 let fadingOut = false;   // latched once a fade-out trigger fires
@@ -75,7 +75,7 @@ function drawBanner() {
   bannerCtx.clearRect(0, 0, W, H);
 
   // Rounded semi-transparent card background with a soft border.
-  roundRect(bannerCtx, 6, 6, W - 12, H - 12, 10);
+  tutRoundRect(bannerCtx, 6, 6, W - 12, H - 12, 10);
   bannerCtx.fillStyle = 'rgba(10, 16, 26, 0.62)';
   bannerCtx.fill();
   bannerCtx.lineWidth = 1.5;
@@ -107,7 +107,7 @@ function drawBanner() {
   bannerTexture.needsUpdate = true;
 }
 
-function roundRect(ctx, x, y, w, h, r) {
+function tutRoundRect(ctx, x, y, w, h, r) {
   const rr = Math.min(r, w / 2, h / 2);
   ctx.beginPath();
   ctx.moveTo(x + rr, y);
@@ -123,12 +123,12 @@ function roundRect(ctx, x, y, w, h, r) {
 export function updateTutorial(dt, killCount) {
   if (dismissed || !bannerMesh) return;
 
-  elapsed += dt;
+  tutElapsed += dt;
 
   // Latch the fade-out on either trigger: the first ship sunk, or the hold
   // window elapsing. We capture the current opacity so an early kill fades
   // smoothly from wherever the fade-in had reached.
-  if (!fadingOut && ((killCount > 0) || elapsed >= (FADE_IN + HOLD_TIME))) {
+  if (!fadingOut && ((killCount > 0) || tutElapsed >= (FADE_IN + HOLD_TIME))) {
     fadingOut = true;
     fadeOutT = 0;
     opacityAtFadeStart = opacity;
@@ -136,7 +136,7 @@ export function updateTutorial(dt, killCount) {
 
   if (!fadingOut) {
     // Fade in, then hold at full.
-    opacity = Math.min(1, elapsed / FADE_IN);
+    opacity = Math.min(1, tutElapsed / FADE_IN);
   } else {
     fadeOutT += dt;
     opacity = Math.max(0, opacityAtFadeStart * (1 - fadeOutT / FADE_OUT));
@@ -152,7 +152,7 @@ export function updateTutorial(dt, killCount) {
 }
 
 export function resetTutorial() {
-  elapsed = 0;
+  tutElapsed = 0;
   dismissed = false;
   opacity = 0;
   fadingOut = false;

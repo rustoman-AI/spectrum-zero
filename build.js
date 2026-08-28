@@ -30,10 +30,23 @@ const SOURCE_FILES = [
   'src/effects.js',
   'src/audio.js',
   'src/damage.js',
+  'src/tutorial.js',
   'src/session.js',
   'src/input.js',
   'src/main.js',
 ];
+
+// Guard: every src/*.js on disk must be listed in SOURCE_FILES. This catches
+// the "added a new module but forgot to bundle it" bug, where callers reference
+// functions that are never defined and the game boots to a black screen.
+const srcDir = path.join(__dirname, 'src');
+const onDisk = fs.readdirSync(srcDir).filter(f => f.endsWith('.js')).map(f => 'src/' + f);
+const missing = onDisk.filter(f => !SOURCE_FILES.includes(f));
+if (missing.length > 0) {
+  console.error(`\n❌ BUILD FAILED: src file(s) not listed in SOURCE_FILES: ${missing.join(', ')}`);
+  console.error('  Add them to build.js SOURCE_FILES (in dependency order) or the bundle will omit them.\n');
+  process.exit(1);
+}
 
 // Read and concatenate source files
 let gameCode = '';
