@@ -286,15 +286,13 @@ const ALTAR_RATES = {
 };
 const ALTAR_OVERHEAT_TIME = 6;    // seconds of continuous beam before efficiency halves
 const ALTAR_RECOVER_TIME = 10;    // seconds to recover from overheat
-// Four altar stations across the merlon: BRONZE -> SILVER -> GOLD -> ELECTRUM.
-// `type` is the currency the altar feeds (bronze/silver/gold — the 3 metals);
-// `label` is the displayed name. ELECTRUM is a premium gold station (electrum =
-// a natural gold alloy), so it feeds gold without adding a 4th currency.
+// Exactly three altar stations, evenly spaced across the battlement:
+// BRONZE (left) -> SILVER (centre) -> GOLD (right). `type` is the currency the
+// altar feeds; `label` is the name engraved on its pedestal.
 const ALTAR_POSITIONS = [
-  { x: -20, y: -44, type: 'bronze', label: 'BRONZE',   colour: 0xcc8833 },
-  { x: -7,  y: -44, type: 'silver', label: 'SILVER',   colour: 0xcccccc },
-  { x: 7,   y: -44, type: 'gold',   label: 'GOLD',     colour: 0xffdd00 },
-  { x: 20,  y: -44, type: 'gold',   label: 'ELECTRUM', colour: 0xffe9a0 },
+  { x: -18, y: -44, type: 'bronze', label: 'BRONZE', colour: 0xcc8833 },
+  { x: 0,   y: -44, type: 'silver', label: 'SILVER', colour: 0xcccccc },
+  { x: 18,  y: -44, type: 'gold',   label: 'GOLD',   colour: 0xffdd00 },
 ];
 const ALTAR_HW = 4;
 const ALTAR_HH = 2.5;
@@ -3743,7 +3741,6 @@ function resetFoundries() {
   faith = 0;
   for (const a of altars) {
     a.litTime = 0; a.overheated = false; a.cooldown = 0; a.everLit = false;
-    if (a.type === 'gold' && a.labelMesh) a.labelMesh.visible = false;
   }
 }
 
@@ -3779,34 +3776,31 @@ function initFoundries() {
     mesh.position.set(def.x, def.y, -0.1);
     scene.add(mesh);
 
-    // --- Label ---
+    // --- Engraved pedestal label ---
+    // The metal name is carved into the altar's stone keystone (chiselled look:
+    // dark recessed text with a faint highlight), sitting ON the altar itself —
+    // not a floating tag above the wall. Always visible.
     const lCanvas = document.createElement('canvas');
     lCanvas.width = 96; lCanvas.height = 24;
     const lCtx = lCanvas.getContext('2d');
-    // Dark outline for legibility over any background
-    lCtx.strokeStyle = '#000000';
-    lCtx.lineWidth = 3;
-    lCtx.font = 'bold 12px monospace';
+    lCtx.font = 'bold 11px monospace';
     lCtx.textAlign = 'center';
     lCtx.textBaseline = 'middle';
     const lbl = def.label || def.type.toUpperCase();
-    lCtx.strokeText(lbl, 48, 12);
-    lCtx.fillStyle = '#ffffff';
+    // Chiselled engraving: dark recessed glyphs + a 1px lighter bevel below-right.
+    lCtx.fillStyle = 'rgba(255,255,255,0.18)'; // faint bevel highlight
+    lCtx.fillText(lbl, 48, 13);
+    lCtx.fillStyle = '#1a1206';                // dark carved recess
     lCtx.fillText(lbl, 48, 12);
     const lTex = new THREE.CanvasTexture(lCanvas);
     lTex.minFilter = THREE.LinearFilter;
     lTex.premultiplyAlpha = false;
-    const lGeo = new THREE.PlaneGeometry(7, 1.8);
+    const lGeo = new THREE.PlaneGeometry(6.5, 1.6);
     const lMat = new THREE.MeshBasicMaterial({ map: lTex, transparent: true, alphaTest: 0.05, depthWrite: false });
     const labelMesh = new THREE.Mesh(lGeo, lMat);
-    // Place in the overlay scene (renders on top of all mirrors) and pin the
-    // label just below the mirror movement zone (MIRROR_FIELD_BOT = -35) at a
-    // high z, so no mirror row can ever sit over the resource name.
-    labelMesh.position.set(def.x, MIRROR_FIELD_BOT - 1.5, 10);
-    // The GOLD altar is the late-game currency — hide its label until the altar
-    // is actually lit (revealed in updateFoundries), so it isn't advertised early.
-    if (def.type === 'gold') labelMesh.visible = false;
-    getOverlayScene().add(labelMesh);
+    // Engraved onto the pedestal: sits on the altar body, just in front of it.
+    labelMesh.position.set(def.x, def.y, 0.05);
+    scene.add(labelMesh);
 
     // --- Overheat arc (RingGeometry with partial theta) ---
     const arcRadius = Math.max(ALTAR_HW, ALTAR_HH) * 1.1;
@@ -3846,10 +3840,6 @@ function updateFoundries(dt) {
       }
     }
     if (altar.lit) altar.everLit = true;
-    // Reveal the GOLD label the first time its altar receives light.
-    if (altar.type === 'gold' && altar.labelMesh && (altar.lit || altar.everLit)) {
-      altar.labelMesh.visible = true;
-    }
 
     // Overheat logic
     if (altar.lit) {
@@ -4342,21 +4332,34 @@ function drawAbilityIcon(id, cx, cy, s, col) {
     trayCtx.arc(cx, cy, s * 0.5, 0, Math.PI * 2);
     trayCtx.fill();
   } else if (id === 'poseidon') {
-    // Trident: central shaft + three prongs.
-    trayCtx.lineWidth = 1.4;
+    // Classic Greek trident: three pointed tines curving UP from a central
+    // staff. Coordinates are measured from the button top so the tine tips keep
+    // ~6px padding below the border (button top is y≈1 → tips at ~y7).
+    trayCtx.lineWidth = 1.3;
+    const tipY = 7;                 // outer tine tips (≈6px below the border)
+    const crossY = tipY + s * 0.7;  // where the outer tines curve back to
+    const midTipY = 6;              // centre tine tip (kept ≥6px from border)
+    const baseY = 17;               // staff ends above the name row (y≈20)
+    const spread = s * 0.8;         // half-distance between outer tines
+    // Central staff + centre tine
     trayCtx.beginPath();
-    trayCtx.moveTo(cx, cy - s * 0.6);
-    trayCtx.lineTo(cx, cy + s);            // shaft
-    // Crossbar
-    trayCtx.moveTo(cx - s * 0.7, cy - s * 0.6);
-    trayCtx.lineTo(cx + s * 0.7, cy - s * 0.6);
-    // Three prongs rising from the crossbar
-    trayCtx.moveTo(cx - s * 0.7, cy - s * 0.6);
-    trayCtx.lineTo(cx - s * 0.7, cy - s * 1.15);
-    trayCtx.moveTo(cx, cy - s * 0.6);
-    trayCtx.lineTo(cx, cy - s * 1.25);
-    trayCtx.moveTo(cx + s * 0.7, cy - s * 0.6);
-    trayCtx.lineTo(cx + s * 0.7, cy - s * 1.15);
+    trayCtx.moveTo(cx, midTipY);
+    trayCtx.lineTo(cx, baseY);
+    // Left tine: curves outward then up to a point
+    trayCtx.moveTo(cx, crossY);
+    trayCtx.quadraticCurveTo(cx - spread, crossY, cx - spread, tipY);
+    // Right tine
+    trayCtx.moveTo(cx, crossY);
+    trayCtx.quadraticCurveTo(cx + spread, crossY, cx + spread, tipY);
+    trayCtx.stroke();
+    // Small pointed barbs at each tine tip for the "spear" read.
+    trayCtx.beginPath();
+    for (const tx of [cx - spread, cx, cx + spread]) {
+      const ty = (tx === cx) ? midTipY : tipY;
+      trayCtx.moveTo(tx - 1, ty + 1.5);
+      trayCtx.lineTo(tx, ty - 0.5);
+      trayCtx.lineTo(tx + 1, ty + 1.5);
+    }
     trayCtx.stroke();
   }
   trayCtx.restore();

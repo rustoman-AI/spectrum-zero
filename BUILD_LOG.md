@@ -581,3 +581,18 @@ All procedural canvas drawing at load time — zero image files, zip size unchan
 **Decision flagged:** The spec listed four altars (BRONZE/SILVER/GOLD/ELECTRUM) but only three spendable metals. I mapped ELECTRUM to feed **gold** rather than add a 4th currency, so the HUD stays exactly `Bz | Si | Au | F` as required. If ELECTRUM should instead be a distinct premium currency, that's a larger change — say the word.
 
 **Honest caveat:** The icons and HUD/altar labels are canvas draws I can't view here — reasoned from the drawing code. Worth a device look to confirm the three icons read clearly at button size, the name+cost sit cleanly beneath them, and the HUD/altar labels show the new metals correctly.
+
+---
+
+## 2026-08-25 — Trident Icon Redraw, 3-Altar Layout, Engraved Pedestal Labels
+
+**Asked:** (1) Redraw the Poseidon button's trident as a classic Greek trident — three tines curving up from a central staff, not a blocky "T" — centred with ~6px top padding so it doesn't clip the button edge. (2) Exactly three altars on the wall (drop the 4th/ELECTRUM), evenly spaced: BRONZE (left) / SILVER (centre) / GOLD (right). (3) Remove the floating labels above the wall; engrave the name onto each altar's stone pedestal.
+
+**Generated:**
+- **Trident (item 1, `crafting.js` `drawAbilityIcon`):** Replaced the straight crossbar + parallel prongs with a central staff plus two outer tines that flare outward and curve up to points (`quadraticCurveTo`), a taller centre tine, and small barb points at each tip. Coordinates are measured from the button top so the tine tips sit at y≈7 (~6px below the y≈1 border) and the staff ends at y≈17, above the name row — no clipping, no overlap with the label.
+- **Three altars (item 2, `config.js`):** `ALTAR_POSITIONS` trimmed from four stations to three, evenly spaced at x = −18 / 0 / +18 (equal 18-unit gaps, inside the wall half-width): BRONZE, SILVER, GOLD. ELECTRUM removed. Foundry loops over this array, so the wall now renders exactly three altars.
+- **Engraved labels (item 3, `foundry.js`):** The metal name is now drawn in a chiselled-stone style (dark recessed glyphs `#1a1206` with a faint 1px bevel highlight) and placed directly ON the altar body (`def.y`, just in front) in the main scene — not a floating tag pinned above the wall. Labels are always visible; the old float-above position and the gold "hide until lit" gating (in both `resetFoundries` and `updateFoundries`) were removed.
+
+**Verified:** `node build.js` -> 244.7 KB, exit 0. Rotation 11/11, smoke 29/29. Altar layout checked numerically: exactly 3, evenly spaced (18u gaps), order BRONZE→SILVER→GOLD, all inside the wall, feeding bronze/silver/gold (no electrum). `MIRROR_FIELD_BOT` / `getOverlayScene` are now unused imports in foundry.js (harmless; left to avoid churn).
+
+**Honest caveat:** The trident shape and the engraved label look are canvas draws I can't view here — reasoned from the drawing code. Worth a device look to confirm the trident reads as a proper Greek trident at button size (tines clearly curved, tips not clipped) and the pedestal labels are legible on the stone without the old floating tags.

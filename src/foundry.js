@@ -45,7 +45,6 @@ export function resetFoundries() {
   faith = 0;
   for (const a of altars) {
     a.litTime = 0; a.overheated = false; a.cooldown = 0; a.everLit = false;
-    if (a.type === 'gold' && a.labelMesh) a.labelMesh.visible = false;
   }
 }
 
@@ -81,34 +80,31 @@ export function initFoundries() {
     mesh.position.set(def.x, def.y, -0.1);
     scene.add(mesh);
 
-    // --- Label ---
+    // --- Engraved pedestal label ---
+    // The metal name is carved into the altar's stone keystone (chiselled look:
+    // dark recessed text with a faint highlight), sitting ON the altar itself —
+    // not a floating tag above the wall. Always visible.
     const lCanvas = document.createElement('canvas');
     lCanvas.width = 96; lCanvas.height = 24;
     const lCtx = lCanvas.getContext('2d');
-    // Dark outline for legibility over any background
-    lCtx.strokeStyle = '#000000';
-    lCtx.lineWidth = 3;
-    lCtx.font = 'bold 12px monospace';
+    lCtx.font = 'bold 11px monospace';
     lCtx.textAlign = 'center';
     lCtx.textBaseline = 'middle';
     const lbl = def.label || def.type.toUpperCase();
-    lCtx.strokeText(lbl, 48, 12);
-    lCtx.fillStyle = '#ffffff';
+    // Chiselled engraving: dark recessed glyphs + a 1px lighter bevel below-right.
+    lCtx.fillStyle = 'rgba(255,255,255,0.18)'; // faint bevel highlight
+    lCtx.fillText(lbl, 48, 13);
+    lCtx.fillStyle = '#1a1206';                // dark carved recess
     lCtx.fillText(lbl, 48, 12);
     const lTex = new THREE.CanvasTexture(lCanvas);
     lTex.minFilter = THREE.LinearFilter;
     lTex.premultiplyAlpha = false;
-    const lGeo = new THREE.PlaneGeometry(7, 1.8);
+    const lGeo = new THREE.PlaneGeometry(6.5, 1.6);
     const lMat = new THREE.MeshBasicMaterial({ map: lTex, transparent: true, alphaTest: 0.05, depthWrite: false });
     const labelMesh = new THREE.Mesh(lGeo, lMat);
-    // Place in the overlay scene (renders on top of all mirrors) and pin the
-    // label just below the mirror movement zone (MIRROR_FIELD_BOT = -35) at a
-    // high z, so no mirror row can ever sit over the resource name.
-    labelMesh.position.set(def.x, MIRROR_FIELD_BOT - 1.5, 10);
-    // The GOLD altar is the late-game currency — hide its label until the altar
-    // is actually lit (revealed in updateFoundries), so it isn't advertised early.
-    if (def.type === 'gold') labelMesh.visible = false;
-    getOverlayScene().add(labelMesh);
+    // Engraved onto the pedestal: sits on the altar body, just in front of it.
+    labelMesh.position.set(def.x, def.y, 0.05);
+    scene.add(labelMesh);
 
     // --- Overheat arc (RingGeometry with partial theta) ---
     const arcRadius = Math.max(ALTAR_HW, ALTAR_HH) * 1.1;
@@ -148,10 +144,6 @@ export function updateFoundries(dt) {
       }
     }
     if (altar.lit) altar.everLit = true;
-    // Reveal the GOLD label the first time its altar receives light.
-    if (altar.type === 'gold' && altar.labelMesh && (altar.lit || altar.everLit)) {
-      altar.labelMesh.visible = true;
-    }
 
     // Overheat logic
     if (altar.lit) {

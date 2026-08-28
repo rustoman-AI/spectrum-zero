@@ -90,15 +90,13 @@ export const ALTAR_RATES = {
 };
 export const ALTAR_OVERHEAT_TIME = 6;    // seconds of continuous beam before efficiency halves
 export const ALTAR_RECOVER_TIME = 10;    // seconds to recover from overheat
-// Four altar stations across the merlon: BRONZE -> SILVER -> GOLD -> ELECTRUM.
-// `type` is the currency the altar feeds (bronze/silver/gold — the 3 metals);
-// `label` is the displayed name. ELECTRUM is a premium gold station (electrum =
-// a natural gold alloy), so it feeds gold without adding a 4th currency.
+// Exactly three altar stations, evenly spaced across the battlement:
+// BRONZE (left) -> SILVER (centre) -> GOLD (right). `type` is the currency the
+// altar feeds; `label` is the name engraved on its pedestal.
 export const ALTAR_POSITIONS = [
-  { x: -20, y: -44, type: 'bronze', label: 'BRONZE',   colour: 0xcc8833 },
-  { x: -7,  y: -44, type: 'silver', label: 'SILVER',   colour: 0xcccccc },
-  { x: 7,   y: -44, type: 'gold',   label: 'GOLD',     colour: 0xffdd00 },
-  { x: 20,  y: -44, type: 'gold',   label: 'ELECTRUM', colour: 0xffe9a0 },
+  { x: -18, y: -44, type: 'bronze', label: 'BRONZE', colour: 0xcc8833 },
+  { x: 0,   y: -44, type: 'silver', label: 'SILVER', colour: 0xcccccc },
+  { x: 18,  y: -44, type: 'gold',   label: 'GOLD',   colour: 0xffdd00 },
 ];
 export const ALTAR_HW = 4;
 export const ALTAR_HH = 2.5;

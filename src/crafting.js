@@ -348,21 +348,34 @@ function drawAbilityIcon(id, cx, cy, s, col) {
     trayCtx.arc(cx, cy, s * 0.5, 0, Math.PI * 2);
     trayCtx.fill();
   } else if (id === 'poseidon') {
-    // Trident: central shaft + three prongs.
-    trayCtx.lineWidth = 1.4;
+    // Classic Greek trident: three pointed tines curving UP from a central
+    // staff. Coordinates are measured from the button top so the tine tips keep
+    // ~6px padding below the border (button top is y≈1 → tips at ~y7).
+    trayCtx.lineWidth = 1.3;
+    const tipY = 7;                 // outer tine tips (≈6px below the border)
+    const crossY = tipY + s * 0.7;  // where the outer tines curve back to
+    const midTipY = 6;              // centre tine tip (kept ≥6px from border)
+    const baseY = 17;               // staff ends above the name row (y≈20)
+    const spread = s * 0.8;         // half-distance between outer tines
+    // Central staff + centre tine
     trayCtx.beginPath();
-    trayCtx.moveTo(cx, cy - s * 0.6);
-    trayCtx.lineTo(cx, cy + s);            // shaft
-    // Crossbar
-    trayCtx.moveTo(cx - s * 0.7, cy - s * 0.6);
-    trayCtx.lineTo(cx + s * 0.7, cy - s * 0.6);
-    // Three prongs rising from the crossbar
-    trayCtx.moveTo(cx - s * 0.7, cy - s * 0.6);
-    trayCtx.lineTo(cx - s * 0.7, cy - s * 1.15);
-    trayCtx.moveTo(cx, cy - s * 0.6);
-    trayCtx.lineTo(cx, cy - s * 1.25);
-    trayCtx.moveTo(cx + s * 0.7, cy - s * 0.6);
-    trayCtx.lineTo(cx + s * 0.7, cy - s * 1.15);
+    trayCtx.moveTo(cx, midTipY);
+    trayCtx.lineTo(cx, baseY);
+    // Left tine: curves outward then up to a point
+    trayCtx.moveTo(cx, crossY);
+    trayCtx.quadraticCurveTo(cx - spread, crossY, cx - spread, tipY);
+    // Right tine
+    trayCtx.moveTo(cx, crossY);
+    trayCtx.quadraticCurveTo(cx + spread, crossY, cx + spread, tipY);
+    trayCtx.stroke();
+    // Small pointed barbs at each tine tip for the "spear" read.
+    trayCtx.beginPath();
+    for (const tx of [cx - spread, cx, cx + spread]) {
+      const ty = (tx === cx) ? midTipY : tipY;
+      trayCtx.moveTo(tx - 1, ty + 1.5);
+      trayCtx.lineTo(tx, ty - 0.5);
+      trayCtx.lineTo(tx + 1, ty + 1.5);
+    }
     trayCtx.stroke();
   }
   trayCtx.restore();
