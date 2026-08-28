@@ -39,7 +39,7 @@ export const ENEMY_NAMES = {
 export const CRAFT_LABELS = {
   prism: 'Lens',
   repair: 'Greek Fire',
-  reinforced: 'Br.Shield',
+  reinforced: 'Bronze Shield',
   ignition: 'Oil Slick',
   focus: 'Focus',
   anchor: 'Ballast',

@@ -8,6 +8,7 @@ import { getSegments, getBeamDiag } from './beam.js';
 import { isGameOver, handleRestartTap, getElapsed, getBreaches } from './session.js';
 import { handleCraftTap } from './crafting.js';
 import { isPoseidonPlacementPending, placePoseidon, setPoseidonTarget } from './poseidon.js';
+import { dismissTutorial } from './tutorial.js';
 import { getSpawnCount, getCurrentInterval } from './enemy-spawner.js';
 import { getKillCount } from './damage.js';
 import { getInsightLog } from './foundry.js';
@@ -222,6 +223,10 @@ function onPointerDown(e) {
     handleRestartTap();
     return;
   }
+
+  // First real interaction (tap / select / drag start) dismisses the onboarding
+  // card immediately so the crystal + first target ship are unobstructed.
+  dismissTutorial();
 
   const world = screenToWorld(e.clientX, e.clientY);
   const id = e.pointerId;

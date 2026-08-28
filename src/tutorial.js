@@ -25,10 +25,12 @@ let opacity = 0;
 let fadingOut = false;   // latched once a fade-out trigger fires
 let fadeOutT = 0;        // fade-out clock (seconds since fade-out began)
 let opacityAtFadeStart = 1; // opacity captured the instant fade-out began
+let fadeOutDur = 0.6;    // active fade-out duration (short when dismissed by input)
 
 const HOLD_TIME = 6;     // seconds fully visible before auto fade-out
 const FADE_IN = 0.4;     // fade-in duration
-const FADE_OUT = 0.6;    // fade-out duration
+const FADE_OUT = 0.6;    // default fade-out duration (timer / first-kill)
+const FADE_OUT_INPUT = 0.22; // snappier fade when the player interacts
 
 // The three control hints. Emoji render on a 2x canvas so they stay crisp.
 const HINTS = [
@@ -131,6 +133,7 @@ export function updateTutorial(dt, killCount) {
   if (!fadingOut && ((killCount > 0) || tutElapsed >= (FADE_IN + HOLD_TIME))) {
     fadingOut = true;
     fadeOutT = 0;
+    fadeOutDur = FADE_OUT;
     opacityAtFadeStart = opacity;
   }
 
@@ -139,7 +142,7 @@ export function updateTutorial(dt, killCount) {
     opacity = Math.min(1, tutElapsed / FADE_IN);
   } else {
     fadeOutT += dt;
-    opacity = Math.max(0, opacityAtFadeStart * (1 - fadeOutT / FADE_OUT));
+    opacity = Math.max(0, opacityAtFadeStart * (1 - fadeOutT / fadeOutDur));
   }
 
   bannerMesh.material.opacity = opacity;
@@ -151,12 +154,25 @@ export function updateTutorial(dt, killCount) {
   }
 }
 
+// Begin the fade-out immediately, e.g. on the player's very first interaction.
+// Idempotent: once the banner is fading or gone this is a no-op. We fade rather
+// than hard-cut so the dismissal still reads as smooth, but a short fade means
+// the crystal + first target ship are unobstructed almost instantly.
+export function dismissTutorial() {
+  if (dismissed || fadingOut || !bannerMesh) return;
+  fadingOut = true;
+  fadeOutT = 0;
+  fadeOutDur = FADE_OUT_INPUT; // snappy so the playfield clears at once
+  opacityAtFadeStart = opacity;
+}
+
 export function resetTutorial() {
   tutElapsed = 0;
   dismissed = false;
   opacity = 0;
   fadingOut = false;
   fadeOutT = 0;
+  fadeOutDur = FADE_OUT;
   opacityAtFadeStart = 1;
   if (bannerMesh) {
     bannerMesh.material.opacity = 0;

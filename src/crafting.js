@@ -207,10 +207,16 @@ export function updateCraftingTray() {
     trayCtx.shadowBlur = 0;
     trayCtx.shadowColor = 'transparent';
 
+    // Wipe the name band back to the flat button background before drawing it,
+    // matching the cost-band wipe below, so no sub-label can ever ghost/stack.
+    const nameY = hasIcon ? 20 : 13;
+    trayCtx.fillStyle = bgColour;
+    trayCtx.fillRect(x + 1, nameY - 8, btnW - 2, 11);
+
     trayCtx.fillStyle = (affordable || zeusGlow) ? '#ffffff' : '#777777';
     trayCtx.font = 'bold 8px monospace';
     trayCtx.textAlign = 'center';
-    trayCtx.fillText(item.label, cxc, hasIcon ? 20 : 13);
+    trayCtx.fillText(item.label, cxc, nameY);
 
     // Cost line — but ONLY when the button is NOT on cooldown. During cooldown
     // the radial timer draws its own "Ns" in the same spot; showing both stacks
@@ -420,12 +426,13 @@ function drawAbilityIcon(id, cx, cy, s, col) {
 }
 
 const COST_LABELS = { bronze: 'Bz', silver: 'Si', gold: 'Au', faith: 'Fa' };
-// Draw the cost as clean colour-coded tokens on ONE line, e.g. "15Si 20Bz".
-// Tokens are separated by a plain space (no "+" glyph, which blurred into stray
-// digits at small sizes). The whole line is auto-shrunk to fit the button width
-// so it never overflows, wraps, or leaves fragments from a previous state. The
-// per-frame canvas clear already removes old pixels; the fit guarantees no
-// stacking/overlap regardless of how many currencies a cost has.
+const COST_SEP = ' + '; // explicit separator, e.g. "15Si + 20Bz"
+// Draw the cost as clean colour-coded tokens on ONE line joined by " + ", e.g.
+// "15Si + 20Bz". Affordable currencies render light; short ones render red so
+// it's obvious which is missing. The separator is a dim neutral glyph drawn as
+// its own segment so spacing stays exact. The whole line is auto-shrunk to fit
+// the button width so it never overflows, wraps, or leaves fragments from a
+// previous state (the caller also wipes the cost band each frame).
 function drawCostTokens(cost, res, faith, centreX, y, btnW) {
   // Build tokens (compact "15Si" form).
   const tokens = [];
@@ -435,30 +442,34 @@ function drawCostTokens(cost, res, faith, centreX, y, btnW) {
   }
   if (tokens.length === 0) return;
 
-  const GAP = 3; // px gap between tokens (logical space)
-  const maxW = btnW - 12; // keep a clear margin from the button edges
+  const maxW = btnW - 10; // keep a clear margin from the button edges
 
-  // Find the largest font (<=8px) at which the whole line fits maxW. Capped at
-  // 8 so a two-currency cost like "15Si 20Bz" always sits cleanly on one line.
+  // Find the largest font (<=8px) at which the whole "A + B" line fits maxW.
   let fontPx = 8;
   const measureTotal = () => {
     trayCtx.font = 'bold ' + fontPx + 'px monospace';
     let w = 0;
     for (let t = 0; t < tokens.length; t++) {
       w += trayCtx.measureText(tokens[t].text).width;
-      if (t < tokens.length - 1) w += GAP;
+      if (t < tokens.length - 1) w += trayCtx.measureText(COST_SEP).width;
     }
     return w;
   };
   let totalW = measureTotal();
-  while (totalW > maxW && fontPx > 6) { fontPx -= 0.5; totalW = measureTotal(); }
+  while (totalW > maxW && fontPx > 5.5) { fontPx -= 0.5; totalW = measureTotal(); }
 
   trayCtx.textAlign = 'left';
   let cx = centreX - totalW / 2;
   for (let t = 0; t < tokens.length; t++) {
     trayCtx.fillStyle = tokens[t].ok ? '#dddddd' : '#ff5555';
     trayCtx.fillText(tokens[t].text, cx, y);
-    cx += trayCtx.measureText(tokens[t].text).width + GAP;
+    cx += trayCtx.measureText(tokens[t].text).width;
+    if (t < tokens.length - 1) {
+      // Dim neutral "+" separator between currencies.
+      trayCtx.fillStyle = '#999999';
+      trayCtx.fillText(COST_SEP, cx, y);
+      cx += trayCtx.measureText(COST_SEP).width;
+    }
   }
   trayCtx.textAlign = 'center'; // restore for subsequent draws
 }

@@ -11,10 +11,13 @@ export const WORLD_HEIGHT = 100;
 // Beam comes from sun (top), hits prism, splits, goes down to mirrors at bottom.
 // Mirrors reflect beams UPWARD into descending ships.
 export const SUN_Y = 48;              // sun/crystal beam source (top)
-export const SHIP_SPAWN_Y = 40;       // ships appear near top
+// Ships spawn HIGH — well above the prism line (y30) — so they stage in open
+// water and the opening kill happens cleanly in open space, not amid the
+// prism/beam clutter. Raised 40 -> 44 in the RC polish pass.
+export const SHIP_SPAWN_Y = 44;       // ships appear near the top, in open water
 // Top bound: no ship may sit over the crystal. A ship's TOP edge must stay
-// below this line (crystal at 48, leave ~4u clear). Enforced in spawnEnemy.
-export const SHIP_TOP_BOUND = 44;
+// below this line (crystal at 48, leave ~2u clear). Enforced in spawnEnemy.
+export const SHIP_TOP_BOUND = 46;
 export const PRISM_Y = 30;            // prism splits light here
 export const MIRROR_FIELD_TOP = -12;  // top of mirror zone (raised off the bottom HUD)
 export const MIRROR_FIELD_BOT = -30;  // bottom of mirror zone

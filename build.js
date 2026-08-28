@@ -136,13 +136,20 @@ canvas { display: block; width: 100%; height: 100%; }
       // Older browser, no promise — just unmute
       video.muted = false;
     }
-    // 5-second failsafe — if video doesn't play, start the game
+    // Failsafe — ONLY start the game early if the video genuinely failed to
+    // begin playing. We check playback PROGRESS at 4s: if it's still stuck near
+    // the start (paused / no advance), the video didn't play, so hand off.
+    // If it IS playing we leave it alone so the full narration (~10.5s) is heard
+    // to the end — previously this fired unconditionally at 5s and cut the
+    // opening line off mid-sentence at "According to...".
     setTimeout(function() {
-      if (!gameStarted) {
-        updateDebugInfo('FAILSAFE 5s');
+      if (gameStarted) return;
+      var stuck = video.paused || video.currentTime < 0.3 || video.readyState < 2;
+      if (stuck) {
+        updateDebugInfo('FAILSAFE: video stuck');
         startGame();
       }
-    }, 5000);
+    }, 4000);
   });
 
   video.addEventListener('ended', startGame);
