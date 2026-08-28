@@ -16,7 +16,8 @@ let whirlpoolMesh = null;
 let whirlpoolPhase = 0;
 let placementPending = false; // waiting for player to tap placement
 let placementTimer = 0;      // timeout for auto-cancel
-let placementTextMesh = null; // "Tap the water" hint
+let rippleMesh = null;        // targeting ripple that follows the finger
+let rippleX = 0, rippleY = 5; // current ripple/target position
 
 const DURATION = GOD_ABILITIES.poseidon.duration;
 const PULL_STRENGTH_SAILED = 14;  // world units/sec lateral pull
@@ -27,7 +28,14 @@ export function isPoseidonPlacementPending() { return placementPending; }
 export function cancelPoseidonPlacement() {
   placementPending = false;
   placementTimer = 0;
-  if (placementTextMesh) placementTextMesh.material.opacity = 0;
+  if (rippleMesh) rippleMesh.visible = false;
+}
+
+// Called from input.js as the finger moves during placement so the ripple
+// follows the touch point.
+export function setPoseidonTarget(worldX, worldY) {
+  rippleX = worldX;
+  rippleY = worldY;
 }
 
 export function initPoseidon() {
@@ -50,23 +58,17 @@ export function initPoseidon() {
   whirlpoolMesh.position.set(0, 0, -5); // default centre, moved on placement
   scene.add(whirlpoolMesh);
 
-  // "Tap the water" hint text
-  const tc = document.createElement('canvas');
-  tc.width = 160; tc.height = 24;
-  const tctx = tc.getContext('2d');
-  tctx.fillStyle = '#44CCFF';
-  tctx.font = 'bold 12px monospace';
-  tctx.textAlign = 'center';
-  tctx.textBaseline = 'middle';
-  tctx.fillText('Tap the water', 80, 12);
-  const ttex = new THREE.CanvasTexture(tc);
-  ttex.minFilter = THREE.LinearFilter;
-  ttex.premultiplyAlpha = false;
-  const tgeo = new THREE.PlaneGeometry(14, 2);
-  const tmat = new THREE.MeshBasicMaterial({ map: ttex, transparent: true, opacity: 0, alphaTest: 0.05, depthWrite: false });
-  placementTextMesh = new THREE.Mesh(tgeo, tmat);
-  placementTextMesh.position.set(0, 5, 8);
-  scene.add(placementTextMesh);
+  // Targeting ripple: a soft water-pulse ring that follows the finger while
+  // choosing where to drop the whirlpool (replaces the old "Tap the water" text).
+  const rGeo = new THREE.RingGeometry(2.4, 3.2, 32);
+  const rMat = new THREE.MeshBasicMaterial({
+    color: 0x66ccff, transparent: true, opacity: 0, depthWrite: false,
+    blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+  });
+  rippleMesh = new THREE.Mesh(rGeo, rMat);
+  rippleMesh.position.set(0, 5, 8);
+  rippleMesh.visible = false;
+  scene.add(rippleMesh);
 }
 
 // Reset all Poseidon state on session restart — stop whirlpool, clear wind/pull
@@ -77,23 +79,24 @@ export function resetPoseidon() {
   placementPending = false;
   placementTimer = 0;
   if (whirlpoolMesh) whirlpoolMesh.material.opacity = 0;
-  if (placementTextMesh) placementTextMesh.material.opacity = 0;
+  if (rippleMesh) rippleMesh.visible = false;
   setWindActive(false);
 }
 
 export function triggerPoseidonStrike() {
   if (active || placementPending) return;
-  // Enter placement mode — next tap on sea activates the whirlpool
+  // Enter placement mode — a targeting ripple now follows the finger.
   placementPending = true;
   placementTimer = PLACEMENT_TIMEOUT;
-  if (placementTextMesh) placementTextMesh.material.opacity = 1;
+  rippleX = 0; rippleY = 5;
+  if (rippleMesh) { rippleMesh.position.set(rippleX, rippleY, 8); rippleMesh.visible = true; }
 }
 
 export function placePoseidon(worldX, worldY) {
   if (!placementPending) return;
   placementPending = false;
   placementTimer = 0;
-  if (placementTextMesh) placementTextMesh.material.opacity = 0;
+  if (rippleMesh) rippleMesh.visible = false;
   active = true;
   timer = DURATION;
   whirlpoolPhase = 0;
@@ -107,9 +110,15 @@ export function updatePoseidon(dt) {
   // Placement timeout: auto-cancel if player doesn't tap within PLACEMENT_TIMEOUT
   if (placementPending) {
     placementTimer -= dt;
-    // Pulse the hint text
-    if (placementTextMesh) {
-      placementTextMesh.material.opacity = 0.6 + 0.4 * Math.sin(performance.now() * 0.006);
+    // Ripple follows the finger, with a gentle breathing pulse in scale/opacity.
+    if (rippleMesh) {
+      rippleMesh.visible = true;
+      rippleMesh.position.set(rippleX, rippleY, 8);
+      const p = 0.5 + 0.5 * Math.sin(performance.now() * 0.006);
+      rippleMesh.material.opacity = 0.4 + 0.35 * p;
+      const s = 0.85 + 0.3 * p;
+      rippleMesh.scale.set(s, s, 1);
+      rippleMesh.rotation.z += dt * 0.8;
     }
     if (placementTimer <= 0) {
       // Timeout — cancel and refund (refund handled by crafting reimport not practical;

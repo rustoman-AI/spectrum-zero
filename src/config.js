@@ -13,14 +13,24 @@ export const WORLD_HEIGHT = 100;
 export const SUN_Y = 48;              // sun/beam source (top)
 export const SHIP_SPAWN_Y = 40;       // ships appear near top
 export const PRISM_Y = 30;            // prism splits light here
-// RAM_LINE_Y is the crash line: ships stop, explode, and damage the wall HERE,
-// which sits ABOVE the mirror zone so ships never descend into / overlap the
-// mirror discs (finger taps always land on mirrors, never on a boat).
-export const RAM_LINE_Y = -6;
 export const MIRROR_FIELD_TOP = -12;  // top of mirror zone (raised off the bottom HUD)
 export const MIRROR_FIELD_BOT = -30;  // bottom of mirror zone
 export const WALL_Y = -40;            // fortress/battlement backdrop line
 export const ENEMY_LANE_COUNT = 5;
+
+// --- Ram line (ship crash boundary) ---
+// The topmost mirror sits at socket row y = -12; its sprite is (MIRROR_LENGTH+2)
+// = 12 units tall (MIRROR_LENGTH is 10, defined below), so the disc's top edge
+// is at -12 + 6 = -6. Ships must stop with a clear gap ABOVE that edge and
+// NEVER share pixels with the discs. ~25px on a portrait phone (100 world units
+// over ~780px) is ~3.2u; use 4u for safety.
+export const MIRROR_DISC_TOP = -6;   // top edge of the topmost mirror sprite
+export const RAM_CLEARANCE = 4;      // world units of clear space above the disc top
+// A ship crashes when its LEADING (bottom) edge reaches RAM_STOP_EDGE. Using the
+// ship's own half-height means every ship size stops with the same clearance and
+// zero overlap. RAM_LINE_Y is the nominal line kept for effects/legacy refs.
+export const RAM_STOP_EDGE = MIRROR_DISC_TOP + RAM_CLEARANCE; // = -2
+export const RAM_LINE_Y = RAM_STOP_EDGE;
 
 // --- DEV flags ---
 export const DEV = {

@@ -43,7 +43,10 @@ export function addKillReward(reward) {
 export function resetFoundries() {
   resources = { brass: 0, bronze: 0, silver: 0, gold: 0 };
   faith = 0;
-  for (const a of altars) { a.litTime = 0; a.overheated = false; a.cooldown = 0; a.everLit = false; }
+  for (const a of altars) {
+    a.litTime = 0; a.overheated = false; a.cooldown = 0; a.everLit = false;
+    if (a.type === 'gold' && a.labelMesh) a.labelMesh.visible = false;
+  }
 }
 
 export function spendFaith(amount) { faith -= amount; }
@@ -101,6 +104,9 @@ export function initFoundries() {
     // label just below the mirror movement zone (MIRROR_FIELD_BOT = -35) at a
     // high z, so no mirror row can ever sit over the resource name.
     labelMesh.position.set(def.x, MIRROR_FIELD_BOT - 1.5, 10);
+    // The GOLD altar is the late-game currency — hide its label until the altar
+    // is actually lit (revealed in updateFoundries), so it isn't advertised early.
+    if (def.type === 'gold') labelMesh.visible = false;
     getOverlayScene().add(labelMesh);
 
     // --- Overheat arc (RingGeometry with partial theta) ---
@@ -117,7 +123,7 @@ export function initFoundries() {
     altars.push({
       type: def.type, colour: def.colour,
       x: def.x, y: def.y,
-      mesh, glowMesh, arcMesh, arcRadius,
+      mesh, glowMesh, arcMesh, arcRadius, labelMesh,
       lit: false, everLit: false,
       litTime: 0, overheated: false, cooldown: 0
     });
@@ -141,6 +147,10 @@ export function updateFoundries(dt) {
       }
     }
     if (altar.lit) altar.everLit = true;
+    // Reveal the GOLD label the first time its altar receives light.
+    if (altar.type === 'gold' && altar.labelMesh && (altar.lit || altar.everLit)) {
+      altar.labelMesh.visible = true;
+    }
 
     // Overheat logic
     if (altar.lit) {

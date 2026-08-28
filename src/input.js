@@ -7,7 +7,7 @@ import { getMirrors, moveMirrorToSocket, rotateMirror, getSockets, updateMirrorG
 import { getSegments, getBeamDiag } from './beam.js';
 import { isGameOver, handleRestartTap, getElapsed, getBreaches } from './session.js';
 import { handleCraftTap } from './crafting.js';
-import { isPoseidonPlacementPending, placePoseidon } from './poseidon.js';
+import { isPoseidonPlacementPending, placePoseidon, setPoseidonTarget } from './poseidon.js';
 import { getSpawnCount, getCurrentInterval } from './enemy-spawner.js';
 import { getKillCount } from './damage.js';
 import { getInsightLog } from './foundry.js';
@@ -137,6 +137,9 @@ function onPointerDown(e) {
   const world = screenToWorld(e.clientX, e.clientY);
   const id = e.pointerId;
 
+  // Snap the Poseidon targeting ripple to the initial touch point.
+  if (isPoseidonPlacementPending()) setPoseidonTarget(world.x, world.y);
+
   // --- Secondary pointer: if primary is already active and rotating/selected,
   //     a second finger on a DIFFERENT mirror starts secondary rotation ---
   if (primaryPointerId !== null && id !== primaryPointerId) {
@@ -174,6 +177,9 @@ function onPointerMove(e) {
   e.preventDefault();
   const world = screenToWorld(e.clientX, e.clientY);
   const id = e.pointerId;
+
+  // While placing Poseidon, the ripple follows the finger as it moves.
+  if (isPoseidonPlacementPending()) setPoseidonTarget(world.x, world.y);
 
   // --- Secondary pointer rotation ---
   if (secondPointer.active && id === secondPointer.id) {

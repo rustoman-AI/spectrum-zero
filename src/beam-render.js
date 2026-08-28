@@ -62,14 +62,18 @@ export function rebuildBeams(segments) {
       }
 
       // Active/idle visual tiers: beams contacting a ship/prism/altar stay at
-      // full opacity + width; idle reflected beams drop to 40% with a thinner
-      // core so active damage lines stand out from the background clutter.
+      // full opacity + width with an intense core glow; idle reflected beams
+      // drop to 30% with a thinner stroke so active damage lines stand out.
       const isActive = seg.active !== false; // undefined (older segs) treated active
-      const tierOpacity = isActive ? 1.0 : 0.4;
-      const tierWidth = isActive ? 1.0 : 0.6;
+      const tierOpacity = isActive ? 1.0 : 0.3;
+      const tierWidth = isActive ? 1.0 : 0.55;
+      const glowBoost = isActive ? 1.5 : 0.35; // intense core glow on active beams
+      // High-tier focused rays (5/6-prism) render with a fatter core so the
+      // tightened band cluster reads as a few substantial rays, not thin noodles.
+      const wideMult = seg.wide ? 1.6 : 1.0;
 
-      const coreW = BEAM_WIDTH * widthMult * tierWidth;
-      const glowW = BEAM_GLOW_WIDTH * widthMult * tierWidth;
+      const coreW = BEAM_WIDTH * widthMult * tierWidth * wideMult;
+      const glowW = BEAM_GLOW_WIDTH * widthMult * tierWidth * wideMult * (isActive ? 1.2 : 1.0);
 
       // Edge fade: reduce opacity if segment ends near world boundary
       const hh = WORLD_HEIGHT / 2;
@@ -84,7 +88,7 @@ export function rebuildBeams(segments) {
       positionQuad(entry.core, seg.start, seg.end, coreW);
       positionQuad(entry.glow, seg.start, seg.end, glowW);
       setQuadColour(entry.core, seg.colour, seg.intensity * finalOpacity);
-      setQuadColour(entry.glow, seg.colour, seg.intensity * 0.35 * finalOpacity);
+      setQuadColour(entry.glow, seg.colour, seg.intensity * glowBoost * finalOpacity);
       entry.core.visible = true;
       entry.glow.visible = true;
     } else {

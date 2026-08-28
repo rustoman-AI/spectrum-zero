@@ -133,13 +133,14 @@ export function updateFortress(dt) {
 export function triggerImpactFlash(x) {
   if (impactFlashes.length >= MAX_IMPACT_FLASHES) return;
   const scene = getScene();
-  const geo = new THREE.PlaneGeometry(7, 5);
+  const geo = new THREE.PlaneGeometry(8, 6);
   const mat = new THREE.MeshBasicMaterial({
-    color: 0xffb347, transparent: true, opacity: 0.85, depthWrite: false,
+    color: 0xff5522, transparent: true, opacity: 0.9, depthWrite: false,
     blending: THREE.AdditiveBlending
   });
   const mesh = new THREE.Mesh(geo, mat);
-  // Sit on the battlement top (a little above WALL_Y), in front of the fort
+  // Localized reddish-orange stone flash on the battlement section directly
+  // below the crash lane (a little above WALL_Y, in front of the fort).
   mesh.position.set(x, WALL_Y + 2, -6);
   scene.add(mesh);
   impactFlashes.push({ mesh, life: 0.35, maxLife: 0.35 });

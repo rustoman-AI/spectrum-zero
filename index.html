@@ -291,14 +291,24 @@ const WORLD_HEIGHT = 100;
 const SUN_Y = 48;              // sun/beam source (top)
 const SHIP_SPAWN_Y = 40;       // ships appear near top
 const PRISM_Y = 30;            // prism splits light here
-// RAM_LINE_Y is the crash line: ships stop, explode, and damage the wall HERE,
-// which sits ABOVE the mirror zone so ships never descend into / overlap the
-// mirror discs (finger taps always land on mirrors, never on a boat).
-const RAM_LINE_Y = -6;
 const MIRROR_FIELD_TOP = -12;  // top of mirror zone (raised off the bottom HUD)
 const MIRROR_FIELD_BOT = -30;  // bottom of mirror zone
 const WALL_Y = -40;            // fortress/battlement backdrop line
 const ENEMY_LANE_COUNT = 5;
+
+// --- Ram line (ship crash boundary) ---
+// The topmost mirror sits at socket row y = -12; its sprite is (MIRROR_LENGTH+2)
+// = 12 units tall (MIRROR_LENGTH is 10, defined below), so the disc's top edge
+// is at -12 + 6 = -6. Ships must stop with a clear gap ABOVE that edge and
+// NEVER share pixels with the discs. ~25px on a portrait phone (100 world units
+// over ~780px) is ~3.2u; use 4u for safety.
+const MIRROR_DISC_TOP = -6;   // top edge of the topmost mirror sprite
+const RAM_CLEARANCE = 4;      // world units of clear space above the disc top
+// A ship crashes when its LEADING (bottom) edge reaches RAM_STOP_EDGE. Using the
+// ship's own half-height means every ship size stops with the same clearance and
+// zero overlap. RAM_LINE_Y is the nominal line kept for effects/legacy refs.
+const RAM_STOP_EDGE = MIRROR_DISC_TOP + RAM_CLEARANCE; // = -2
+const RAM_LINE_Y = RAM_STOP_EDGE;
 
 // --- DEV flags ---
 const DEV = {
@@ -894,13 +904,14 @@ function updateFortress(dt) {
 function triggerImpactFlash(x) {
   if (impactFlashes.length >= MAX_IMPACT_FLASHES) return;
   const scene = getScene();
-  const geo = new THREE.PlaneGeometry(7, 5);
+  const geo = new THREE.PlaneGeometry(8, 6);
   const mat = new THREE.MeshBasicMaterial({
-    color: 0xffb347, transparent: true, opacity: 0.85, depthWrite: false,
+    color: 0xff5522, transparent: true, opacity: 0.9, depthWrite: false,
     blending: THREE.AdditiveBlending
   });
   const mesh = new THREE.Mesh(geo, mat);
-  // Sit on the battlement top (a little above WALL_Y), in front of the fort
+  // Localized reddish-orange stone flash on the battlement section directly
+  // below the crash lane (a little above WALL_Y, in front of the fort).
   mesh.position.set(x, WALL_Y + 2, -6);
   scene.add(mesh);
   impactFlashes.push({ mesh, life: 0.35, maxLife: 0.35 });
@@ -1428,7 +1439,8 @@ let whirlpoolMesh = null;
 let whirlpoolPhase = 0;
 let placementPending = false; // waiting for player to tap placement
 let placementTimer = 0;      // timeout for auto-cancel
-let placementTextMesh = null; // "Tap the water" hint
+let rippleMesh = null;        // targeting ripple that follows the finger
+let rippleX = 0, rippleY = 5; // current ripple/target position
 
 const DURATION = GOD_ABILITIES.poseidon.duration;
 const PULL_STRENGTH_SAILED = 14;  // world units/sec lateral pull
@@ -1439,7 +1451,14 @@ function isPoseidonPlacementPending() { return placementPending; }
 function cancelPoseidonPlacement() {
   placementPending = false;
   placementTimer = 0;
-  if (placementTextMesh) placementTextMesh.material.opacity = 0;
+  if (rippleMesh) rippleMesh.visible = false;
+}
+
+// Called from input.js as the finger moves during placement so the ripple
+// follows the touch point.
+function setPoseidonTarget(worldX, worldY) {
+  rippleX = worldX;
+  rippleY = worldY;
 }
 
 function initPoseidon() {
@@ -1462,23 +1481,17 @@ function initPoseidon() {
   whirlpoolMesh.position.set(0, 0, -5); // default centre, moved on placement
   scene.add(whirlpoolMesh);
 
-  // "Tap the water" hint text
-  const tc = document.createElement('canvas');
-  tc.width = 160; tc.height = 24;
-  const tctx = tc.getContext('2d');
-  tctx.fillStyle = '#44CCFF';
-  tctx.font = 'bold 12px monospace';
-  tctx.textAlign = 'center';
-  tctx.textBaseline = 'middle';
-  tctx.fillText('Tap the water', 80, 12);
-  const ttex = new THREE.CanvasTexture(tc);
-  ttex.minFilter = THREE.LinearFilter;
-  ttex.premultiplyAlpha = false;
-  const tgeo = new THREE.PlaneGeometry(14, 2);
-  const tmat = new THREE.MeshBasicMaterial({ map: ttex, transparent: true, opacity: 0, alphaTest: 0.05, depthWrite: false });
-  placementTextMesh = new THREE.Mesh(tgeo, tmat);
-  placementTextMesh.position.set(0, 5, 8);
-  scene.add(placementTextMesh);
+  // Targeting ripple: a soft water-pulse ring that follows the finger while
+  // choosing where to drop the whirlpool (replaces the old "Tap the water" text).
+  const rGeo = new THREE.RingGeometry(2.4, 3.2, 32);
+  const rMat = new THREE.MeshBasicMaterial({
+    color: 0x66ccff, transparent: true, opacity: 0, depthWrite: false,
+    blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+  });
+  rippleMesh = new THREE.Mesh(rGeo, rMat);
+  rippleMesh.position.set(0, 5, 8);
+  rippleMesh.visible = false;
+  scene.add(rippleMesh);
 }
 
 // Reset all Poseidon state on session restart — stop whirlpool, clear wind/pull
@@ -1489,23 +1502,24 @@ function resetPoseidon() {
   placementPending = false;
   placementTimer = 0;
   if (whirlpoolMesh) whirlpoolMesh.material.opacity = 0;
-  if (placementTextMesh) placementTextMesh.material.opacity = 0;
+  if (rippleMesh) rippleMesh.visible = false;
   setWindActive(false);
 }
 
 function triggerPoseidonStrike() {
   if (active || placementPending) return;
-  // Enter placement mode — next tap on sea activates the whirlpool
+  // Enter placement mode — a targeting ripple now follows the finger.
   placementPending = true;
   placementTimer = PLACEMENT_TIMEOUT;
-  if (placementTextMesh) placementTextMesh.material.opacity = 1;
+  rippleX = 0; rippleY = 5;
+  if (rippleMesh) { rippleMesh.position.set(rippleX, rippleY, 8); rippleMesh.visible = true; }
 }
 
 function placePoseidon(worldX, worldY) {
   if (!placementPending) return;
   placementPending = false;
   placementTimer = 0;
-  if (placementTextMesh) placementTextMesh.material.opacity = 0;
+  if (rippleMesh) rippleMesh.visible = false;
   active = true;
   timer = DURATION;
   whirlpoolPhase = 0;
@@ -1519,9 +1533,15 @@ function updatePoseidon(dt) {
   // Placement timeout: auto-cancel if player doesn't tap within PLACEMENT_TIMEOUT
   if (placementPending) {
     placementTimer -= dt;
-    // Pulse the hint text
-    if (placementTextMesh) {
-      placementTextMesh.material.opacity = 0.6 + 0.4 * Math.sin(performance.now() * 0.006);
+    // Ripple follows the finger, with a gentle breathing pulse in scale/opacity.
+    if (rippleMesh) {
+      rippleMesh.visible = true;
+      rippleMesh.position.set(rippleX, rippleY, 8);
+      const p = 0.5 + 0.5 * Math.sin(performance.now() * 0.006);
+      rippleMesh.material.opacity = 0.4 + 0.35 * p;
+      const s = 0.85 + 0.3 * p;
+      rippleMesh.scale.set(s, s, 1);
+      rippleMesh.rotation.z += dt * 0.8;
     }
     if (placementTimer <= 0) {
       // Timeout — cancel and refund (refund handled by crafting reimport not practical;
@@ -1895,7 +1915,7 @@ function detectResonance() {
     if (count >= RESONANCE_MIN_BOUNCES) { resonanceActive = true; resonanceMirrors = [a, b]; return; }
   }
 }
-function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft, excludePrism, bouncesUsed, preSplit) {
+function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft, excludePrism, bouncesUsed, preSplit, wide) {
   if (segments.length >= MAX_SEGMENTS) return;
   if (bouncesLeft < 0) {
     hitBounceCap = true;
@@ -1909,6 +1929,7 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
     intensity,
     bounces: bouncesUsed,
     preSplit: !!preSplit,
+    wide: !!wide, // high-tier focused ray → renderer draws a fatter core
     // "active" = this beam is doing work (contacting a target). activeSeed is
     // the part known at solve time: the raw sun column (preSplit) and any
     // segment terminating on the prism. Ship/altar contact is OR-ed in each
@@ -1945,7 +1966,7 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
     reflected.y /= len;
     const newBounces = bouncesUsed + 1;
     if (newBounces > maxBouncesUsed) maxBouncesUsed = newBounces;
-    traceBeam(hit.point, reflected, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, null, newBounces, preSplit);
+    traceBeam(hit.point, reflected, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, null, newBounces, preSplit, wide);
   } else if (hit.type === 'prism') {
     if (colour === COLOUR_WHITE) {
       // Generate N bands based on active prism tier
@@ -1954,7 +1975,7 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
       for (const band of bands) {
         if (segments.length >= MAX_SEGMENTS) break;
         const newDir = rotateVec(direction, band.angleOffset);
-        traceBeam(hit.point, newDir, band.colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, hit.object, bouncesUsed, false);
+        traceBeam(hit.point, newDir, band.colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, hit.object, bouncesUsed, false, band.wide);
       }
     } else {
       // Second prism on a coloured band: split into two weaker sub-rays
@@ -2128,14 +2149,23 @@ function rayBoundsIntersect(origin, dir, worldWidth) {
   if (hitPoint) return { dist: tMin, point: hitPoint };
   return null;
 }
-// Generate N band angles evenly distributed across the split spread
+// Generate N band angles across the split spread.
+// Higher prism tiers FOCUS rather than fan out: the angular spread is tightened
+// so the extra bands stay near-parallel and read as a few wide, intense rays
+// instead of a spray of overlapping additive "noodles". Each high-tier band is
+// also tagged wide=true so the renderer draws it with a fatter core.
 function generateBandAngles(n) {
   const colours = [COLOUR_AMBER, COLOUR_CYAN, COLOUR_GOLD, COLOUR_AMBER, COLOUR_CYAN, COLOUR_GOLD];
+  const spreadScale = n >= 6 ? 0.5 : n === 5 ? 0.65 : 1.0;  // pull bands inward at 5/6
+  const wide = n >= 5;                                       // fatter core rays at 5/6
   const bands = [];
   for (let i = 0; i < n; i++) {
-    // Distribute from -PRISM_SPLIT_ANGLE to +PRISM_SPLIT_ANGLE
     const t = n === 1 ? 0 : (i / (n - 1)) * 2 - 1; // -1 to +1
-    bands.push({ colour: colours[i % colours.length], angleOffset: t * PRISM_SPLIT_ANGLE });
+    bands.push({
+      colour: colours[i % colours.length],
+      angleOffset: t * PRISM_SPLIT_ANGLE * spreadScale,
+      wide,
+    });
   }
   return bands;
 }
@@ -2212,14 +2242,18 @@ function rebuildBeams(segments) {
       }
 
       // Active/idle visual tiers: beams contacting a ship/prism/altar stay at
-      // full opacity + width; idle reflected beams drop to 40% with a thinner
-      // core so active damage lines stand out from the background clutter.
+      // full opacity + width with an intense core glow; idle reflected beams
+      // drop to 30% with a thinner stroke so active damage lines stand out.
       const isActive = seg.active !== false; // undefined (older segs) treated active
-      const tierOpacity = isActive ? 1.0 : 0.4;
-      const tierWidth = isActive ? 1.0 : 0.6;
+      const tierOpacity = isActive ? 1.0 : 0.3;
+      const tierWidth = isActive ? 1.0 : 0.55;
+      const glowBoost = isActive ? 1.5 : 0.35; // intense core glow on active beams
+      // High-tier focused rays (5/6-prism) render with a fatter core so the
+      // tightened band cluster reads as a few substantial rays, not thin noodles.
+      const wideMult = seg.wide ? 1.6 : 1.0;
 
-      const coreW = BEAM_WIDTH * widthMult * tierWidth;
-      const glowW = BEAM_GLOW_WIDTH * widthMult * tierWidth;
+      const coreW = BEAM_WIDTH * widthMult * tierWidth * wideMult;
+      const glowW = BEAM_GLOW_WIDTH * widthMult * tierWidth * wideMult * (isActive ? 1.2 : 1.0);
 
       // Edge fade: reduce opacity if segment ends near world boundary
       const hh = WORLD_HEIGHT / 2;
@@ -2234,7 +2268,7 @@ function rebuildBeams(segments) {
       positionQuad(entry.core, seg.start, seg.end, coreW);
       positionQuad(entry.glow, seg.start, seg.end, glowW);
       setQuadColour(entry.core, seg.colour, seg.intensity * finalOpacity);
-      setQuadColour(entry.glow, seg.colour, seg.intensity * 0.35 * finalOpacity);
+      setQuadColour(entry.glow, seg.colour, seg.intensity * glowBoost * finalOpacity);
       entry.core.visible = true;
       entry.glow.visible = true;
     } else {
@@ -2829,6 +2863,12 @@ function updatePrismGlow(segments) {
 const lastBreaches = [];
 function getLastBreaches() { return lastBreaches; }
 
+// Visual size (world units, ~sprite height) per ship type. Half of this is the
+// ship's leading-edge offset used for the ram-line crash so no ship of any
+// size ever overlaps the mirror discs.
+const SHIP_SIZE = { skiff: 2.5, trireme: 3.5, quadrireme: 4.5, shieldbearer: 4.0, flagship: 8 };
+function shipHalfHeight(type) { return (SHIP_SIZE[type] || 3) / 2; }
+
 const pool = [];
 let enemyGroup = null;
 const shipTextures = {};
@@ -3172,15 +3212,19 @@ function updateEnemies(dt) {
       e.mesh.rotation.z = Math.sin(e.oarPhase * 0.7) * 0.015; // very slight roll
     }
 
-    if (e.y <= RAM_LINE_Y) {
-      // Crash: ship reaches the ram line (above the mirror zone), explodes,
-      // and damages the wall. It never enters the mirror field.
+    // Crash when the ship's LEADING (bottom) edge reaches the stop edge, which
+    // sits a clear gap above the mirror discs. Per-ship half-height means big
+    // ships stop earlier so no hull ever shares pixels with a disc.
+    const leadingEdge = e.y - shipHalfHeight(e.type);
+    if (leadingEdge <= RAM_STOP_EDGE) {
+      // Snap to the exact stop position, then explode + damage the wall.
+      e.y = RAM_STOP_EDGE + shipHalfHeight(e.type);
       const dmg = BREACH_DAMAGE[e.type] || 10;
       const heatFrac = Math.min(1, (e.heat || 0) / e.maxHp);
       wallDamage += dmg * Math.max(0.2, 1 - heatFrac);
       const cx = -ww / 2 + lw * (e.lane + 0.5) + (e.driftX || 0) + (e.pullX || 0);
       const heavy = (e.type === 'flagship' || e.type === 'quadrireme');
-      spawnDestruction(cx, RAM_LINE_Y, heavy); // crash burst at the ram line
+      spawnDestruction(cx, e.y, heavy); // crash burst at the ship's stopped position
       lastBreaches.push({ x: cx, lane: e.lane });
       deactivateEnemy(e);
       continue;
@@ -3266,8 +3310,7 @@ function updateEnemyVisual(e) {
     e.spriteMat.color.setRGB(1, 1, 1); // neutral (texture has its own colours)
   }
 
-  const sizes = { skiff: 2.5, trireme: 3.5, quadrireme: 4.5, shieldbearer: 4.0, flagship: 8 };
-  const s = sizes[e.type] || 3;
+  const s = SHIP_SIZE[e.type] || 3;
   e.mesh.scale.set(s/3, s/3, 1);
   // Shield plate visibility + glint
   if (e.shieldPlate) {
@@ -3537,7 +3580,10 @@ function addKillReward(reward) {
 function resetFoundries() {
   resources = { brass: 0, bronze: 0, silver: 0, gold: 0 };
   faith = 0;
-  for (const a of altars) { a.litTime = 0; a.overheated = false; a.cooldown = 0; a.everLit = false; }
+  for (const a of altars) {
+    a.litTime = 0; a.overheated = false; a.cooldown = 0; a.everLit = false;
+    if (a.type === 'gold' && a.labelMesh) a.labelMesh.visible = false;
+  }
 }
 
 function spendFaith(amount) { faith -= amount; }
@@ -3595,6 +3641,9 @@ function initFoundries() {
     // label just below the mirror movement zone (MIRROR_FIELD_BOT = -35) at a
     // high z, so no mirror row can ever sit over the resource name.
     labelMesh.position.set(def.x, MIRROR_FIELD_BOT - 1.5, 10);
+    // The GOLD altar is the late-game currency — hide its label until the altar
+    // is actually lit (revealed in updateFoundries), so it isn't advertised early.
+    if (def.type === 'gold') labelMesh.visible = false;
     getOverlayScene().add(labelMesh);
 
     // --- Overheat arc (RingGeometry with partial theta) ---
@@ -3611,7 +3660,7 @@ function initFoundries() {
     altars.push({
       type: def.type, colour: def.colour,
       x: def.x, y: def.y,
-      mesh, glowMesh, arcMesh, arcRadius,
+      mesh, glowMesh, arcMesh, arcRadius, labelMesh,
       lit: false, everLit: false,
       litTime: 0, overheated: false, cooldown: 0
     });
@@ -3635,6 +3684,10 @@ function updateFoundries(dt) {
       }
     }
     if (altar.lit) altar.everLit = true;
+    // Reveal the GOLD label the first time its altar receives light.
+    if (altar.type === 'gold' && altar.labelMesh && (altar.lit || altar.everLit)) {
+      altar.labelMesh.visible = true;
+    }
 
     // Overheat logic
     if (altar.lit) {
@@ -5593,6 +5646,9 @@ function onPointerDown(e) {
   const world = screenToWorld(e.clientX, e.clientY);
   const id = e.pointerId;
 
+  // Snap the Poseidon targeting ripple to the initial touch point.
+  if (isPoseidonPlacementPending()) setPoseidonTarget(world.x, world.y);
+
   // --- Secondary pointer: if primary is already active and rotating/selected,
   //     a second finger on a DIFFERENT mirror starts secondary rotation ---
   if (primaryPointerId !== null && id !== primaryPointerId) {
@@ -5630,6 +5686,9 @@ function onPointerMove(e) {
   e.preventDefault();
   const world = screenToWorld(e.clientX, e.clientY);
   const id = e.pointerId;
+
+  // While placing Poseidon, the ripple follows the finger as it moves.
+  if (isPoseidonPlacementPending()) setPoseidonTarget(world.x, world.y);
 
   // --- Secondary pointer rotation ---
   if (secondPointer.active && id === secondPointer.id) {

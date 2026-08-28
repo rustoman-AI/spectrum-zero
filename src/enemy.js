@@ -3,7 +3,7 @@
 // ============================================================
 
 import {
-  ENEMY_POOL_SIZE, ENEMY_TYPES, SHIP_SPAWN_Y, WALL_Y, RAM_LINE_Y,
+  ENEMY_POOL_SIZE, ENEMY_TYPES, SHIP_SPAWN_Y, WALL_Y, RAM_LINE_Y, RAM_STOP_EDGE,
   ENEMY_LANE_COUNT, WORLD_HEIGHT, BREACH_DAMAGE
 } from './config.js';
 import { getScene, getWorldWidth } from './renderer.js';
@@ -13,6 +13,12 @@ import { spawnSparks, spawnContactGlow, spawnDestruction } from './effects.js';
 // Breach events from the most recent updateEnemies() call, for per-lane feedback.
 const lastBreaches = [];
 export function getLastBreaches() { return lastBreaches; }
+
+// Visual size (world units, ~sprite height) per ship type. Half of this is the
+// ship's leading-edge offset used for the ram-line crash so no ship of any
+// size ever overlaps the mirror discs.
+const SHIP_SIZE = { skiff: 2.5, trireme: 3.5, quadrireme: 4.5, shieldbearer: 4.0, flagship: 8 };
+function shipHalfHeight(type) { return (SHIP_SIZE[type] || 3) / 2; }
 
 const pool = [];
 let enemyGroup = null;
@@ -357,15 +363,19 @@ export function updateEnemies(dt) {
       e.mesh.rotation.z = Math.sin(e.oarPhase * 0.7) * 0.015; // very slight roll
     }
 
-    if (e.y <= RAM_LINE_Y) {
-      // Crash: ship reaches the ram line (above the mirror zone), explodes,
-      // and damages the wall. It never enters the mirror field.
+    // Crash when the ship's LEADING (bottom) edge reaches the stop edge, which
+    // sits a clear gap above the mirror discs. Per-ship half-height means big
+    // ships stop earlier so no hull ever shares pixels with a disc.
+    const leadingEdge = e.y - shipHalfHeight(e.type);
+    if (leadingEdge <= RAM_STOP_EDGE) {
+      // Snap to the exact stop position, then explode + damage the wall.
+      e.y = RAM_STOP_EDGE + shipHalfHeight(e.type);
       const dmg = BREACH_DAMAGE[e.type] || 10;
       const heatFrac = Math.min(1, (e.heat || 0) / e.maxHp);
       wallDamage += dmg * Math.max(0.2, 1 - heatFrac);
       const cx = -ww / 2 + lw * (e.lane + 0.5) + (e.driftX || 0) + (e.pullX || 0);
       const heavy = (e.type === 'flagship' || e.type === 'quadrireme');
-      spawnDestruction(cx, RAM_LINE_Y, heavy); // crash burst at the ram line
+      spawnDestruction(cx, e.y, heavy); // crash burst at the ship's stopped position
       lastBreaches.push({ x: cx, lane: e.lane });
       deactivateEnemy(e);
       continue;
@@ -451,8 +461,7 @@ function updateEnemyVisual(e) {
     e.spriteMat.color.setRGB(1, 1, 1); // neutral (texture has its own colours)
   }
 
-  const sizes = { skiff: 2.5, trireme: 3.5, quadrireme: 4.5, shieldbearer: 4.0, flagship: 8 };
-  const s = sizes[e.type] || 3;
+  const s = SHIP_SIZE[e.type] || 3;
   e.mesh.scale.set(s/3, s/3, 1);
   // Shield plate visibility + glint
   if (e.shieldPlate) {

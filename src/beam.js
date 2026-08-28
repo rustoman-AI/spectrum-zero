@@ -63,7 +63,7 @@ function detectResonance() {
     if (count >= RESONANCE_MIN_BOUNCES) { resonanceActive = true; resonanceMirrors = [a, b]; return; }
   }
 }
-function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft, excludePrism, bouncesUsed, preSplit) {
+function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft, excludePrism, bouncesUsed, preSplit, wide) {
   if (segments.length >= MAX_SEGMENTS) return;
   if (bouncesLeft < 0) {
     hitBounceCap = true;
@@ -77,6 +77,7 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
     intensity,
     bounces: bouncesUsed,
     preSplit: !!preSplit,
+    wide: !!wide, // high-tier focused ray → renderer draws a fatter core
     // "active" = this beam is doing work (contacting a target). activeSeed is
     // the part known at solve time: the raw sun column (preSplit) and any
     // segment terminating on the prism. Ship/altar contact is OR-ed in each
@@ -113,7 +114,7 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
     reflected.y /= len;
     const newBounces = bouncesUsed + 1;
     if (newBounces > maxBouncesUsed) maxBouncesUsed = newBounces;
-    traceBeam(hit.point, reflected, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, null, newBounces, preSplit);
+    traceBeam(hit.point, reflected, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, null, newBounces, preSplit, wide);
   } else if (hit.type === 'prism') {
     if (colour === COLOUR_WHITE) {
       // Generate N bands based on active prism tier
@@ -122,7 +123,7 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
       for (const band of bands) {
         if (segments.length >= MAX_SEGMENTS) break;
         const newDir = rotateVec(direction, band.angleOffset);
-        traceBeam(hit.point, newDir, band.colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, hit.object, bouncesUsed, false);
+        traceBeam(hit.point, newDir, band.colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, hit.object, bouncesUsed, false, band.wide);
       }
     } else {
       // Second prism on a coloured band: split into two weaker sub-rays
@@ -296,14 +297,23 @@ function rayBoundsIntersect(origin, dir, worldWidth) {
   if (hitPoint) return { dist: tMin, point: hitPoint };
   return null;
 }
-// Generate N band angles evenly distributed across the split spread
+// Generate N band angles across the split spread.
+// Higher prism tiers FOCUS rather than fan out: the angular spread is tightened
+// so the extra bands stay near-parallel and read as a few wide, intense rays
+// instead of a spray of overlapping additive "noodles". Each high-tier band is
+// also tagged wide=true so the renderer draws it with a fatter core.
 function generateBandAngles(n) {
   const colours = [COLOUR_AMBER, COLOUR_CYAN, COLOUR_GOLD, COLOUR_AMBER, COLOUR_CYAN, COLOUR_GOLD];
+  const spreadScale = n >= 6 ? 0.5 : n === 5 ? 0.65 : 1.0;  // pull bands inward at 5/6
+  const wide = n >= 5;                                       // fatter core rays at 5/6
   const bands = [];
   for (let i = 0; i < n; i++) {
-    // Distribute from -PRISM_SPLIT_ANGLE to +PRISM_SPLIT_ANGLE
     const t = n === 1 ? 0 : (i / (n - 1)) * 2 - 1; // -1 to +1
-    bands.push({ colour: colours[i % colours.length], angleOffset: t * PRISM_SPLIT_ANGLE });
+    bands.push({
+      colour: colours[i % colours.length],
+      angleOffset: t * PRISM_SPLIT_ANGLE * spreadScale,
+      wide,
+    });
   }
   return bands;
 }
