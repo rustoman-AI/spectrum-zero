@@ -5,7 +5,7 @@
 // Lose: 3 breaches, OR 15:00 with Devourer alive + Recombination < 100%.
 // ============================================================
 
-import { SESSION_DURATION, WORLD_HEIGHT, WALL_Y, DEV, WALL_MAX_HP } from './config.js';
+import { SESSION_DURATION, VICTORY_TIME, VICTORY_KILLS, WORLD_HEIGHT, WALL_Y, DEV, WALL_MAX_HP } from './config.js';
 import { getScene, getWorldWidth, getOverlayScene } from './renderer.js';
 import { resetEnemies } from './enemy.js';
 import { resetSpawner } from './enemy-spawner.js';
@@ -16,12 +16,12 @@ import { resetCrafting } from './crafting.js';
 import { resetMirrors } from './mirror.js';
 import { resetPrisms, resetTier } from './prism.js';
 import { resetEffects } from './effects.js';
-import { resetAudio, silenceBattleAudio } from './audio.js';
+import { resetAudio, silenceBattleAudio, playVictoryFanfare } from './audio.js';
 import { resetZeus } from './zeus.js';
 import { resetPoseidon } from './poseidon.js';
 import { resetHelios } from './helios.js';
 import { resetInput } from './input.js';
-import { MSG_LOSE, MSG_WIN, RES_SLAG_SHORT, RES_INSIGHT_SHORT, RES_RECOMBO_SHORT } from './strings.js';
+import { MSG_LOSE, RES_SLAG_SHORT, RES_INSIGHT_SHORT, RES_RECOMBO_SHORT } from './strings.js';
 
 let elapsed = 0;
 let wallIntegrity = 100; // wall HP, starts at 100
@@ -64,6 +64,13 @@ export function notifyDevourerKilled() { devourerKilled = true; }
 export function updateSession(dt) {
   if (gameOver) return;
   elapsed += dt;
+
+  // --- Primary victory: survive to 1:30 OR sink 45 ships with the wall intact.
+  // Checked first so it wins the frame over the long-form session-end logic.
+  if (wallIntegrity > 0 && (elapsed >= VICTORY_TIME || getKillCount() >= VICTORY_KILLS)) {
+    triggerWin();
+    return;
+  }
 
   // Check win/lose at session end
   if (elapsed >= SESSION_DURATION) {
@@ -280,6 +287,8 @@ export function resetSession() {
   wallBarNotch = 0;
   defeatActive = false;
   defeatT = 0;
+  victoryActive = false;
+  victoryT = 0;
   if (dimMesh) dimMesh.material.color.setHex(0x000000); // restore neutral dim
   if (wallFlashMesh) { wallFlashMesh.material.opacity = 0; wallFlashMesh.visible = false; }
   // Each reset wrapped so one failure can't leave the overlay stuck
@@ -308,12 +317,11 @@ function triggerWin() {
   gameOver = true;
   gameWon = true;
   onEndState();
-  // Play win cinematic, then show overlay
-  if (typeof window !== 'undefined' && window.playWinCinematic) {
-    window.playWinCinematic(function() { if (gameOver) showOverlay(MSG_WIN); });
-  } else {
-    showOverlay(MSG_WIN);
-  }
+  // Fully in-engine victory: no video. Extinguish beams (onEndState), tint the
+  // board gold, sound the fanfare, then fade in the gold stats card — mirroring
+  // the defeat sequence layout so both end states feel consistent.
+  try { playVictoryFanfare(); } catch (e) { console.error('playVictoryFanfare', e); }
+  startVictorySequence();
 }
 
 function triggerLose() {
@@ -329,6 +337,42 @@ function triggerLose() {
 let defeatT = 0;          // animation clock
 let defeatActive = false;
 export function isDefeatSequenceActive() { return defeatActive; }
+
+// --- In-engine victory sequence (gold sibling of the defeat fade) ---
+let victoryT = 0;
+let victoryActive = false;
+export function isVictorySequenceActive() { return victoryActive; }
+
+function startVictorySequence() {
+  victoryActive = true;
+  victoryT = 0;
+  // Warm gold board tint fades in (dimMesh recoloured for victory).
+  if (dimMesh) {
+    dimMesh.material.color.setHex(0x2a1d02); // deep warm gold-brown
+    dimMesh.material.opacity = 0;
+    dimMesh.visible = true;
+    if (dimMesh.parent == null) getOverlayScene().add(dimMesh);
+  }
+  // Prepare the overlay text but keep it transparent for the fade-in.
+  prepareVictoryOverlay();
+}
+
+// Advance the victory fade-in each frame (called from the main loop while over).
+export function updateVictorySequence(dt) {
+  if (!victoryActive) return;
+  victoryT += dt;
+  // Gold dim fades in over ~0.8s to a moderate tint (lighter than defeat so the
+  // burning fleet stays visible and celebratory rather than funereal).
+  if (dimMesh) {
+    dimMesh.material.opacity = Math.min(0.78, victoryT / 0.8 * 0.78);
+  }
+  // Stats overlay fades in after a short beat (0.5s), over ~0.7s.
+  if (overlayMesh) {
+    const a = Math.max(0, Math.min(1, (victoryT - 0.5) / 0.7));
+    overlayMesh.material.opacity = a;
+    overlayMesh.visible = a > 0.001;
+  }
+}
 
 function startDefeatSequence() {
   defeatActive = true;
@@ -452,12 +496,24 @@ function drawOverlayText() {
   const h = overlayCanvas.height; // 128
   overlayCtx.clearRect(0, 0, w, h);
 
-  // Title
-  overlayCtx.fillStyle = gameWon ? '#00ff88' : '#ff5533';
-  overlayCtx.font = 'bold 18px monospace';
+  // Title — gold, triumphant for the win; red for the fall.
   overlayCtx.textAlign = 'center';
-  const title = gameWon ? 'THE FLEET BURNS' : 'SYRACUSE HAS FALLEN';
-  overlayCtx.fillText(title, w / 2, 24);
+  const title = gameWon ? 'SYRACUSE STANDS VICTORIOUS' : 'SYRACUSE HAS FALLEN';
+  if (gameWon) {
+    // Bright gold with a soft glow to sell the victory.
+    overlayCtx.save();
+    overlayCtx.shadowColor = 'rgba(255,215,0,0.7)';
+    overlayCtx.shadowBlur = 8;
+    overlayCtx.fillStyle = '#FFD700';
+    // Slightly smaller so the longer victory title fits the 256px card width.
+    overlayCtx.font = 'bold 15px monospace';
+    overlayCtx.fillText(title, w / 2, 24);
+    overlayCtx.restore();
+  } else {
+    overlayCtx.fillStyle = '#ff5533';
+    overlayCtx.font = 'bold 18px monospace';
+    overlayCtx.fillText(title, w / 2, 24);
+  }
 
   // Stats
   const mins = Math.floor(elapsed / 60);
@@ -467,35 +523,33 @@ function drawOverlayText() {
   const res = getResources();
   const goldEarned = Math.floor(res.gold);
 
-  overlayCtx.fillStyle = '#cccccc';
+  overlayCtx.fillStyle = gameWon ? '#ffe9a8' : '#cccccc';
   overlayCtx.font = '11px monospace';
   overlayCtx.fillText('Time: ' + timeStr, w / 2, 48);
   overlayCtx.fillText('Ships Sunk: ' + kills, w / 2, 63);
   overlayCtx.fillText('Gold Earned: ' + goldEarned, w / 2, 78);
 
-  // Tap to restart
-  overlayCtx.fillStyle = '#ffffff';
+  // Prompt: "Play Again" on a win, "try again" on a loss. Both reset cleanly.
+  overlayCtx.fillStyle = gameWon ? '#FFD700' : '#ffffff';
   overlayCtx.font = 'bold 13px monospace';
-  overlayCtx.fillText('Tap to try again', w / 2, 105);
+  overlayCtx.fillText(gameWon ? 'Tap to Play Again' : 'Tap to try again', w / 2, 105);
 
   overlayTexture.needsUpdate = true;
-}
-
-// Win path: show the overlay instantly (win keeps its cinematic upstream).
-function showOverlay(text) {
-  drawOverlayText();
-  const oScene = getOverlayScene();
-  if (overlayMesh.parent !== oScene) oScene.add(overlayMesh);
-  if (dimMesh.parent !== oScene) oScene.add(dimMesh);
-  overlayMesh.material.opacity = 1;
-  overlayMesh.visible = true;
-  dimMesh.material.opacity = 0.82;
-  dimMesh.visible = true;
 }
 
 // Defeat path: draw the text but keep it transparent; updateDefeatSequence
 // fades the dark-red dim and then the stats in.
 function prepareDefeatOverlay() {
+  drawOverlayText();
+  const oScene = getOverlayScene();
+  if (overlayMesh.parent !== oScene) oScene.add(overlayMesh);
+  overlayMesh.material.opacity = 0;
+  overlayMesh.visible = false; // revealed by the fade-in
+}
+
+// Victory path: identical prep to defeat (draw hidden, fade in), but the gold
+// tint + fanfare are set up by startVictorySequence.
+function prepareVictoryOverlay() {
   drawOverlayText();
   const oScene = getOverlayScene();
   if (overlayMesh.parent !== oScene) oScene.add(overlayMesh);

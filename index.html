@@ -273,6 +273,12 @@ const ENEMY_TYPES = {
 const ESCALATION_HP_FACTOR = 3;
 const SESSION_DURATION = 600;  // 10 minutes
 
+// --- Victory condition ---
+// The defence is "won" once the player survives to 1:30 (90s) OR sinks 45 ships,
+// provided the wall is still standing. Triggers the in-engine gold victory card.
+const VICTORY_TIME = 90;   // seconds (1:30)
+const VICTORY_KILLS = 45;  // ships sunk
+
 // --- Multi-currency economy (altar zones require beam contact) ---
 // 20% passive, 80% only while a beam is held on the altar zone.
 // Altars sit on the city ground BELOW the wall (y < WALL_Y).
@@ -5191,6 +5197,67 @@ function playHeliosHorn() {
   tSrc.start(now); tSrc.stop(now + 0.015);
 }
 
+// --- Victory fanfare: a bright, resonant temple-trumpet flourish. A rising
+// major arpeggio (C-E-G) played on warm sawtooth "trumpets" through a lowpass,
+// capped by a ringing bell chord on the final note so it lands triumphant but
+// clean (the master compressor/lowpass keep it from getting shrill). ---
+function playVictoryFanfare() {
+  if (!ensureCtx()) return;
+  const now = ctx.currentTime;
+  const out = ctx.createGain();
+  out.gain.value = 1;
+  out.connect(masterGain);
+
+  // Rising arpeggio: C5, E5, G5, then a held high C6 on top.
+  const notes = [
+    { f: 523.25, t: 0.00, dur: 0.32 },
+    { f: 659.25, t: 0.16, dur: 0.32 },
+    { f: 783.99, t: 0.32, dur: 0.45 },
+    { f: 1046.5, t: 0.52, dur: 0.9 },
+  ];
+  for (const n of notes) {
+    const t0 = now + n.t;
+    // Two slightly detuned saws = a fuller "brass" body.
+    for (const detune of [-4, 4]) {
+      const osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.value = n.f;
+      osc.detune.value = detune;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(2400, t0);
+      lp.frequency.exponentialRampToValueAtTime(1400, t0 + n.dur);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(0.09, t0 + 0.03);          // trumpet swell
+      g.gain.exponentialRampToValueAtTime(0.0005, t0 + n.dur);
+      osc.connect(lp).connect(g).connect(out);
+      osc.start(t0); osc.stop(t0 + n.dur + 0.05);
+    }
+  }
+
+  // Ringing bell chord seated on the final high note for a sacred "temple" tail.
+  const bellT = now + 0.52;
+  const bellFund = 1046.5; // C6
+  const bellHarm = [
+    { mult: 1, g: 0.12, decay: 2.6 },
+    { mult: 2, g: 0.07, decay: 2.0 },
+    { mult: 3, g: 0.04, decay: 1.5 },
+    { mult: 4.2, g: 0.02, decay: 1.1 }, // slightly inharmonic shimmer
+  ];
+  for (const h of bellHarm) {
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = bellFund * h.mult;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, bellT);
+    g.gain.linearRampToValueAtTime(h.g, bellT + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0005, bellT + h.decay);
+    osc.connect(g).connect(out);
+    osc.start(bellT); osc.stop(bellT + h.decay + 0.1);
+  }
+}
+
 // --- Zeus: deep acoustic THUNDER — a modulated low-frequency noise sweep that
 // rolls and rumbles (not an 8-bit zap). A short crack transient seats the
 // strike, then a long low-passed noise bed sweeps down while a slow tremolo
@@ -5777,6 +5844,13 @@ function updateSession(dt) {
   if (gameOver) return;
   elapsed += dt;
 
+  // --- Primary victory: survive to 1:30 OR sink 45 ships with the wall intact.
+  // Checked first so it wins the frame over the long-form session-end logic.
+  if (wallIntegrity > 0 && (elapsed >= VICTORY_TIME || getKillCount() >= VICTORY_KILLS)) {
+    triggerWin();
+    return;
+  }
+
   // Check win/lose at session end
   if (elapsed >= SESSION_DURATION) {
     const recombo = getRecombination();
@@ -5992,6 +6066,8 @@ function resetSession() {
   wallBarNotch = 0;
   defeatActive = false;
   defeatT = 0;
+  victoryActive = false;
+  victoryT = 0;
   if (dimMesh) dimMesh.material.color.setHex(0x000000); // restore neutral dim
   if (wallFlashMesh) { wallFlashMesh.material.opacity = 0; wallFlashMesh.visible = false; }
   // Each reset wrapped so one failure can't leave the overlay stuck
@@ -6020,12 +6096,11 @@ function triggerWin() {
   gameOver = true;
   gameWon = true;
   onEndState();
-  // Play win cinematic, then show overlay
-  if (typeof window !== 'undefined' && window.playWinCinematic) {
-    window.playWinCinematic(function() { if (gameOver) showOverlay(MSG_WIN); });
-  } else {
-    showOverlay(MSG_WIN);
-  }
+  // Fully in-engine victory: no video. Extinguish beams (onEndState), tint the
+  // board gold, sound the fanfare, then fade in the gold stats card — mirroring
+  // the defeat sequence layout so both end states feel consistent.
+  try { playVictoryFanfare(); } catch (e) { console.error('playVictoryFanfare', e); }
+  startVictorySequence();
 }
 
 function triggerLose() {
@@ -6041,6 +6116,42 @@ function triggerLose() {
 let defeatT = 0;          // animation clock
 let defeatActive = false;
 function isDefeatSequenceActive() { return defeatActive; }
+
+// --- In-engine victory sequence (gold sibling of the defeat fade) ---
+let victoryT = 0;
+let victoryActive = false;
+function isVictorySequenceActive() { return victoryActive; }
+
+function startVictorySequence() {
+  victoryActive = true;
+  victoryT = 0;
+  // Warm gold board tint fades in (dimMesh recoloured for victory).
+  if (dimMesh) {
+    dimMesh.material.color.setHex(0x2a1d02); // deep warm gold-brown
+    dimMesh.material.opacity = 0;
+    dimMesh.visible = true;
+    if (dimMesh.parent == null) getOverlayScene().add(dimMesh);
+  }
+  // Prepare the overlay text but keep it transparent for the fade-in.
+  prepareVictoryOverlay();
+}
+
+// Advance the victory fade-in each frame (called from the main loop while over).
+function updateVictorySequence(dt) {
+  if (!victoryActive) return;
+  victoryT += dt;
+  // Gold dim fades in over ~0.8s to a moderate tint (lighter than defeat so the
+  // burning fleet stays visible and celebratory rather than funereal).
+  if (dimMesh) {
+    dimMesh.material.opacity = Math.min(0.78, victoryT / 0.8 * 0.78);
+  }
+  // Stats overlay fades in after a short beat (0.5s), over ~0.7s.
+  if (overlayMesh) {
+    const a = Math.max(0, Math.min(1, (victoryT - 0.5) / 0.7));
+    overlayMesh.material.opacity = a;
+    overlayMesh.visible = a > 0.001;
+  }
+}
 
 function startDefeatSequence() {
   defeatActive = true;
@@ -6164,12 +6275,24 @@ function drawOverlayText() {
   const h = overlayCanvas.height; // 128
   overlayCtx.clearRect(0, 0, w, h);
 
-  // Title
-  overlayCtx.fillStyle = gameWon ? '#00ff88' : '#ff5533';
-  overlayCtx.font = 'bold 18px monospace';
+  // Title — gold, triumphant for the win; red for the fall.
   overlayCtx.textAlign = 'center';
-  const title = gameWon ? 'THE FLEET BURNS' : 'SYRACUSE HAS FALLEN';
-  overlayCtx.fillText(title, w / 2, 24);
+  const title = gameWon ? 'SYRACUSE STANDS VICTORIOUS' : 'SYRACUSE HAS FALLEN';
+  if (gameWon) {
+    // Bright gold with a soft glow to sell the victory.
+    overlayCtx.save();
+    overlayCtx.shadowColor = 'rgba(255,215,0,0.7)';
+    overlayCtx.shadowBlur = 8;
+    overlayCtx.fillStyle = '#FFD700';
+    // Slightly smaller so the longer victory title fits the 256px card width.
+    overlayCtx.font = 'bold 15px monospace';
+    overlayCtx.fillText(title, w / 2, 24);
+    overlayCtx.restore();
+  } else {
+    overlayCtx.fillStyle = '#ff5533';
+    overlayCtx.font = 'bold 18px monospace';
+    overlayCtx.fillText(title, w / 2, 24);
+  }
 
   // Stats
   const mins = Math.floor(elapsed / 60);
@@ -6179,35 +6302,33 @@ function drawOverlayText() {
   const res = getResources();
   const goldEarned = Math.floor(res.gold);
 
-  overlayCtx.fillStyle = '#cccccc';
+  overlayCtx.fillStyle = gameWon ? '#ffe9a8' : '#cccccc';
   overlayCtx.font = '11px monospace';
   overlayCtx.fillText('Time: ' + timeStr, w / 2, 48);
   overlayCtx.fillText('Ships Sunk: ' + kills, w / 2, 63);
   overlayCtx.fillText('Gold Earned: ' + goldEarned, w / 2, 78);
 
-  // Tap to restart
-  overlayCtx.fillStyle = '#ffffff';
+  // Prompt: "Play Again" on a win, "try again" on a loss. Both reset cleanly.
+  overlayCtx.fillStyle = gameWon ? '#FFD700' : '#ffffff';
   overlayCtx.font = 'bold 13px monospace';
-  overlayCtx.fillText('Tap to try again', w / 2, 105);
+  overlayCtx.fillText(gameWon ? 'Tap to Play Again' : 'Tap to try again', w / 2, 105);
 
   overlayTexture.needsUpdate = true;
-}
-
-// Win path: show the overlay instantly (win keeps its cinematic upstream).
-function showOverlay(text) {
-  drawOverlayText();
-  const oScene = getOverlayScene();
-  if (overlayMesh.parent !== oScene) oScene.add(overlayMesh);
-  if (dimMesh.parent !== oScene) oScene.add(dimMesh);
-  overlayMesh.material.opacity = 1;
-  overlayMesh.visible = true;
-  dimMesh.material.opacity = 0.82;
-  dimMesh.visible = true;
 }
 
 // Defeat path: draw the text but keep it transparent; updateDefeatSequence
 // fades the dark-red dim and then the stats in.
 function prepareDefeatOverlay() {
+  drawOverlayText();
+  const oScene = getOverlayScene();
+  if (overlayMesh.parent !== oScene) oScene.add(overlayMesh);
+  overlayMesh.material.opacity = 0;
+  overlayMesh.visible = false; // revealed by the fade-in
+}
+
+// Victory path: identical prep to defeat (draw hidden, fade in), but the gold
+// tint + fanfare are set up by startVictorySequence.
+function prepareVictoryOverlay() {
   drawOverlayText();
   const oScene = getOverlayScene();
   if (overlayMesh.parent !== oScene) oScene.add(overlayMesh);
@@ -6876,6 +6997,7 @@ function loop(now) {
       triggerBreachShake(3); // dust/debris + shake
     }
     updateDefeatSequence(dt);
+    updateVictorySequence(dt); // gold win fade (no-op unless a victory triggered)
     updateEffects(dt);
     updateFortress(dt);
     updateHud(); // keep HUD visible on end screen

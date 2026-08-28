@@ -77,6 +77,12 @@ export const ENEMY_TYPES = {
 export const ESCALATION_HP_FACTOR = 3;
 export const SESSION_DURATION = 600;  // 10 minutes
 
+// --- Victory condition ---
+// The defence is "won" once the player survives to 1:30 (90s) OR sinks 45 ships,
+// provided the wall is still standing. Triggers the in-engine gold victory card.
+export const VICTORY_TIME = 90;   // seconds (1:30)
+export const VICTORY_KILLS = 45;  // ships sunk
+
 // --- Multi-currency economy (altar zones require beam contact) ---
 // 20% passive, 80% only while a beam is held on the altar zone.
 // Altars sit on the city ground BELOW the wall (y < WALL_Y).

@@ -383,6 +383,67 @@ export function playHeliosHorn() {
   tSrc.start(now); tSrc.stop(now + 0.015);
 }
 
+// --- Victory fanfare: a bright, resonant temple-trumpet flourish. A rising
+// major arpeggio (C-E-G) played on warm sawtooth "trumpets" through a lowpass,
+// capped by a ringing bell chord on the final note so it lands triumphant but
+// clean (the master compressor/lowpass keep it from getting shrill). ---
+export function playVictoryFanfare() {
+  if (!ensureCtx()) return;
+  const now = ctx.currentTime;
+  const out = ctx.createGain();
+  out.gain.value = 1;
+  out.connect(masterGain);
+
+  // Rising arpeggio: C5, E5, G5, then a held high C6 on top.
+  const notes = [
+    { f: 523.25, t: 0.00, dur: 0.32 },
+    { f: 659.25, t: 0.16, dur: 0.32 },
+    { f: 783.99, t: 0.32, dur: 0.45 },
+    { f: 1046.5, t: 0.52, dur: 0.9 },
+  ];
+  for (const n of notes) {
+    const t0 = now + n.t;
+    // Two slightly detuned saws = a fuller "brass" body.
+    for (const detune of [-4, 4]) {
+      const osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.value = n.f;
+      osc.detune.value = detune;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(2400, t0);
+      lp.frequency.exponentialRampToValueAtTime(1400, t0 + n.dur);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(0.09, t0 + 0.03);          // trumpet swell
+      g.gain.exponentialRampToValueAtTime(0.0005, t0 + n.dur);
+      osc.connect(lp).connect(g).connect(out);
+      osc.start(t0); osc.stop(t0 + n.dur + 0.05);
+    }
+  }
+
+  // Ringing bell chord seated on the final high note for a sacred "temple" tail.
+  const bellT = now + 0.52;
+  const bellFund = 1046.5; // C6
+  const bellHarm = [
+    { mult: 1, g: 0.12, decay: 2.6 },
+    { mult: 2, g: 0.07, decay: 2.0 },
+    { mult: 3, g: 0.04, decay: 1.5 },
+    { mult: 4.2, g: 0.02, decay: 1.1 }, // slightly inharmonic shimmer
+  ];
+  for (const h of bellHarm) {
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = bellFund * h.mult;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, bellT);
+    g.gain.linearRampToValueAtTime(h.g, bellT + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0005, bellT + h.decay);
+    osc.connect(g).connect(out);
+    osc.start(bellT); osc.stop(bellT + h.decay + 0.1);
+  }
+}
+
 // --- Zeus: deep acoustic THUNDER — a modulated low-frequency noise sweep that
 // rolls and rumbles (not an 8-bit zap). A short crack transient seats the
 // strike, then a long low-passed noise bed sweeps down while a slow tremolo

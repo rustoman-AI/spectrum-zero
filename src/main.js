@@ -12,7 +12,7 @@ import { initInput, tickDebug } from './input.js';
 import { initEnemies, updateEnemies, applySlowStates, getEnemyPool, getLastBreaches } from './enemy.js';
 import { updateSpawner, resetSpawner } from './enemy-spawner.js';
 import { updateDamage, getKillCount, updateBlockedLabels } from './damage.js';
-import { initSession, updateSession, addBreaches, isGameOver, isGameWon, getElapsed, updateHud, handleRestartTap, decayWallFlash, getWallHitFlash, getWallShake, tickWallShake, flashWallBarNotch, triggerWallShake, updateDefeatSequence } from './session.js';
+import { initSession, updateSession, addBreaches, isGameOver, isGameWon, getElapsed, updateHud, handleRestartTap, decayWallFlash, getWallHitFlash, getWallShake, tickWallShake, flashWallBarNotch, triggerWallShake, updateDefeatSequence, updateVictorySequence } from './session.js';
 import { initFoundries, updateFoundries, getFoundryColliders, getAltarAudioState } from './foundry.js';
 import { initFortress, updateFortress, triggerBreachShake, triggerImpactFlash } from './fortress.js';
 import { initCrafting, updateCraftingTray, isZeusAffordable } from './crafting.js';
@@ -90,6 +90,7 @@ function loop(now) {
       triggerBreachShake(3); // dust/debris + shake
     }
     updateDefeatSequence(dt);
+    updateVictorySequence(dt); // gold win fade (no-op unless a victory triggered)
     updateEffects(dt);
     updateFortress(dt);
     updateHud(); // keep HUD visible on end screen
