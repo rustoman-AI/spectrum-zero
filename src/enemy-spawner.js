@@ -28,11 +28,59 @@ let shieldBearerTimer = 0;
 let firstShieldSpawned = false;
 let shieldBearerLaneIndex = 0; // cycles through lanes
 
+// --- Scripted 90s opening (judge-facing tutorial curve) ---
+// Deterministic spawns for the first 90s. Each event fires once when the
+// session clock passes its time. After 90s the normal phase spawner takes over.
+const SCRIPT_END = 90;
+const OPENING_SCRIPT = [
+  // 0-20s: 3 slow skiffs, spaced — easy beam-aiming + altar-feeding tutorial
+  { t: 2,  fn: () => spawnEnemy('skiff', 2, 1.0) },
+  { t: 9,  fn: () => spawnEnemy('skiff', 1, 1.0) },
+  { t: 15, fn: () => spawnEnemy('skiff', 3, 1.0) },
+  // 20-45s: paired flank spawns — forces a 2nd mirror purchase
+  { t: 21, fn: () => { spawnEnemy('skiff', 0, 1.0); spawnEnemy('skiff', 4, 1.0); } },
+  { t: 28, fn: () => { spawnEnemy('skiff', 0, 1.0); spawnEnemy('skiff', 4, 1.0); } },
+  { t: 34, fn: () => { spawnEnemy('trireme', 0, 1.0); spawnEnemy('trireme', 4, 1.0); } },
+  { t: 40, fn: () => { spawnEnemy('trireme', 1, 1.0); spawnEnemy('trireme', 3, 1.0); } },
+  // 45-75s: shield-bearers + triremes — pushes Helios stun / Poseidon vortex
+  { t: 46, fn: () => spawnShieldFormation(2, 1.0) },
+  { t: 55, fn: () => { spawnShieldFormation(1, 1.05); spawnEnemy('trireme', 3, 1.05); } },
+  { t: 64, fn: () => { spawnShieldFormation(3, 1.1); spawnEnemy('trireme', 1, 1.1); } },
+  { t: 71, fn: () => { spawnEnemy('quadrireme', 2, 1.1); spawnEnemy('trireme', 0, 1.1); spawnEnemy('trireme', 4, 1.1); } },
+  // 75-90s: fast assault wave — tests defence + ultimate combos
+  { t: 76, fn: () => { for (let l = 0; l < 5; l++) spawnEnemy('skiff', l, 1.15); } },
+  { t: 81, fn: () => { spawnEnemy('trireme', 0, 1.2); spawnEnemy('trireme', 2, 1.2); spawnEnemy('trireme', 4, 1.2); } },
+  { t: 85, fn: () => { spawnShieldFormation(2, 1.2); spawnEnemy('quadrireme', 0, 1.2); spawnEnemy('quadrireme', 4, 1.2); } },
+  { t: 89, fn: () => { for (let l = 0; l < 5; l++) spawnEnemy('skiff', l, 1.25); } },
+];
+let scriptIndex = 0;
+
 export function getSpawnCount() { return totalSpawns; }
 export function getCurrentInterval() { return getInterval(); }
 
 export function updateSpawner(dt, sessionTime) {
   spawnerElapsed = sessionTime;
+
+  // --- Scripted opening: deterministic curve for the first 90s ---
+  if (spawnerElapsed < SCRIPT_END) {
+    while (scriptIndex < OPENING_SCRIPT.length && spawnerElapsed >= OPENING_SCRIPT[scriptIndex].t) {
+      OPENING_SCRIPT[scriptIndex].fn();
+      totalSpawns++;
+      scriptIndex++;
+    }
+    return; // suppress the procedural spawner during the scripted opening
+  }
+
+  // Reset the procedural timers the first time we cross out of the script so
+  // the phase spawner starts cleanly (no burst from a stale timer), and mark the
+  // shield-bearer intro as done (the script already taught it) so the periodic
+  // branch runs instead of re-spawning the lone "first" shield-bearer.
+  if (!firstShieldSpawned) {
+    firstShieldSpawned = true;
+    shieldBearerTimer = 20;
+    spawnTimer = getInterval();
+  }
+
   spawnTimer -= dt;
   if (spawnTimer <= 0 && spawnerElapsed >= INITIAL_DELAY) {
     doSpawn();
@@ -86,6 +134,7 @@ export function resetSpawner() {
   shieldBearerTimer = 0;
   firstShieldSpawned = false;
   shieldBearerLaneIndex = 0;
+  scriptIndex = 0;
 }
 
 function getInterval() {

@@ -75,13 +75,26 @@ export function updateHelios(dt) {
     heliosFaithRemaining -= grant;
   }
 
-  // Bloom opacity: quick rise, hold bright, fade out at the end.
+  // Two-stage flare so ship silhouettes stay readable:
+  //  - 0..0.4s: bright near-white whiteout bloom (the "flash").
+  //  - 0.4s..end: a low-opacity golden sun-glare so the fleet is still visible
+  //    through the light, with a short fade at the very end.
   const elapsed = CFG.duration - heliosTimer;
-  const fadeIn = Math.min(1, elapsed * 4);        // ~0.25s rise
-  const fadeOut = Math.min(1, heliosTimer * 2);   // ~0.5s tail
-  const pulse = 0.85 + 0.15 * Math.sin(elapsed * 12); // subtle shimmer
   if (bloomMesh) {
-    bloomMesh.material.opacity = 0.55 * fadeIn * fadeOut * pulse;
+    const WHITEOUT = 0.4;
+    const mat = bloomMesh.material;
+    if (elapsed < WHITEOUT) {
+      // Rise to a bright whiteout over the first 0.4s.
+      const t = elapsed / WHITEOUT;           // 0..1
+      mat.color.setHex(0xfff4d8);             // near-white warm
+      mat.opacity = 0.9 * t;
+    } else {
+      // Golden glare for the rest — transparent enough to see silhouettes.
+      const tailFade = Math.min(1, heliosTimer * 2.5); // fade over last ~0.4s
+      const shimmer = 0.9 + 0.1 * Math.sin(elapsed * 10);
+      mat.color.setHex(0xffcc55);             // golden
+      mat.opacity = 0.22 * tailFade * shimmer;
+    }
   }
 
   if (heliosTimer <= 0) {

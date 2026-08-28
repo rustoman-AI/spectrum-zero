@@ -286,6 +286,7 @@ export function spawnEnemy(type, lane, hpMultiplier, yOffset) {
       e.baseSpeed = template.speed;
       e.burn = 0;
       e.heat = 0;
+      e.heatGrace = 0;
       e.slowed = false;
       e.bandsHitting = 0;
       e.lastHitColour = 0;

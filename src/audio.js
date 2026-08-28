@@ -169,6 +169,37 @@ export function playDeflect() {
   osc.onended = () => activeVoices--;
 }
 
+// --- Shield ricochet: short, bright high-frequency metallic tick ---
+let lastRicochetTime = 0;
+export function playRicochet() {
+  if (!ensureCtx() || activeVoices >= MAX_VOICES) return;
+  const now = ctx.currentTime;
+  // Rate-limit tighter than deflect — these fire fast, keep them tick-like.
+  if (now - lastRicochetTime < 0.08) return;
+  lastRicochetTime = now;
+  activeVoices++;
+  // Two quick high partials for a metallic "ting"
+  const osc = ctx.createOscillator();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(3200, now);
+  osc.frequency.exponentialRampToValueAtTime(2100, now + 0.04);
+  const osc2 = ctx.createOscillator();
+  osc2.type = 'triangle';
+  osc2.frequency.setValueAtTime(4700, now);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.09, now);
+  g.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+  const hp = ctx.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = 1500;
+  osc.connect(hp);
+  osc2.connect(hp);
+  hp.connect(g).connect(masterGain);
+  osc.start(now); osc.stop(now + 0.07);
+  osc2.start(now); osc2.stop(now + 0.05);
+  osc.onended = () => activeVoices--;
+}
+
 // --- Wall damage: dull impact ---
 export function playWallHit() {
   if (!ensureCtx() || activeVoices >= MAX_VOICES) return;

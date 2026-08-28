@@ -404,7 +404,8 @@ const PHASE_3_END = 540;   // 9:00 - main battle
 // Phase 4: 9:00-10:00 - flagship
 
 // --- Heat decay ---
-const HEAT_DECAY_RATE = 0.15;
+const HEAT_DECAY_RATE = 0.10;      // heat drains at 10%/s once decaying
+const HEAT_DECAY_GRACE = 0.5;      // grace before decay starts (holding a beam feels rewarding)
 
 // --- Wall ---
 const WALL_MAX_HP = 100;
@@ -574,9 +575,15 @@ function getCamera() { return camera; }
 function getRenderer() { return renderer; }
 function getWorldWidth() { return worldWidth; }
 
-function render() {
+function render(shake) {
+  // Optional camera shake (e.g. wall damage): nudge the main camera, render,
+  // then restore. The overlay camera is left steady so the HUD doesn't jitter.
+  const ox = shake ? shake.x : 0;
+  const oy = shake ? shake.y : 0;
+  if (ox || oy) { camera.position.x = ox; camera.position.y = oy; }
   renderer.clear();
   renderer.render(scene, camera);
+  if (ox || oy) { camera.position.x = 0; camera.position.y = 0; }
   // Second pass: overlay scene renders on top without clearing
   renderer.clearDepth();
   renderer.render(overlayScene, overlayCamera);
@@ -1686,13 +1693,26 @@ function updateHelios(dt) {
     heliosFaithRemaining -= grant;
   }
 
-  // Bloom opacity: quick rise, hold bright, fade out at the end.
+  // Two-stage flare so ship silhouettes stay readable:
+  //  - 0..0.4s: bright near-white whiteout bloom (the "flash").
+  //  - 0.4s..end: a low-opacity golden sun-glare so the fleet is still visible
+  //    through the light, with a short fade at the very end.
   const elapsed = CFG.duration - heliosTimer;
-  const fadeIn = Math.min(1, elapsed * 4);        // ~0.25s rise
-  const fadeOut = Math.min(1, heliosTimer * 2);   // ~0.5s tail
-  const pulse = 0.85 + 0.15 * Math.sin(elapsed * 12); // subtle shimmer
   if (bloomMesh) {
-    bloomMesh.material.opacity = 0.55 * fadeIn * fadeOut * pulse;
+    const WHITEOUT = 0.4;
+    const mat = bloomMesh.material;
+    if (elapsed < WHITEOUT) {
+      // Rise to a bright whiteout over the first 0.4s.
+      const t = elapsed / WHITEOUT;           // 0..1
+      mat.color.setHex(0xfff4d8);             // near-white warm
+      mat.opacity = 0.9 * t;
+    } else {
+      // Golden glare for the rest — transparent enough to see silhouettes.
+      const tailFade = Math.min(1, heliosTimer * 2.5); // fade over last ~0.4s
+      const shimmer = 0.9 + 0.1 * Math.sin(elapsed * 10);
+      mat.color.setHex(0xffcc55);             // golden
+      mat.opacity = 0.22 * tailFade * shimmer;
+    }
   }
 
   if (heliosTimer <= 0) {
@@ -3028,6 +3048,7 @@ function spawnEnemy(type, lane, hpMultiplier, yOffset) {
       e.baseSpeed = template.speed;
       e.burn = 0;
       e.heat = 0;
+      e.heatGrace = 0;
       e.slowed = false;
       e.bandsHitting = 0;
       e.lastHitColour = 0;
@@ -3238,11 +3259,59 @@ let shieldBearerTimer = 0;
 let firstShieldSpawned = false;
 let shieldBearerLaneIndex = 0; // cycles through lanes
 
+// --- Scripted 90s opening (judge-facing tutorial curve) ---
+// Deterministic spawns for the first 90s. Each event fires once when the
+// session clock passes its time. After 90s the normal phase spawner takes over.
+const SCRIPT_END = 90;
+const OPENING_SCRIPT = [
+  // 0-20s: 3 slow skiffs, spaced — easy beam-aiming + altar-feeding tutorial
+  { t: 2,  fn: () => spawnEnemy('skiff', 2, 1.0) },
+  { t: 9,  fn: () => spawnEnemy('skiff', 1, 1.0) },
+  { t: 15, fn: () => spawnEnemy('skiff', 3, 1.0) },
+  // 20-45s: paired flank spawns — forces a 2nd mirror purchase
+  { t: 21, fn: () => { spawnEnemy('skiff', 0, 1.0); spawnEnemy('skiff', 4, 1.0); } },
+  { t: 28, fn: () => { spawnEnemy('skiff', 0, 1.0); spawnEnemy('skiff', 4, 1.0); } },
+  { t: 34, fn: () => { spawnEnemy('trireme', 0, 1.0); spawnEnemy('trireme', 4, 1.0); } },
+  { t: 40, fn: () => { spawnEnemy('trireme', 1, 1.0); spawnEnemy('trireme', 3, 1.0); } },
+  // 45-75s: shield-bearers + triremes — pushes Helios stun / Poseidon vortex
+  { t: 46, fn: () => spawnShieldFormation(2, 1.0) },
+  { t: 55, fn: () => { spawnShieldFormation(1, 1.05); spawnEnemy('trireme', 3, 1.05); } },
+  { t: 64, fn: () => { spawnShieldFormation(3, 1.1); spawnEnemy('trireme', 1, 1.1); } },
+  { t: 71, fn: () => { spawnEnemy('quadrireme', 2, 1.1); spawnEnemy('trireme', 0, 1.1); spawnEnemy('trireme', 4, 1.1); } },
+  // 75-90s: fast assault wave — tests defence + ultimate combos
+  { t: 76, fn: () => { for (let l = 0; l < 5; l++) spawnEnemy('skiff', l, 1.15); } },
+  { t: 81, fn: () => { spawnEnemy('trireme', 0, 1.2); spawnEnemy('trireme', 2, 1.2); spawnEnemy('trireme', 4, 1.2); } },
+  { t: 85, fn: () => { spawnShieldFormation(2, 1.2); spawnEnemy('quadrireme', 0, 1.2); spawnEnemy('quadrireme', 4, 1.2); } },
+  { t: 89, fn: () => { for (let l = 0; l < 5; l++) spawnEnemy('skiff', l, 1.25); } },
+];
+let scriptIndex = 0;
+
 function getSpawnCount() { return totalSpawns; }
 function getCurrentInterval() { return getInterval(); }
 
 function updateSpawner(dt, sessionTime) {
   spawnerElapsed = sessionTime;
+
+  // --- Scripted opening: deterministic curve for the first 90s ---
+  if (spawnerElapsed < SCRIPT_END) {
+    while (scriptIndex < OPENING_SCRIPT.length && spawnerElapsed >= OPENING_SCRIPT[scriptIndex].t) {
+      OPENING_SCRIPT[scriptIndex].fn();
+      totalSpawns++;
+      scriptIndex++;
+    }
+    return; // suppress the procedural spawner during the scripted opening
+  }
+
+  // Reset the procedural timers the first time we cross out of the script so
+  // the phase spawner starts cleanly (no burst from a stale timer), and mark the
+  // shield-bearer intro as done (the script already taught it) so the periodic
+  // branch runs instead of re-spawning the lone "first" shield-bearer.
+  if (!firstShieldSpawned) {
+    firstShieldSpawned = true;
+    shieldBearerTimer = 20;
+    spawnTimer = getInterval();
+  }
+
   spawnTimer -= dt;
   if (spawnTimer <= 0 && spawnerElapsed >= INITIAL_DELAY) {
     doSpawn();
@@ -3296,6 +3365,7 @@ function resetSpawner() {
   shieldBearerTimer = 0;
   firstShieldSpawned = false;
   shieldBearerLaneIndex = 0;
+  scriptIndex = 0;
 }
 
 function getInterval() {
@@ -4357,6 +4427,37 @@ function playDeflect() {
   osc.onended = () => activeVoices--;
 }
 
+// --- Shield ricochet: short, bright high-frequency metallic tick ---
+let lastRicochetTime = 0;
+function playRicochet() {
+  if (!ensureCtx() || activeVoices >= MAX_VOICES) return;
+  const now = ctx.currentTime;
+  // Rate-limit tighter than deflect — these fire fast, keep them tick-like.
+  if (now - lastRicochetTime < 0.08) return;
+  lastRicochetTime = now;
+  activeVoices++;
+  // Two quick high partials for a metallic "ting"
+  const osc = ctx.createOscillator();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(3200, now);
+  osc.frequency.exponentialRampToValueAtTime(2100, now + 0.04);
+  const osc2 = ctx.createOscillator();
+  osc2.type = 'triangle';
+  osc2.frequency.setValueAtTime(4700, now);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.09, now);
+  g.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+  const hp = ctx.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = 1500;
+  osc.connect(hp);
+  osc2.connect(hp);
+  hp.connect(g).connect(masterGain);
+  osc.start(now); osc.stop(now + 0.07);
+  osc2.start(now); osc2.stop(now + 0.05);
+  osc.onended = () => activeVoices--;
+}
+
 // --- Wall damage: dull impact ---
 function playWallHit() {
   if (!ensureCtx() || activeVoices >= MAX_VOICES) return;
@@ -4638,20 +4739,16 @@ function updateDamage(dt) {
             // Angle from vertical: atan2(|horizontal|, |vertical|)
             const angleFromVert = Math.atan2(Math.abs(dx / len), Math.abs(dy / len)) * (180 / Math.PI);
             if (angleFromVert <= enemy.shieldAngle) {
-              // Blocked — deflection sparks + metallic sound + label, at the
-              // exact point where the beam meets the shield plate.
+              // Blocked — metallic spark deflection burst + high-frequency
+              // ricochet tick at the exact point the beam meets the plate.
+              // (No floating text: the sparks + ricochet read instantly.)
               const cp = segmentBoxEntry(seg, ex, ey, ENEMY_HIT_HALF_W, ENEMY_HIT_HALF_H);
               const bx = cp ? cp.x : ex;
               const by = cp ? cp.y : ey + ENEMY_HIT_HALF_H;
-              if (Math.random() < dt * 8) {
-                spawnContactGlow(bx, by, 0xccaa44, 5);
-                spawnSparks(bx, by, 0xffcc66, 3);
-                playDeflect();
-              }
-              // Show "BLOCKED" label (throttled to once per ~1s per enemy)
-              if (!enemy._lastBlockLabel || performance.now() - enemy._lastBlockLabel > 1000) {
-                enemy._lastBlockLabel = performance.now();
-                spawnBlockedLabel(ex, ey + ENEMY_HIT_HALF_H + 2);
+              if (Math.random() < dt * 14) {
+                spawnContactGlow(bx, by, 0xfff0c0, 12); // bright metallic flash
+                spawnSparks(bx, by, 0xffdd88, 5);       // fan of hot sparks
+                playRicochet();
               }
               enemy.shieldBlocking = true;
               continue; // this segment does no damage
@@ -4706,6 +4803,9 @@ function updateDamage(dt) {
       // Heat accumulator: damage adds heat, enemy dies when heat >= effectiveHP
       enemy.heat += dmg * dt;
       enemy.burn = enemy.heat / enemy.maxHp;
+      // Refresh the decay grace: heat won't start draining until the beam has
+      // been off the target for HEAT_DECAY_GRACE seconds.
+      enemy.heatGrace = HEAT_DECAY_GRACE;
 
       // Contact FX at the exact beam-hull contact point. Throttled (not every
       // frame) so the small clamped glow reads as a lively spark, not a
@@ -4730,10 +4830,15 @@ function updateDamage(dt) {
       }
     } else {
       enemy.bandsHitting = 0;
-      // Heat decay: accumulated heat cools when beam is not on target
+      // Heat decay: after a 0.5s grace period (so holding a beam feels
+      // rewarding), accumulated heat cools at 10%/s.
       if (enemy.heat > 0) {
-        enemy.heat = Math.max(0, enemy.heat - enemy.maxHp * HEAT_DECAY_RATE * dt);
-        enemy.burn = enemy.heat / enemy.maxHp;
+        if (enemy.heatGrace > 0) {
+          enemy.heatGrace -= dt;
+        } else {
+          enemy.heat = Math.max(0, enemy.heat - enemy.maxHp * HEAT_DECAY_RATE * dt);
+          enemy.burn = enemy.heat / enemy.maxHp;
+        }
       }
     }
   }
@@ -4813,58 +4918,10 @@ function segmentBoxEntry(seg, cx, cy, hw, hh) {
   return { x: sx + dx * tmin, y: sy + dy * tmin };
 }
 
-// --- "BLOCKED" floating label ---
-const blockedLabels = [];
-let blockedTexture = null;
-
-function getBlockedTexture() {
-  if (blockedTexture) return blockedTexture;
-  const c = document.createElement('canvas');
-  c.width = 128; c.height = 32;
-  const ctx = c.getContext('2d');
-  // Bright white text with orange stroke for maximum contrast
-  ctx.strokeStyle = '#FF6600';
-  ctx.lineWidth = 3;
-  ctx.font = 'bold 18px monospace';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.strokeText('BLOCKED', 64, 16);
-  ctx.fillStyle = '#FFFFFF';
-  ctx.fillText('BLOCKED', 64, 16);
-  blockedTexture = new THREE.CanvasTexture(c);
-  blockedTexture.minFilter = THREE.LinearFilter;
-  blockedTexture.premultiplyAlpha = false;
-  return blockedTexture;
-}
-
-function spawnBlockedLabel(x, y) {
-  const scene = getScene();
-  const geo = new THREE.PlaneGeometry(7, 2);
-  const mat = new THREE.MeshBasicMaterial({
-    map: getBlockedTexture(), transparent: true, opacity: 1, alphaTest: 0.05, depthWrite: false
-  });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(x, y, 7);
-  scene.add(mesh);
-  blockedLabels.push({ mesh, life: 1.0, vy: 5 });
-}
-
-// Called from main loop to animate floating labels
-function updateBlockedLabels(dt) {
-  for (let i = blockedLabels.length - 1; i >= 0; i--) {
-    const l = blockedLabels[i];
-    l.life -= dt;
-    l.mesh.position.y += l.vy * dt;
-    l.mesh.material.opacity = Math.max(0, l.life / 0.8);
-    if (l.life <= 0) {
-      const scene = getScene();
-      scene.remove(l.mesh);
-      l.mesh.geometry.dispose();
-      l.mesh.material.dispose();
-      blockedLabels.splice(i, 1);
-    }
-  }
-}
+// Shield deflection is now shown purely with metallic sparks + a ricochet tick
+// (see the shield-block branch above). The old floating "BLOCKED" label was
+// removed; this stub remains so the main loop's call is a harmless no-op.
+function updateBlockedLabels(dt) {}
 
 
 // === src/session.js ===
@@ -4912,6 +4969,7 @@ let overlayCanvas = null;
 let overlayCtx = null;
 let overlayTexture = null;
 let dimMesh = null;
+let wallFlashMesh = null; // full-screen red flash on wall damage
 
 function initSession() {
   elapsed = 0;
@@ -4954,16 +5012,113 @@ function addBreaches(damage) {
   if (damage <= 0 || gameOver) return;
   if (DEV.INVINCIBLE) return;
   wallIntegrity = Math.max(0, wallIntegrity - damage);
-  // Wall hit feedback: red edge flash
+  // Wall hit feedback: red screen flash + camera shake
   wallHitFlash = 0.3;
+  wallShakeTimer = WALL_SHAKE_DURATION;
+  wallShakeIntensity = Math.min(1.2 + damage * 0.15, 3.0);
   if (wallIntegrity <= 0) {
     triggerLose();
   }
 }
 
+// --- Camera shake on wall damage ---
+let wallShakeTimer = 0;
+let wallShakeIntensity = 0;
+const WALL_SHAKE_DURATION = 0.35;
+function getWallShake() {
+  if (wallShakeTimer <= 0) return { x: 0, y: 0 };
+  const t = wallShakeTimer / WALL_SHAKE_DURATION; // 1 -> 0 envelope
+  return {
+    x: (Math.random() - 0.5) * wallShakeIntensity * t,
+    y: (Math.random() - 0.5) * wallShakeIntensity * 0.6 * t,
+  };
+}
+function tickWallShake(dt) { if (wallShakeTimer > 0) wallShakeTimer -= dt; }
+
 let wallHitFlash = 0;
 function getWallHitFlash() { return wallHitFlash; }
-function decayWallFlash(dt) { if (wallHitFlash > 0) wallHitFlash -= dt; }
+function decayWallFlash(dt) {
+  if (wallHitFlash > 0) wallHitFlash -= dt;
+  // Drive the red screen flash: subtle, peaks ~0.32 and fades with wallHitFlash.
+  if (wallFlashMesh) {
+    const a = Math.max(0, wallHitFlash) / 0.3; // 0..1 over the flash life
+    wallFlashMesh.material.opacity = a * 0.32;
+    wallFlashMesh.visible = a > 0.001;
+  }
+}
+
+// Draw the Wall Integrity health bar centred at the top of the HUD strip.
+// Green >50%, amber 25-50%, pulsing red <25%.
+function drawWallBar() {
+  const frac = Math.max(0, Math.min(1, wallIntegrity / WALL_MAX_HP));
+  // Bar geometry within the 512x64 HUD canvas (top-centre).
+  const barW = 230, barH = 16;
+  const bx = 256 - barW / 2;  // centred horizontally
+  const by = 6;
+
+  // Colour state
+  let fill, glow;
+  if (frac > 0.5) { fill = '#3ad14a'; glow = null; }              // green
+  else if (frac > 0.25) { fill = '#e0a92a'; glow = null; }        // amber
+  else {
+    // Pulsing red under 25%
+    const pulse = 0.55 + 0.45 * Math.sin(performance.now() * 0.012);
+    const r = Math.floor(200 + 55 * pulse);
+    fill = `rgb(${r},40,40)`;
+    glow = `rgba(255,60,60,${0.4 * pulse})`;
+  }
+
+  // Track (dark rounded rect)
+  hudCtx.fillStyle = 'rgba(0,0,0,0.55)';
+  roundRect(hudCtx, bx - 2, by - 2, barW + 4, barH + 4, 4);
+  hudCtx.fill();
+
+  // Optional glow behind a critical bar
+  if (glow) {
+    hudCtx.save();
+    hudCtx.shadowColor = glow;
+    hudCtx.shadowBlur = 12;
+    hudCtx.fillStyle = fill;
+    roundRect(hudCtx, bx, by, Math.max(0, barW * frac), barH, 3);
+    hudCtx.fill();
+    hudCtx.restore();
+  } else {
+    hudCtx.fillStyle = fill;
+    roundRect(hudCtx, bx, by, Math.max(0, barW * frac), barH, 3);
+    hudCtx.fill();
+  }
+
+  // Border
+  hudCtx.strokeStyle = 'rgba(255,255,255,0.5)';
+  hudCtx.lineWidth = 1.5;
+  roundRect(hudCtx, bx, by, barW, barH, 3);
+  hudCtx.stroke();
+
+  // "WALL" label just left of the bar
+  hudCtx.fillStyle = '#cfd8e0';
+  hudCtx.font = 'bold 11px monospace';
+  hudCtx.textAlign = 'right';
+  hudCtx.textBaseline = 'middle';
+  hudCtx.fillText('WALL', bx - 8, by + barH / 2 + 1);
+
+  // Percentage text centred on the bar
+  hudCtx.fillStyle = '#ffffff';
+  hudCtx.font = 'bold 12px monospace';
+  hudCtx.textAlign = 'center';
+  hudCtx.fillText(Math.ceil(wallIntegrity) + '%', 256, by + barH / 2 + 1);
+  hudCtx.textBaseline = 'alphabetic';
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
 
 function updateHud() {
   if (!hudCtx) return;
@@ -4978,11 +5133,10 @@ function updateHud() {
   hudCtx.font = 'bold 24px monospace';
   hudCtx.textAlign = 'left';
   hudCtx.fillText(timeStr, 8, 20);
-  // Wall (top-right)
-  hudCtx.textAlign = 'right';
-  hudCtx.fillStyle = wallIntegrity > 30 ? '#ffffff' : '#ff4444';
-  hudCtx.font = '18px monospace';
-  hudCtx.fillText('Wall:' + Math.ceil(wallIntegrity) + '%', 504, 20);
+
+  // --- Wall Integrity: primary health bar (top-centre) ---
+  drawWallBar();
+
   // Resources (bottom row)
   hudCtx.font = '13px monospace';
   hudCtx.textAlign = 'left';
@@ -5008,6 +5162,9 @@ function resetSession() {
   gameOver = false;
   gameWon = false;
   devourerKilled = false;
+  wallHitFlash = 0;
+  wallShakeTimer = 0;
+  if (wallFlashMesh) { wallFlashMesh.material.opacity = 0; wallFlashMesh.visible = false; }
   // Each reset wrapped so one failure can't leave the overlay stuck
   try { resetEnemies(); } catch (e) { console.error('resetEnemies', e); }
   try { resetSpawner(); } catch (e) { console.error('resetSpawner', e); }
@@ -5108,6 +5265,17 @@ function createOverlay() {
   dimMesh.position.set(0, 0, 0);
   dimMesh.visible = false;
   oScene.add(dimMesh);
+
+  // Full-screen red flash on wall damage (opacity driven by wallHitFlash)
+  const flashGeo = new THREE.PlaneGeometry(worldWidth * 1.3, WORLD_HEIGHT * 1.3);
+  const flashMat = new THREE.MeshBasicMaterial({
+    color: 0xff2222, transparent: true, opacity: 0, depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+  wallFlashMesh = new THREE.Mesh(flashGeo, flashMat);
+  wallFlashMesh.position.set(0, 0, 15);
+  wallFlashMesh.visible = false;
+  oScene.add(wallFlashMesh);
 
   overlayCanvas = document.createElement('canvas');
   overlayCanvas.width = 256;
@@ -5871,8 +6039,11 @@ function loop(now) {
   updateCraftingTray();
   tickDebug(dt);
 
+  // Camera shake from wall damage
+  tickWallShake(dt);
+
   // --- Render ---
-  render();
+  render(getWallShake());
 }
 
 // Boot — called by intro layer after video ends (or skip)

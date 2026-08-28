@@ -65,9 +65,15 @@ export function getCamera() { return camera; }
 export function getRenderer() { return renderer; }
 export function getWorldWidth() { return worldWidth; }
 
-export function render() {
+export function render(shake) {
+  // Optional camera shake (e.g. wall damage): nudge the main camera, render,
+  // then restore. The overlay camera is left steady so the HUD doesn't jitter.
+  const ox = shake ? shake.x : 0;
+  const oy = shake ? shake.y : 0;
+  if (ox || oy) { camera.position.x = ox; camera.position.y = oy; }
   renderer.clear();
   renderer.render(scene, camera);
+  if (ox || oy) { camera.position.x = 0; camera.position.y = 0; }
   // Second pass: overlay scene renders on top without clearing
   renderer.clearDepth();
   renderer.render(overlayScene, overlayCamera);

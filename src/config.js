@@ -126,7 +126,8 @@ export const PHASE_3_END = 540;   // 9:00 - main battle
 // Phase 4: 9:00-10:00 - flagship
 
 // --- Heat decay ---
-export const HEAT_DECAY_RATE = 0.15;
+export const HEAT_DECAY_RATE = 0.10;      // heat drains at 10%/s once decaying
+export const HEAT_DECAY_GRACE = 0.5;      // grace before decay starts (holding a beam feels rewarding)
 
 // --- Wall ---
 export const WALL_MAX_HP = 100;

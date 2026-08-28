@@ -42,6 +42,7 @@ let overlayCanvas = null;
 let overlayCtx = null;
 let overlayTexture = null;
 let dimMesh = null;
+let wallFlashMesh = null; // full-screen red flash on wall damage
 
 export function initSession() {
   elapsed = 0;
@@ -84,16 +85,113 @@ export function addBreaches(damage) {
   if (damage <= 0 || gameOver) return;
   if (DEV.INVINCIBLE) return;
   wallIntegrity = Math.max(0, wallIntegrity - damage);
-  // Wall hit feedback: red edge flash
+  // Wall hit feedback: red screen flash + camera shake
   wallHitFlash = 0.3;
+  wallShakeTimer = WALL_SHAKE_DURATION;
+  wallShakeIntensity = Math.min(1.2 + damage * 0.15, 3.0);
   if (wallIntegrity <= 0) {
     triggerLose();
   }
 }
 
+// --- Camera shake on wall damage ---
+let wallShakeTimer = 0;
+let wallShakeIntensity = 0;
+const WALL_SHAKE_DURATION = 0.35;
+export function getWallShake() {
+  if (wallShakeTimer <= 0) return { x: 0, y: 0 };
+  const t = wallShakeTimer / WALL_SHAKE_DURATION; // 1 -> 0 envelope
+  return {
+    x: (Math.random() - 0.5) * wallShakeIntensity * t,
+    y: (Math.random() - 0.5) * wallShakeIntensity * 0.6 * t,
+  };
+}
+export function tickWallShake(dt) { if (wallShakeTimer > 0) wallShakeTimer -= dt; }
+
 let wallHitFlash = 0;
 export function getWallHitFlash() { return wallHitFlash; }
-export function decayWallFlash(dt) { if (wallHitFlash > 0) wallHitFlash -= dt; }
+export function decayWallFlash(dt) {
+  if (wallHitFlash > 0) wallHitFlash -= dt;
+  // Drive the red screen flash: subtle, peaks ~0.32 and fades with wallHitFlash.
+  if (wallFlashMesh) {
+    const a = Math.max(0, wallHitFlash) / 0.3; // 0..1 over the flash life
+    wallFlashMesh.material.opacity = a * 0.32;
+    wallFlashMesh.visible = a > 0.001;
+  }
+}
+
+// Draw the Wall Integrity health bar centred at the top of the HUD strip.
+// Green >50%, amber 25-50%, pulsing red <25%.
+function drawWallBar() {
+  const frac = Math.max(0, Math.min(1, wallIntegrity / WALL_MAX_HP));
+  // Bar geometry within the 512x64 HUD canvas (top-centre).
+  const barW = 230, barH = 16;
+  const bx = 256 - barW / 2;  // centred horizontally
+  const by = 6;
+
+  // Colour state
+  let fill, glow;
+  if (frac > 0.5) { fill = '#3ad14a'; glow = null; }              // green
+  else if (frac > 0.25) { fill = '#e0a92a'; glow = null; }        // amber
+  else {
+    // Pulsing red under 25%
+    const pulse = 0.55 + 0.45 * Math.sin(performance.now() * 0.012);
+    const r = Math.floor(200 + 55 * pulse);
+    fill = `rgb(${r},40,40)`;
+    glow = `rgba(255,60,60,${0.4 * pulse})`;
+  }
+
+  // Track (dark rounded rect)
+  hudCtx.fillStyle = 'rgba(0,0,0,0.55)';
+  roundRect(hudCtx, bx - 2, by - 2, barW + 4, barH + 4, 4);
+  hudCtx.fill();
+
+  // Optional glow behind a critical bar
+  if (glow) {
+    hudCtx.save();
+    hudCtx.shadowColor = glow;
+    hudCtx.shadowBlur = 12;
+    hudCtx.fillStyle = fill;
+    roundRect(hudCtx, bx, by, Math.max(0, barW * frac), barH, 3);
+    hudCtx.fill();
+    hudCtx.restore();
+  } else {
+    hudCtx.fillStyle = fill;
+    roundRect(hudCtx, bx, by, Math.max(0, barW * frac), barH, 3);
+    hudCtx.fill();
+  }
+
+  // Border
+  hudCtx.strokeStyle = 'rgba(255,255,255,0.5)';
+  hudCtx.lineWidth = 1.5;
+  roundRect(hudCtx, bx, by, barW, barH, 3);
+  hudCtx.stroke();
+
+  // "WALL" label just left of the bar
+  hudCtx.fillStyle = '#cfd8e0';
+  hudCtx.font = 'bold 11px monospace';
+  hudCtx.textAlign = 'right';
+  hudCtx.textBaseline = 'middle';
+  hudCtx.fillText('WALL', bx - 8, by + barH / 2 + 1);
+
+  // Percentage text centred on the bar
+  hudCtx.fillStyle = '#ffffff';
+  hudCtx.font = 'bold 12px monospace';
+  hudCtx.textAlign = 'center';
+  hudCtx.fillText(Math.ceil(wallIntegrity) + '%', 256, by + barH / 2 + 1);
+  hudCtx.textBaseline = 'alphabetic';
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
 
 export function updateHud() {
   if (!hudCtx) return;
@@ -108,11 +206,10 @@ export function updateHud() {
   hudCtx.font = 'bold 24px monospace';
   hudCtx.textAlign = 'left';
   hudCtx.fillText(timeStr, 8, 20);
-  // Wall (top-right)
-  hudCtx.textAlign = 'right';
-  hudCtx.fillStyle = wallIntegrity > 30 ? '#ffffff' : '#ff4444';
-  hudCtx.font = '18px monospace';
-  hudCtx.fillText('Wall:' + Math.ceil(wallIntegrity) + '%', 504, 20);
+
+  // --- Wall Integrity: primary health bar (top-centre) ---
+  drawWallBar();
+
   // Resources (bottom row)
   hudCtx.font = '13px monospace';
   hudCtx.textAlign = 'left';
@@ -138,6 +235,9 @@ export function resetSession() {
   gameOver = false;
   gameWon = false;
   devourerKilled = false;
+  wallHitFlash = 0;
+  wallShakeTimer = 0;
+  if (wallFlashMesh) { wallFlashMesh.material.opacity = 0; wallFlashMesh.visible = false; }
   // Each reset wrapped so one failure can't leave the overlay stuck
   try { resetEnemies(); } catch (e) { console.error('resetEnemies', e); }
   try { resetSpawner(); } catch (e) { console.error('resetSpawner', e); }
@@ -238,6 +338,17 @@ function createOverlay() {
   dimMesh.position.set(0, 0, 0);
   dimMesh.visible = false;
   oScene.add(dimMesh);
+
+  // Full-screen red flash on wall damage (opacity driven by wallHitFlash)
+  const flashGeo = new THREE.PlaneGeometry(worldWidth * 1.3, WORLD_HEIGHT * 1.3);
+  const flashMat = new THREE.MeshBasicMaterial({
+    color: 0xff2222, transparent: true, opacity: 0, depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+  wallFlashMesh = new THREE.Mesh(flashGeo, flashMat);
+  wallFlashMesh.position.set(0, 0, 15);
+  wallFlashMesh.visible = false;
+  oScene.add(wallFlashMesh);
 
   overlayCanvas = document.createElement('canvas');
   overlayCanvas.width = 256;

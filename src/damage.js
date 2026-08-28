@@ -14,7 +14,7 @@
 
 import {
   D_BASE, SYNERGY_BONUS, COLOUR_GOLD, ENEMY_LANE_COUNT,
-  CHORUS_SLOW_FACTOR, HEAT_DECAY_RATE, RESONANCE_MULTIPLIER, PRISM_TIERS
+  CHORUS_SLOW_FACTOR, HEAT_DECAY_RATE, HEAT_DECAY_GRACE, RESONANCE_MULTIPLIER, PRISM_TIERS
 } from './config.js';
 import { getSegments, getResonanceActive } from './beam.js';
 import { getEnemyPool, deactivateEnemy, applyGoldSlow, triggerKillEffect } from './enemy.js';
@@ -23,7 +23,7 @@ import { getFocusMultiplier } from './crafting.js';
 import { addSlagDirect } from './foundry.js';
 import { spawnContactGlow, spawnSparks, spawnDestruction } from './effects.js';
 import { getActiveTier } from './prism.js';
-import { playSinkGlug, playDeflect } from './audio.js';
+import { playSinkGlug, playRicochet } from './audio.js';
 import { isShieldDisabled } from './helios.js';
 
 const ENEMY_HIT_HALF_W = 3;
@@ -73,20 +73,16 @@ export function updateDamage(dt) {
             // Angle from vertical: atan2(|horizontal|, |vertical|)
             const angleFromVert = Math.atan2(Math.abs(dx / len), Math.abs(dy / len)) * (180 / Math.PI);
             if (angleFromVert <= enemy.shieldAngle) {
-              // Blocked — deflection sparks + metallic sound + label, at the
-              // exact point where the beam meets the shield plate.
+              // Blocked — metallic spark deflection burst + high-frequency
+              // ricochet tick at the exact point the beam meets the plate.
+              // (No floating text: the sparks + ricochet read instantly.)
               const cp = segmentBoxEntry(seg, ex, ey, ENEMY_HIT_HALF_W, ENEMY_HIT_HALF_H);
               const bx = cp ? cp.x : ex;
               const by = cp ? cp.y : ey + ENEMY_HIT_HALF_H;
-              if (Math.random() < dt * 8) {
-                spawnContactGlow(bx, by, 0xccaa44, 5);
-                spawnSparks(bx, by, 0xffcc66, 3);
-                playDeflect();
-              }
-              // Show "BLOCKED" label (throttled to once per ~1s per enemy)
-              if (!enemy._lastBlockLabel || performance.now() - enemy._lastBlockLabel > 1000) {
-                enemy._lastBlockLabel = performance.now();
-                spawnBlockedLabel(ex, ey + ENEMY_HIT_HALF_H + 2);
+              if (Math.random() < dt * 14) {
+                spawnContactGlow(bx, by, 0xfff0c0, 12); // bright metallic flash
+                spawnSparks(bx, by, 0xffdd88, 5);       // fan of hot sparks
+                playRicochet();
               }
               enemy.shieldBlocking = true;
               continue; // this segment does no damage
@@ -141,6 +137,9 @@ export function updateDamage(dt) {
       // Heat accumulator: damage adds heat, enemy dies when heat >= effectiveHP
       enemy.heat += dmg * dt;
       enemy.burn = enemy.heat / enemy.maxHp;
+      // Refresh the decay grace: heat won't start draining until the beam has
+      // been off the target for HEAT_DECAY_GRACE seconds.
+      enemy.heatGrace = HEAT_DECAY_GRACE;
 
       // Contact FX at the exact beam-hull contact point. Throttled (not every
       // frame) so the small clamped glow reads as a lively spark, not a
@@ -165,10 +164,15 @@ export function updateDamage(dt) {
       }
     } else {
       enemy.bandsHitting = 0;
-      // Heat decay: accumulated heat cools when beam is not on target
+      // Heat decay: after a 0.5s grace period (so holding a beam feels
+      // rewarding), accumulated heat cools at 10%/s.
       if (enemy.heat > 0) {
-        enemy.heat = Math.max(0, enemy.heat - enemy.maxHp * HEAT_DECAY_RATE * dt);
-        enemy.burn = enemy.heat / enemy.maxHp;
+        if (enemy.heatGrace > 0) {
+          enemy.heatGrace -= dt;
+        } else {
+          enemy.heat = Math.max(0, enemy.heat - enemy.maxHp * HEAT_DECAY_RATE * dt);
+          enemy.burn = enemy.heat / enemy.maxHp;
+        }
       }
     }
   }
@@ -248,55 +252,7 @@ function segmentBoxEntry(seg, cx, cy, hw, hh) {
   return { x: sx + dx * tmin, y: sy + dy * tmin };
 }
 
-// --- "BLOCKED" floating label ---
-const blockedLabels = [];
-let blockedTexture = null;
-
-function getBlockedTexture() {
-  if (blockedTexture) return blockedTexture;
-  const c = document.createElement('canvas');
-  c.width = 128; c.height = 32;
-  const ctx = c.getContext('2d');
-  // Bright white text with orange stroke for maximum contrast
-  ctx.strokeStyle = '#FF6600';
-  ctx.lineWidth = 3;
-  ctx.font = 'bold 18px monospace';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.strokeText('BLOCKED', 64, 16);
-  ctx.fillStyle = '#FFFFFF';
-  ctx.fillText('BLOCKED', 64, 16);
-  blockedTexture = new THREE.CanvasTexture(c);
-  blockedTexture.minFilter = THREE.LinearFilter;
-  blockedTexture.premultiplyAlpha = false;
-  return blockedTexture;
-}
-
-function spawnBlockedLabel(x, y) {
-  const scene = getScene();
-  const geo = new THREE.PlaneGeometry(7, 2);
-  const mat = new THREE.MeshBasicMaterial({
-    map: getBlockedTexture(), transparent: true, opacity: 1, alphaTest: 0.05, depthWrite: false
-  });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(x, y, 7);
-  scene.add(mesh);
-  blockedLabels.push({ mesh, life: 1.0, vy: 5 });
-}
-
-// Called from main loop to animate floating labels
-export function updateBlockedLabels(dt) {
-  for (let i = blockedLabels.length - 1; i >= 0; i--) {
-    const l = blockedLabels[i];
-    l.life -= dt;
-    l.mesh.position.y += l.vy * dt;
-    l.mesh.material.opacity = Math.max(0, l.life / 0.8);
-    if (l.life <= 0) {
-      const scene = getScene();
-      scene.remove(l.mesh);
-      l.mesh.geometry.dispose();
-      l.mesh.material.dispose();
-      blockedLabels.splice(i, 1);
-    }
-  }
-}
+// Shield deflection is now shown purely with metallic sparks + a ricochet tick
+// (see the shield-block branch above). The old floating "BLOCKED" label was
+// removed; this stub remains so the main loop's call is a harmless no-op.
+export function updateBlockedLabels(dt) {}

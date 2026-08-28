@@ -12,7 +12,7 @@ import { initInput, tickDebug } from './input.js';
 import { initEnemies, updateEnemies, applySlowStates, getEnemyPool } from './enemy.js';
 import { updateSpawner, resetSpawner } from './enemy-spawner.js';
 import { updateDamage, getKillCount, updateBlockedLabels } from './damage.js';
-import { initSession, updateSession, addBreaches, isGameOver, getElapsed, updateHud, handleRestartTap, decayWallFlash, getWallHitFlash } from './session.js';
+import { initSession, updateSession, addBreaches, isGameOver, getElapsed, updateHud, handleRestartTap, decayWallFlash, getWallHitFlash, getWallShake, tickWallShake } from './session.js';
 import { initFoundries, updateFoundries, getFoundryColliders, getAltarAudioState } from './foundry.js';
 import { initFortress, updateFortress, triggerBreachShake } from './fortress.js';
 import { initCrafting, updateCraftingTray, isZeusAffordable } from './crafting.js';
@@ -157,8 +157,11 @@ function loop(now) {
   updateCraftingTray();
   tickDebug(dt);
 
+  // Camera shake from wall damage
+  tickWallShake(dt);
+
   // --- Render ---
-  render();
+  render(getWallShake());
 }
 
 // Boot — called by intro layer after video ends (or skip)
