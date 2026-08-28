@@ -171,9 +171,13 @@ export function updateCraftingTray() {
     trayCtx.textAlign = 'center';
     trayCtx.fillText(item.label, x + btnW / 2, 13);
 
-    // Cost: draw each currency token separately so the ones the player can't
-    // afford show in red (immediate "why can't I buy this" feedback).
-    drawCostTokens(cost, res, faith, x + btnW / 2, 27, btnW);
+    // Cost line — but ONLY when the button is NOT on cooldown. During cooldown
+    // the radial timer draws its own "Ns" in the same spot; showing both stacks
+    // the two strings (the "20 Fa 8 Au" + "7s" overlap the user reported). One
+    // or the other, never both.
+    if (!onCooldown) {
+      drawCostTokens(cost, res, faith, x + btnW / 2, 27, btnW);
+    }
 
     trayCtx.restore();
 

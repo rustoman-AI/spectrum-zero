@@ -5,7 +5,7 @@
 import {
   SOCKET_POSITIONS, MIRROR_COUNT_START, MIRROR_MAX_HITS,
   COLOUR_GREY, DEFAULT_MIRROR_SOCKETS, MIRROR_LENGTH,
-  FREE_PLACEMENT, MIRROR_FIELD_TOP, MIRROR_FIELD_BOT
+  FREE_PLACEMENT, MIRROR_FIELD_TOP, MIRROR_FIELD_BOT, MIRROR_MIN_Y
 } from './config.js';
 import { getScene, getWorldWidth } from './renderer.js';
 import { markDirty } from './beam.js';
@@ -273,7 +273,9 @@ export function moveMirrorFree(mirror, x, y) {
   const ww = getWorldWidth();
   const hw = ww / 2;
   mirror.freeX = Math.max(-hw + 2, Math.min(hw - 2, x));
-  mirror.freeY = Math.max(MIRROR_FIELD_BOT, Math.min(MIRROR_FIELD_TOP, y));
+  // Hard floor at MIRROR_MIN_Y (battlement top + ~40px): discs stay in the
+  // water and never drop onto the brick wall or shop bar. Top stays in field.
+  mirror.freeY = Math.max(MIRROR_MIN_Y, Math.min(MIRROR_FIELD_TOP, y));
   updateMirrorGeometry(mirror);
   markDirty();
 }

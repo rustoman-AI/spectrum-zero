@@ -31,6 +31,10 @@ export const MIRROR_DISC_TOP = -6;         // top edge of the topmost mirror spr
 export const BATTLEMENT_TOP_Y = WALL_Y + 1; // top of the stone the hull rams into (~ -39)
 export const RAM_STOP_EDGE = BATTLEMENT_TOP_Y;
 export const RAM_LINE_Y = RAM_STOP_EDGE;
+// Hard floor for mirror dragging: a mirror's CENTRE may never go below the
+// battlement top + ~40px (≈5 world units). Keeps discs strictly in the water,
+// never overlapping the brick wall or the shop bar below it.
+export const MIRROR_MIN_Y = BATTLEMENT_TOP_Y + 5; // ~ -34
 
 // --- DEV flags ---
 export const DEV = {
@@ -150,6 +154,9 @@ export const BREACH_DAMAGE = { skiff: 5, trireme: 15, quadrireme: 25, shieldbear
 // pressed against the wall drains this % of max wall HP per second while it
 // sits there. Bigger ships drip faster. Shield-bearers still do 0.
 export const BREACH_DRIP_PCT = { skiff: 0.05, trireme: 0.06, quadrireme: 0.065, shieldbearer: 0, flagship: 0.07 };
+// A rammed ship deals its breach damage as a short bleed over this crash-and-
+// sink window, then is fully removed (no lingering hulls stacking on the wall).
+export const BREACH_SINK_TIME = 0.9;
 
 // --- Mirror ---
 export const MIRROR_MAX_HITS = 3;

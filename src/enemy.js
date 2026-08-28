@@ -4,7 +4,7 @@
 
 import {
   ENEMY_POOL_SIZE, ENEMY_TYPES, SHIP_SPAWN_Y, SHIP_TOP_BOUND, WALL_Y, BATTLEMENT_TOP_Y,
-  ENEMY_LANE_COUNT, WORLD_HEIGHT, WALL_MAX_HP, BREACH_DRIP_PCT
+  ENEMY_LANE_COUNT, WORLD_HEIGHT, WALL_MAX_HP, BREACH_DRIP_PCT, BREACH_SINK_TIME
 } from './config.js';
 import { getScene, getWorldWidth } from './renderer.js';
 import { addKillReward } from './foundry.js';
@@ -304,6 +304,11 @@ export function spawnEnemy(type, lane, hpMultiplier, yOffset) {
       e.zeusCharring = 0; // charring stage before death (0 = not charring)
       e.zeusPendingHeat = 0;
       e.breached = false; // wall-breach guard: damage fires exactly once
+      e.sinkTimer = 0;    // crash-and-sink window (set on breach)
+      // Restore pooled-sprite state cleared by a prior sink/char.
+      if (e.spriteMat) { e.spriteMat.opacity = 1; e.spriteMat.color.setRGB(1, 1, 1); }
+      if (e.emberGlow) e.emberGlow.material.opacity = 0;
+      e.mesh.rotation.z = 0;
       e.lane = lane;
       // Spawn Y, clamped so the ship's TOP edge never crosses the crystal bound.
       const half = shipHalfHeight(type);
@@ -408,24 +413,36 @@ export function updateEnemies(dt) {
     const cx = Math.max(-edgeX, Math.min(edgeX, rawX));
 
     if (atWall) {
-      // Pin the ship so its hull bottom rests on the battlement top edge.
+      // Pin the ship at the battlement top and RAM it: it deals its wall
+      // damage as a short bleed over a brief crash-and-sink, then is fully
+      // removed. Ships never linger/stack on the battlement.
       e.y = BATTLEMENT_TOP_Y + half;
-      // One-time contact burst the first frame it reaches the wall.
       if (!e.breached) {
         e.breached = true;
+        e.sinkTimer = BREACH_SINK_TIME; // ~1s crash-and-sink window
         const heavy = (e.type === 'flagship' || e.type === 'quadrireme');
         spawnDestruction(cx, e.y, heavy);
       }
-      // Continuous per-second CONTACT DRIP of wall HP while pressed against it.
-      // Reduced if the ship is on fire (its own heat), so damaging it helps.
+      // Wall damage bled out evenly across the sink window (total = the ship's
+      // full breach %, reduced if it was already burning).
       const dripPct = BREACH_DRIP_PCT[e.type] != null ? BREACH_DRIP_PCT[e.type] : 0.05;
       const heatFrac = Math.min(1, (e.heat || 0) / e.maxHp);
-      wallDamage += WALL_MAX_HP * dripPct * Math.max(0.2, 1 - heatFrac) * dt;
-      // Emit a contact event every frame → continuous battlement stone flash.
+      const totalDmg = WALL_MAX_HP * dripPct * BREACH_SINK_TIME * Math.max(0.2, 1 - heatFrac);
+      wallDamage += (totalDmg / BREACH_SINK_TIME) * dt;
+      // Continuous battlement stone flash + occasional sparks while it sinks.
       lastBreaches.push({ x: cx, lane: e.lane, contact: true });
-      // Occasional small dust/sparks so the contact reads even without a kill.
-      if (Math.random() < dt * 6) spawnSparks(cx, e.y - half, 0xffaa66, 2);
-      positionEnemy(e);
+      if (Math.random() < dt * 8) spawnSparks(cx, e.y - half, 0xffaa66, 2);
+
+      // Advance the sink: fade + settle, then FULLY remove the ship.
+      e.sinkTimer -= dt;
+      const sinkT = Math.max(0, e.sinkTimer / BREACH_SINK_TIME); // 1 -> 0
+      if (e.spriteMat) e.spriteMat.opacity = sinkT; // fade the hull out
+      e.mesh.position.y = e.y - (1 - sinkT) * 2;    // settle down slightly
+      if (e.sinkTimer <= 0) {
+        spawnSmoke(cx, BATTLEMENT_TOP_Y + 1, 2);    // parting smoke
+        deactivateEnemy(e);                          // remove from logic + hide mesh
+        continue;
+      }
       updateEnemyVisual(e);
       continue;
     }
@@ -461,6 +478,14 @@ export function applySlowStates() {
 export function deactivateEnemy(enemy) {
   enemy.active = false;
   enemy.mesh.visible = false;
+  // Clear per-mesh visual state so a lingering/hidden hull can never show
+  // (charred colour, ember glow, faded sprite) if anything toggles visibility.
+  if (enemy.emberGlow) enemy.emberGlow.material.opacity = 0;
+  if (enemy.spriteMat) { enemy.spriteMat.opacity = 1; enemy.spriteMat.color.setRGB(1, 1, 1); }
+  enemy.heat = 0;
+  enemy.burn = 0;
+  enemy.breached = false;
+  enemy.sinkTimer = 0;
 }
 
 export function triggerKillEffect(enemy, reward) {

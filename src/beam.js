@@ -117,8 +117,19 @@ function traceBeam(origin, direction, colour, intensity, mirrors, prisms, foundr
     reflected.y /= len;
     const newBounces = bouncesUsed + 1;
     if (newBounces > maxBouncesUsed) maxBouncesUsed = newBounces;
-    // Reflected ray originates from the disc CENTRE so it stays anchored there.
-    const reflectOrigin = hit.center || hit.point;
+    // Reflect from the disc CENTRE (so incident + reflected visually meet at the
+    // middle of the disc, per the aesthetic requirement), nudged a small step
+    // ALONG the reflected direction so the new ray never sits ON its own mirror
+    // segment. Without the nudge, a bare centre origin lies exactly on the
+    // segment line; when the reflected ray runs near-parallel to the mirror
+    // (e.g. the right disc angled toward the Gold altar) the beam would emit
+    // straight down the disc face instead of bouncing cleanly outward.
+    const anchor = hit.center || hit.point;
+    const EPS = 0.4; // must exceed the castRay dist>0.1 self-hit guard margin
+    const reflectOrigin = {
+      x: anchor.x + reflected.x * EPS,
+      y: anchor.y + reflected.y * EPS,
+    };
     traceBeam(reflectOrigin, reflected, colour, intensity, mirrors, prisms, foundryColliders, worldWidth, bouncesLeft - 1, null, newBounces, preSplit, wide);
   } else if (hit.type === 'prism') {
     if (colour === COLOUR_WHITE) {
