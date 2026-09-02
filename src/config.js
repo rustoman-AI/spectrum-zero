@@ -151,7 +151,7 @@ export const SHOP = {
 // means the first cast has one price and every cast after is a flat repeat.
 export const GOD_ABILITIES = {
   zeus: {
-    name: 'Thunderstorm',
+    name: 'Keraunos',        // Zeus's thunderbolt (English: Thunderbolt)
     duration: 5,
     costs: [
       { bronze: 25 },                 // #1: cheap opener
@@ -159,7 +159,7 @@ export const GOD_ABILITIES = {
     ]
   },
   poseidon: {
-    name: 'Maelstrom',
+    name: 'Enosichthon',    // Homer's epithet for Poseidon, the Earth-Shaker
     duration: 6,
     costs: [
       { bronze: 40 },                 // #1: cheap opener
@@ -169,7 +169,7 @@ export const GOD_ABILITIES = {
   // Helios: active Solar Overcharge. Generates Faith (the fuel for Zeus/Poseidon
   // repeat casts), stuns the fleet, and burns through shield plates for 5s.
   helios: {
-    name: 'Solar Overcharge',
+    name: 'Hyperion',      // Homeric epithet of the sun god (English: Solar Blaze)
     duration: 5,           // flare lasts 5s
     faithGain: 15,         // +15 Faith over the 5s flare (+3/sec)
     stunDuration: 4,       // ships frozen (speed 0) for 4s

@@ -354,7 +354,7 @@ const SHOP = {
 // means the first cast has one price and every cast after is a flat repeat.
 const GOD_ABILITIES = {
   zeus: {
-    name: 'Thunderstorm',
+    name: 'Keraunos',        // Zeus's thunderbolt (English: Thunderbolt)
     duration: 5,
     costs: [
       { bronze: 25 },                 // #1: cheap opener
@@ -362,7 +362,7 @@ const GOD_ABILITIES = {
     ]
   },
   poseidon: {
-    name: 'Maelstrom',
+    name: 'Enosichthon',    // Homer's epithet for Poseidon, the Earth-Shaker
     duration: 6,
     costs: [
       { bronze: 40 },                 // #1: cheap opener
@@ -372,7 +372,7 @@ const GOD_ABILITIES = {
   // Helios: active Solar Overcharge. Generates Faith (the fuel for Zeus/Poseidon
   // repeat casts), stuns the fleet, and burns through shield plates for 5s.
   helios: {
-    name: 'Solar Overcharge',
+    name: 'Hyperion',      // Homeric epithet of the sun god (English: Solar Blaze)
     duration: 5,           // flare lasts 5s
     faithGain: 15,         // +15 Faith over the 5s flare (+3/sec)
     stunDuration: 4,       // ships frozen (speed 0) for 4s
@@ -4664,15 +4664,15 @@ function buildShopItems() {
   const upgrade = PRISM_UPGRADES[getActiveTier()];
   if (upgrade) items.push(upgrade);
   items.push(
-    { id: 'helios', label: 'Helios', getCost: () => {
+    { id: 'helios', label: 'HYPERION', getCost: () => {
       const costs = GOD_ABILITIES.helios.costs;
       return costs[Math.min(heliosCount, costs.length - 1)];
     } },
-    { id: 'zeus', label: 'Zeus', getCost: () => {
+    { id: 'zeus', label: 'KERAUNOS', getCost: () => {
       const costs = GOD_ABILITIES.zeus.costs;
       return costs[Math.min(zeusCount, costs.length - 1)];
     } },
-    { id: 'poseidon', label: 'Poseidon', getCost: () => {
+    { id: 'poseidon', label: 'ENOSICHTHON', getCost: () => {
       const costs = GOD_ABILITIES.poseidon.costs;
       return costs[Math.min(poseidonCount, costs.length - 1)];
     } },

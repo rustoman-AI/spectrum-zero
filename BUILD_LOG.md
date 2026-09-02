@@ -939,3 +939,20 @@ Every common ship clears the lowest possible mirror by 3.5-5.5u; the boss only t
 **Verified:** build 298.8 KB exit 0, luminance gate green (sea/sky/ground untouched), rotation 11/11, smoke 29/29. All new symbols (drawArethusa, makeSpqrTexture, SAIL_METRICS, spqrMesh, HULL_LIFT) confirmed in the bundle. No new files. Rejected extras (per-ship heraldry, altar statues, new wakes) NOT added.
 
 **Honest caveat:** can't view the frame here. The engraving subtlety, the SPQR size/legibility on each sail, and whether +12% is the right lift are eyes-on calls — all are single-constant tweaks (engrave alpha 0.42/0.18, SPQR font/SAIL_METRICS w-h factors, HULL_LIFT 1.12, bronze stops). SPQR fade threshold (burn 0.6) is one constant if "well alight" should be earlier/later.
+
+---
+
+## 2026-08-25 — God abilities renamed to mythological Greek names (player-facing)
+
+**Renamed the on-screen ability labels** (internal ids `zeus`/`poseidon`/`helios` UNCHANGED):
+- Zeus -> KERAUNOS (the thunderbolt), Poseidon -> ENOSICHTHON (Homer's Earth-Shaker), Helios -> HYPERION (Homeric sun epithet).
+
+**Where the label actually lives:** NOT strings.js. The rendered button label is the inline `label:` in `crafting.js buildShopItems`; the `GOD_ABILITIES.name` in config ('Thunderstorm'/'Maelstrom'/'Solar Overcharge') was DEAD text (never rendered). Updated both: crafting.js labels -> the Greek names; config `name` -> 'Keraunos'/'Enosichthon'/'Hyperion' with the English in comments, so nothing stale remains. strings.js has no ability labels (its `SOURCE_NAME='Helios'` is the beam-source/fiction name, not the ability — left intact).
+
+**Legibility call (reporting as instructed — two readable lines do NOT fit):** the shop button is ~102px wide (512/5 buttons) x 40px tall, and the god buttons already stack an ICON (y8) + a text row (y20) + the COST/cooldown row (y31). Vertically there is room for exactly ONE text row between the icon and the cost; a second ability line at a readable size (>=8px) collides with the cost row. So I did NOT shrink the type and did NOT add a cramped English subtitle. Instead: the Greek name is the single main label (fits — widest is ENOSICHTHON at ~53px in a 102px cell), and the GOD identity is carried by the existing icon (thunderbolt / trident / sun), which the brief explicitly accepts ("a small line or the existing icon is enough"). The English subtitle ("Thunderbolt / Earth-Shaker / Solar Blaze") is the one thing that can't be added as a second legible line.
+
+**Confirmed nothing else shows the old ability label:** swept src — remaining `zeus`/`helios`/`poseidon` occurrences are all internal ids (item.id, cooldown keys, icon selection) or fiction/comments; the altars (BRONZE/SILVER/GOLD) and `SOURCE_NAME` are unrelated and intact.
+
+**Verified:** build 298.9 KB exit 0, luminance gate green, rotation 11/11, smoke 29/29. Greek labels confirmed in the bundle.
+
+**Decision needed from you:** I kept the Greek names (your stated main label) + icon for the god, and left the English off because it can't be a second readable line. If you'd rather guarantee plain-language comprehension over the Greek term, say so and I'll switch the three buttons to English single-line (Thunderbolt / Earth-Shaker / Solar Blaze) in one edit — no type shrink either way.

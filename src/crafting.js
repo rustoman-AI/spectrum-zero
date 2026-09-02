@@ -52,15 +52,15 @@ function buildShopItems() {
   const upgrade = PRISM_UPGRADES[getActiveTier()];
   if (upgrade) items.push(upgrade);
   items.push(
-    { id: 'helios', label: 'Helios', getCost: () => {
+    { id: 'helios', label: 'HYPERION', getCost: () => {
       const costs = GOD_ABILITIES.helios.costs;
       return costs[Math.min(heliosCount, costs.length - 1)];
     } },
-    { id: 'zeus', label: 'Zeus', getCost: () => {
+    { id: 'zeus', label: 'KERAUNOS', getCost: () => {
       const costs = GOD_ABILITIES.zeus.costs;
       return costs[Math.min(zeusCount, costs.length - 1)];
     } },
-    { id: 'poseidon', label: 'Poseidon', getCost: () => {
+    { id: 'poseidon', label: 'ENOSICHTHON', getCost: () => {
       const costs = GOD_ABILITIES.poseidon.costs;
       return costs[Math.min(poseidonCount, costs.length - 1)];
     } },
