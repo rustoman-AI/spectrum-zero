@@ -326,7 +326,7 @@ function triggerWin() {
     const pool = getEnemyPool();
     for (const e of pool) {
       if (!e.active) continue;
-      const heavy = !!(e.type && (e.type === 'quadrireme' || e.type === 'flagship' || e.type === 'shieldbearer'));
+      const heavy = !!(e.type && (e.type === 'quadrireme' || e.type === 'quinquereme' || e.type === 'cataphract'));
       spawnDestruction(e.mesh.position.x, e.mesh.position.y, heavy);
       deactivateEnemy(e);
     }

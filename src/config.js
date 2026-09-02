@@ -68,12 +68,17 @@ export const D_BASE = 10;
 export const SYNERGY_BONUS = 0.3;
 
 // --- Enemy types ---
+// Historical ship classes. `liburna` = light fast scout; `cataphract` = armoured
+// oared warship with a protected deck; `quinquereme` = heavy Roman flagship of
+// the Punic Wars (the class that besieged Syracuse). Stats unchanged — the keys
+// are lookup indices used across spawner/damage/sprite/breach tables, so they
+// must stay consistent everywhere.
 export const ENEMY_TYPES = {
-  skiff:       { hp: 30,   armour: 0, speed: 5,   reward: { bronze: 10 }, propulsion: 'sailed' },
+  liburna:     { hp: 30,   armour: 0, speed: 5,   reward: { bronze: 10 }, propulsion: 'sailed' },
   trireme:     { hp: 100,  armour: 0, speed: 3.5, reward: { bronze: 25 }, propulsion: 'oared' },
   quadrireme:  { hp: 200,  armour: 2, speed: 2.5, reward: { bronze: 15, silver: 3 }, propulsion: 'oared' },
-  shieldbearer:{ hp: 200,  armour: 1, speed: 2.0, reward: { bronze: 20, silver: 8 }, shieldAngle: 25, propulsion: 'oared' },
-  flagship:    { hp: 1500, armour: 4, speed: 1.0, reward: { gold: 20 }, propulsion: 'sailed' },
+  cataphract:  { hp: 200,  armour: 1, speed: 2.0, reward: { bronze: 20, silver: 8 }, shieldAngle: 25, propulsion: 'oared' },
+  quinquereme: { hp: 1500, armour: 4, speed: 1.0, reward: { gold: 20 }, propulsion: 'sailed' },
 };
 
 // --- Escalation ---
@@ -82,7 +87,7 @@ export const SESSION_DURATION = 600;  // 10 minutes
 
 // --- Victory condition ---
 // The defence is "won" once the player survives to 3:00 (180s) with the wall
-// still standing — a full challenge run through Phase 1 (skiffs) into Phase 2
+// still standing — a full challenge run through Phase 1 (liburnae) into Phase 2
 // (armoured galleys, which begin at 60s and run to 180s). Triggers the in-engine
 // gold victory card.
 //
@@ -164,10 +169,10 @@ export const GOD_ABILITIES = {
 };
 
 // --- Phase timings (seconds) ---
-export const PHASE_1_END = 60;    // 1:00 - skiffs only
+export const PHASE_1_END = 60;    // 1:00 - liburnae only
 export const PHASE_2_END = 180;   // 3:00 - armoured galleys
 export const PHASE_3_END = 540;   // 9:00 - main battle
-// Phase 4: 9:00-10:00 - flagship
+// Phase 4: 9:00-10:00 - quinquereme
 
 // --- Heat decay ---
 export const HEAT_DECAY_RATE = 0.10;      // heat drains at 10%/s once decaying
@@ -175,11 +180,11 @@ export const HEAT_DECAY_GRACE = 0.5;      // grace before decay starts (holding 
 
 // --- Wall ---
 export const WALL_MAX_HP = 100;
-export const BREACH_DAMAGE = { skiff: 5, trireme: 15, quadrireme: 25, shieldbearer: 0, flagship: 100 };
+export const BREACH_DAMAGE = { liburna: 5, trireme: 15, quadrireme: 25, cataphract: 0, quinquereme: 100 };
 // Breach is now a per-second CONTACT DRIP (not an instant chunk): each ship
 // pressed against the wall drains this % of max wall HP per second while it
-// sits there. Bigger ships drip faster. Shield-bearers still do 0.
-export const BREACH_DRIP_PCT = { skiff: 0.05, trireme: 0.06, quadrireme: 0.065, shieldbearer: 0, flagship: 0.07 };
+// sits there. Bigger ships drip faster. Cataphracts still do 0.
+export const BREACH_DRIP_PCT = { liburna: 0.05, trireme: 0.06, quadrireme: 0.065, cataphract: 0, quinquereme: 0.07 };
 // A rammed ship deals its breach damage as a short bleed over this crash-and-
 // sink window, then is fully removed (no lingering hulls stacking on the wall).
 export const BREACH_SINK_TIME = 0.9;

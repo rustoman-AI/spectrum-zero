@@ -28,11 +28,13 @@ export const RES_RECOMBO = 'Convergence';
 export const RES_RECOMBO_SHORT = 'C';
 
 // --- Enemies (Roman fleet) ---
+// Player-facing display names, keyed by the ENEMY_TYPES ids (historical classes).
 export const ENEMY_NAMES = {
-  mote: 'Skiff',
-  husk: 'Trireme',
-  carapace: 'Quadrireme',
-  devourer: 'Flagship',
+  liburna: 'Liburna',
+  trireme: 'Trireme',
+  quadrireme: 'Quadrireme',
+  cataphract: 'Cataphract',
+  quinquereme: 'Quinquereme',
 };
 
 // --- Crafting ---

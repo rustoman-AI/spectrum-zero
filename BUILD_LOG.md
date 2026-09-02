@@ -782,3 +782,23 @@ Swept all src for `\bAu\b` / `\bAz\b` afterward — only remaining hit is an exp
 **Verified:** `node build.js` -> 283.5 KB, exit 0 (strict lint + duplicate-id guard pass). Rotation 11/11, smoke 29/29. Grepped index.html to confirm the new sprite, `roundRectPath`, and the resized rings are bundled.
 
 **Honest caveat:** Can't see the render here. Device check worth doing: (a) the shield reads clearly wider-than-tall and its tilt is obvious at all angles, (b) the lengthwise highlight looks like a real specular reflection turning with the surface (streak brightness/position are canvas constants, easy to tune), (c) the wooden frame/rivets read at on-screen size, and (d) the green selection ring sits as a clean halo around the shield without clipping. All are constant/asset tweaks (shield rx/ry ratio, streak alpha, ring radius) if anything needs nudging.
+
+---
+
+## 2026-08-25 — Enemy type rename to historical classes (naming only)
+
+**Asked:** Rename enemy types to historical ship classes, player-facing AND internal ids: skiff -> liburna (light fast scout), shieldbearer -> cataphract (armoured oared warship w/ protected deck), flagship -> quinquereme (heavy Punic-Wars flagship); trireme + quadrireme unchanged. Update every reference (ENEMY_TYPES keys, BREACH_DAMAGE, BREACH_DRIP_PCT, spawn tables, sprite configs, on-screen labels, tests). Stats unchanged. Verify a full session still runs since the keys are lookup indices — a missed rename would silently produce undefined stats.
+
+**Renamed the id in every lookup site:**
+- `config.js`: `ENEMY_TYPES` keys, `BREACH_DAMAGE`, `BREACH_DRIP_PCT` (all three now: liburna/trireme/quadrireme/cataphract/quinquereme), plus phase comments.
+- `enemy.js`: `SHIP_SIZE` table, `generateShipTextures` types array, the `configs` sprite table + `|| configs.liburna` fallback, pool default `type:'liburna'`, `shipTextures.liburna` fallbacks, the heavy-destruction check (quinquereme/quadrireme), and the shield-plate check (cataphract).
+- `enemy-spawner.js`: every `spawnEnemy('liburna'|'cataphract'|'quinquereme', ...)` in the scripted opening + procedural phases + shield formation escorts; internal flag `flagshipSpawned -> quinqueremeSpawned`; header/phase comments. (Left the internal `shieldBearerTimer`/`firstShieldSpawned`/`getNextShieldLane`/`spawnShieldFormation` scheduling-variable names as-is — they are formation bookkeeping, not enemy-type ids, and are self-consistent; renaming them adds churn without changing any lookup.)
+- `zeus.js`, `session.js`, `damage.js`: type-string checks (isLight liburna; heavy quinquereme/quadrireme; victory-wipe heavy incl. cataphract).
+- `strings.js`: rekeyed the (unused) `ENEMY_NAMES` display map to the real ids with historical display names (was stale mote/husk/carapace/devourer).
+- Tests (`test_smoke.js`): `mockEnemy` calls, the isLight check, and all assertion/label strings -> Liburna/Cataphract.
+- `DESIGN_INTENT.md`: already clean — it describes ships generically ("Roman ships", "four ship types", "boss ship"), never the internal ids, so nothing to change.
+- BUILD_LOG history: left prior entries intact (append-only journal — rewriting past entries would falsify the record). Only "flagship" mentions left in source are two comments where it's the correct English word for the quinquereme's role, not an id.
+
+**Verified (undefined-stats guard):** wrote a throwaway checker that walked the built bundle and confirmed ENEMY_TYPES, BREACH_DAMAGE, BREACH_DRIP_PCT and SHIP_SIZE all carry the identical 5-key set {liburna, trireme, quadrireme, cataphract, quinquereme}, and that every `spawnEnemy('...')` string in the bundle resolves to a valid key — so no spawn can hit an undefined stat. Result PASS; script then deleted. `node build.js` -> 284.1 KB, exit 0. Rotation 11/11, smoke 29/29, with the smoke output now reading "Liburna heat 45/30" and "Cataphract heat 200/400" — confirming the renamed keys resolve to the correct (unchanged) stats.
+
+**Honest caveat:** Stats are provably unchanged (same values, only keys renamed) and the key sets are provably consistent across all lookup tables + spawn calls, so a live session can't produce undefined stats from this change. I can't watch the game render here, but there's no gameplay/balance delta to observe — it's a pure identifier rename.

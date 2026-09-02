@@ -270,7 +270,7 @@ export function spawnSparks(x, y, colour, count) {
 }
 
 // Destruction sequence: flash + debris + audio
-// heavy=true for flagship/large ships → deeper bass + bigger flash
+// heavy=true for quinquereme/large ships → deeper bass + bigger flash
 export function spawnDestruction(x, y, heavy) {
   // Flash (large bright glow)
   spawnContactGlow(x, y, 0xffffff, heavy ? 160 : 100);

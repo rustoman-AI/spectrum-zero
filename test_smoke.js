@@ -39,10 +39,10 @@ function mockEnemy(type, hp) {
 console.log('Test: Zeus strike');
 {
   const enemies = [
-    mockEnemy('skiff', 30),
+    mockEnemy('liburna', 30),
     mockEnemy('trireme', 100),
     mockEnemy('quadrireme', 200),
-    mockEnemy('shieldbearer', 400),
+    mockEnemy('cataphract', 400),
   ];
 
   // Simulate triggerZeusStrike logic (extracted from zeus.js)
@@ -50,7 +50,7 @@ console.log('Test: Zeus strike');
   try {
     for (let i = 0; i < enemies.length; i++) {
       const enemy = enemies[i];
-      const isLight = (enemy.type === 'skiff' || enemy.type === 'trireme');
+      const isLight = (enemy.type === 'liburna' || enemy.type === 'trireme');
       enemy.zeusPendingHeat = isLight ? enemy.maxHp * 1.5 : enemy.maxHp * 0.5;
       enemy.zeusCharring = 0.25;
       enemy.stunTimer = 3.0;
@@ -60,10 +60,10 @@ console.log('Test: Zeus strike');
     console.log('  THREW: ' + e.message);
   }
   assert(!threw, 'Zeus strike should not throw');
-  assert(enemies[0].zeusPendingHeat === 45, 'Skiff pending heat = 45 (150% of 30)');
+  assert(enemies[0].zeusPendingHeat === 45, 'Liburna pending heat = 45 (150% of 30)');
   assert(enemies[1].zeusPendingHeat === 150, 'Trireme pending heat = 150 (150% of 100)');
   assert(enemies[2].zeusPendingHeat === 100, 'Quadrireme pending heat = 100 (50% of 200)');
-  assert(enemies[3].zeusPendingHeat === 200, 'Shieldbearer pending heat = 200 (50% of 400)');
+  assert(enemies[3].zeusPendingHeat === 200, 'Cataphract pending heat = 200 (50% of 400)');
   assert(enemies[0].stunTimer === 3, 'All enemies stunned for 3s');
 
   // Simulate charring → heat application
@@ -74,14 +74,14 @@ console.log('Test: Zeus strike');
       e.zeusPendingHeat = 0;
     }
   }
-  assert(enemies[0].heat >= enemies[0].maxHp, 'Skiff killed (heat >= maxHp)');
+  assert(enemies[0].heat >= enemies[0].maxHp, 'Liburna killed (heat >= maxHp)');
   assert(enemies[1].heat >= enemies[1].maxHp, 'Trireme killed (heat >= maxHp)');
   assert(enemies[2].heat < enemies[2].maxHp, 'Quadrireme survives (heat < maxHp)');
-  assert(enemies[3].heat < enemies[3].maxHp, 'Shieldbearer survives (heat < maxHp)');
-  console.log('  Skiff heat: ' + enemies[0].heat + '/' + enemies[0].maxHp);
+  assert(enemies[3].heat < enemies[3].maxHp, 'Cataphract survives (heat < maxHp)');
+  console.log('  Liburna heat: ' + enemies[0].heat + '/' + enemies[0].maxHp);
   console.log('  Trireme heat: ' + enemies[1].heat + '/' + enemies[1].maxHp);
   console.log('  Quadrireme heat: ' + enemies[2].heat + '/' + enemies[2].maxHp);
-  console.log('  Shieldbearer heat: ' + enemies[3].heat + '/' + enemies[3].maxHp);
+  console.log('  Cataphract heat: ' + enemies[3].heat + '/' + enemies[3].maxHp);
 }
 
 // ============================================================
@@ -90,7 +90,7 @@ console.log('Test: Zeus strike');
 console.log('Test: Poseidon pull');
 {
   const enemies = [
-    { ...mockEnemy('skiff', 30), propulsion: 'sailed', lane: 0, pullX: 0 },
+    { ...mockEnemy('liburna', 30), propulsion: 'sailed', lane: 0, pullX: 0 },
     { ...mockEnemy('trireme', 100), propulsion: 'oared', lane: 4, pullX: 0 },
   ];
   const PULL_SAILED = 14;
@@ -185,11 +185,11 @@ console.log('Test: Shop purchases');
 }
 
 // ============================================================
-// TEST: Shield-bearer deflection
+// TEST: Cataphract deflection
 // ============================================================
-console.log('Test: Shield-bearer deflection');
+console.log('Test: Cataphract deflection');
 {
-  const enemy = mockEnemy('shieldbearer', 400);
+  const enemy = mockEnemy('cataphract', 400);
   enemy.shieldAngle = 25;
 
   // Beam segment at 15 degrees from vertical (should be blocked)

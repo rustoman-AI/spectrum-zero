@@ -106,7 +106,7 @@ export function triggerZeusStrike() {
 
     // Mark for Zeus kill â€” defer heat application by 0.2s for charring visual
     // Store the pending heat to be applied after charring stage
-    const isLight = (enemy.type === 'skiff' || enemy.type === 'trireme');
+    const isLight = (enemy.type === 'liburna' || enemy.type === 'trireme');
     enemy.zeusPendingHeat = isLight ? enemy.maxHp * 1.5 : enemy.maxHp * 0.5;
     enemy.zeusCharring = 0.25; // 0.25s charring before heat hits
     // Stun: stop for 3 seconds

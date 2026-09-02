@@ -17,7 +17,7 @@ export function getLastBreaches() { return lastBreaches; }
 // Visual size (world units, ~sprite height) per ship type. Half of this is the
 // ship's leading-edge offset used for the ram-line crash so no ship of any
 // size ever overlaps the mirror discs.
-const SHIP_SIZE = { skiff: 2.5, trireme: 3.5, quadrireme: 4.5, shieldbearer: 4.0, flagship: 8 };
+const SHIP_SIZE = { liburna: 2.5, trireme: 3.5, quadrireme: 4.5, cataphract: 4.0, quinquereme: 8 };
 function shipHalfHeight(type) { return (SHIP_SIZE[type] || 3) / 2; }
 
 const pool = [];
@@ -26,7 +26,7 @@ const shipTextures = {};
 
 // --- Procedural ship sprite generation (drawn to canvas at load) ---
 function generateShipTextures() {
-  const types = ['skiff', 'trireme', 'quadrireme', 'shieldbearer', 'flagship'];
+  const types = ['liburna', 'trireme', 'quadrireme', 'cataphract', 'quinquereme'];
   for (const type of types) {
     const sz = 128;
     const c = document.createElement('canvas');
@@ -48,13 +48,13 @@ function drawShip(ctx, sz, type) {
 
   // Ship type variations
   const configs = {
-    skiff:        { hullW: 0.55, hullH: 0.18, prowLen: 0.12, mastH: 0.40, sailW: 0.35, sailH: 0.30, oars: 0, stripe: '#8B4513', hullCol: '#6B4226', deckCol: '#9E6B3E' },
+    liburna:      { hullW: 0.55, hullH: 0.18, prowLen: 0.12, mastH: 0.40, sailW: 0.35, sailH: 0.30, oars: 0, stripe: '#8B4513', hullCol: '#6B4226', deckCol: '#9E6B3E' },
     trireme:      { hullW: 0.65, hullH: 0.20, prowLen: 0.15, mastH: 0.30, sailW: 0.18, sailH: 0.15, oars: 5, stripe: '#C41E3A', hullCol: '#5C3317', deckCol: '#8B6B4A' },
     quadrireme:   { hullW: 0.72, hullH: 0.22, prowLen: 0.16, mastH: 0.30, sailW: 0.20, sailH: 0.15, oars: 7, stripe: '#1E5631', hullCol: '#4A2B10', deckCol: '#7A5B3A' },
-    shieldbearer: { hullW: 0.68, hullH: 0.22, prowLen: 0.14, mastH: 0.28, sailW: 0.16, sailH: 0.12, oars: 5, stripe: '#CC8844', hullCol: '#5C3317', deckCol: '#8B6B4A' },
-    flagship:     { hullW: 0.80, hullH: 0.25, prowLen: 0.18, mastH: 0.55, sailW: 0.50, sailH: 0.40, oars: 0, stripe: '#DAA520', hullCol: '#3D1F00', deckCol: '#6B4226' },
+    cataphract:   { hullW: 0.68, hullH: 0.22, prowLen: 0.14, mastH: 0.28, sailW: 0.16, sailH: 0.12, oars: 5, stripe: '#CC8844', hullCol: '#5C3317', deckCol: '#8B6B4A' },
+    quinquereme:  { hullW: 0.80, hullH: 0.25, prowLen: 0.18, mastH: 0.55, sailW: 0.50, sailH: 0.40, oars: 0, stripe: '#DAA520', hullCol: '#3D1F00', deckCol: '#6B4226' },
   };
-  const cfg = configs[type] || configs.skiff;
+  const cfg = configs[type] || configs.liburna;
 
   const hullW = cfg.hullW * sz;
   const hullH = cfg.hullH * sz;
@@ -180,7 +180,7 @@ export function initEnemies() {
     // Ship sprite (canvas-drawn, swapped per type)
     const spriteGeo = new THREE.PlaneGeometry(6, 6);
     const spriteMat = new THREE.MeshBasicMaterial({
-      map: shipTextures.skiff, transparent: true, alphaTest: 0.05, depthWrite: false
+      map: shipTextures.liburna, transparent: true, alphaTest: 0.05, depthWrite: false
     });
     const spriteMesh = new THREE.Mesh(spriteGeo, spriteMat);
     spriteMesh.position.z = 0.01;
@@ -280,7 +280,7 @@ export function initEnemies() {
 
     enemyGroup.add(mesh);
     pool.push({
-      active: false, type: 'skiff',
+      active: false, type: 'liburna',
       hp: 0, maxHp: 0, armour: 0, heat: 0,
       lane: 0, y: SHIP_SPAWN_Y,
       speed: 0, baseSpeed: 0,
@@ -442,7 +442,7 @@ export function updateEnemies(dt) {
       // One-shot damage: the full breach amount (was bled over the sink window),
       // reduced if the ship was already burning.
       wallDamage += WALL_MAX_HP * dripPct * BREACH_SINK_TIME * Math.max(0.2, 1 - heatFrac);
-      const heavy = (e.type === 'flagship' || e.type === 'quadrireme');
+      const heavy = (e.type === 'quinquereme' || e.type === 'quadrireme');
       spawnDestruction(cx, BATTLEMENT_TOP_Y + half, heavy); // explosion + embers
       spawnSmoke(cx, BATTLEMENT_TOP_Y + 1, 2);              // parting smoke burst
       lastBreaches.push({ x: cx, lane: e.lane });           // battlement stone flash
@@ -519,7 +519,7 @@ function updateEnemyVisual(e) {
   e.barFill.position.x = -2.5 * (1 - e.burn);
 
   // Swap sprite texture to match type
-  const tex = shipTextures[e.type] || shipTextures.skiff;
+  const tex = shipTextures[e.type] || shipTextures.liburna;
   if (e.spriteMat.map !== tex) {
     e.spriteMat.map = tex;
     e.spriteMat.needsUpdate = true;
@@ -564,7 +564,7 @@ function updateEnemyVisual(e) {
   e.mesh.scale.set(s/3, s/3, 1);
   // Shield plate visibility + glint
   if (e.shieldPlate) {
-    const isShield = (e.type === 'shieldbearer');
+    const isShield = (e.type === 'cataphract');
     e.shieldPlate.visible = isShield;
     if (isShield) {
       // Subtle glint: opacity pulse

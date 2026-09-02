@@ -271,12 +271,17 @@ const D_BASE = 10;
 const SYNERGY_BONUS = 0.3;
 
 // --- Enemy types ---
+// Historical ship classes. `liburna` = light fast scout; `cataphract` = armoured
+// oared warship with a protected deck; `quinquereme` = heavy Roman flagship of
+// the Punic Wars (the class that besieged Syracuse). Stats unchanged — the keys
+// are lookup indices used across spawner/damage/sprite/breach tables, so they
+// must stay consistent everywhere.
 const ENEMY_TYPES = {
-  skiff:       { hp: 30,   armour: 0, speed: 5,   reward: { bronze: 10 }, propulsion: 'sailed' },
+  liburna:     { hp: 30,   armour: 0, speed: 5,   reward: { bronze: 10 }, propulsion: 'sailed' },
   trireme:     { hp: 100,  armour: 0, speed: 3.5, reward: { bronze: 25 }, propulsion: 'oared' },
   quadrireme:  { hp: 200,  armour: 2, speed: 2.5, reward: { bronze: 15, silver: 3 }, propulsion: 'oared' },
-  shieldbearer:{ hp: 200,  armour: 1, speed: 2.0, reward: { bronze: 20, silver: 8 }, shieldAngle: 25, propulsion: 'oared' },
-  flagship:    { hp: 1500, armour: 4, speed: 1.0, reward: { gold: 20 }, propulsion: 'sailed' },
+  cataphract:  { hp: 200,  armour: 1, speed: 2.0, reward: { bronze: 20, silver: 8 }, shieldAngle: 25, propulsion: 'oared' },
+  quinquereme: { hp: 1500, armour: 4, speed: 1.0, reward: { gold: 20 }, propulsion: 'sailed' },
 };
 
 // --- Escalation ---
@@ -285,7 +290,7 @@ const SESSION_DURATION = 600;  // 10 minutes
 
 // --- Victory condition ---
 // The defence is "won" once the player survives to 3:00 (180s) with the wall
-// still standing — a full challenge run through Phase 1 (skiffs) into Phase 2
+// still standing — a full challenge run through Phase 1 (liburnae) into Phase 2
 // (armoured galleys, which begin at 60s and run to 180s). Triggers the in-engine
 // gold victory card.
 //
@@ -367,10 +372,10 @@ const GOD_ABILITIES = {
 };
 
 // --- Phase timings (seconds) ---
-const PHASE_1_END = 60;    // 1:00 - skiffs only
+const PHASE_1_END = 60;    // 1:00 - liburnae only
 const PHASE_2_END = 180;   // 3:00 - armoured galleys
 const PHASE_3_END = 540;   // 9:00 - main battle
-// Phase 4: 9:00-10:00 - flagship
+// Phase 4: 9:00-10:00 - quinquereme
 
 // --- Heat decay ---
 const HEAT_DECAY_RATE = 0.10;      // heat drains at 10%/s once decaying
@@ -378,11 +383,11 @@ const HEAT_DECAY_GRACE = 0.5;      // grace before decay starts (holding a beam 
 
 // --- Wall ---
 const WALL_MAX_HP = 100;
-const BREACH_DAMAGE = { skiff: 5, trireme: 15, quadrireme: 25, shieldbearer: 0, flagship: 100 };
+const BREACH_DAMAGE = { liburna: 5, trireme: 15, quadrireme: 25, cataphract: 0, quinquereme: 100 };
 // Breach is now a per-second CONTACT DRIP (not an instant chunk): each ship
 // pressed against the wall drains this % of max wall HP per second while it
-// sits there. Bigger ships drip faster. Shield-bearers still do 0.
-const BREACH_DRIP_PCT = { skiff: 0.05, trireme: 0.06, quadrireme: 0.065, shieldbearer: 0, flagship: 0.07 };
+// sits there. Bigger ships drip faster. Cataphracts still do 0.
+const BREACH_DRIP_PCT = { liburna: 0.05, trireme: 0.06, quadrireme: 0.065, cataphract: 0, quinquereme: 0.07 };
 // A rammed ship deals its breach damage as a short bleed over this crash-and-
 // sink window, then is fully removed (no lingering hulls stacking on the wall).
 const BREACH_SINK_TIME = 0.9;
@@ -456,11 +461,13 @@ const RES_RECOMBO = 'Convergence';
 const RES_RECOMBO_SHORT = 'C';
 
 // --- Enemies (Roman fleet) ---
+// Player-facing display names, keyed by the ENEMY_TYPES ids (historical classes).
 const ENEMY_NAMES = {
-  mote: 'Skiff',
-  husk: 'Trireme',
-  carapace: 'Quadrireme',
-  devourer: 'Flagship',
+  liburna: 'Liburna',
+  trireme: 'Trireme',
+  quadrireme: 'Quadrireme',
+  cataphract: 'Cataphract',
+  quinquereme: 'Quinquereme',
 };
 
 // --- Crafting ---
@@ -1272,7 +1279,7 @@ function triggerZeusStrike() {
 
     // Mark for Zeus kill â€” defer heat application by 0.2s for charring visual
     // Store the pending heat to be applied after charring stage
-    const isLight = (enemy.type === 'skiff' || enemy.type === 'trireme');
+    const isLight = (enemy.type === 'liburna' || enemy.type === 'trireme');
     enemy.zeusPendingHeat = isLight ? enemy.maxHp * 1.5 : enemy.maxHp * 0.5;
     enemy.zeusCharring = 0.25; // 0.25s charring before heat hits
     // Stun: stop for 3 seconds
@@ -3010,7 +3017,7 @@ function getLastBreaches() { return lastBreaches; }
 // Visual size (world units, ~sprite height) per ship type. Half of this is the
 // ship's leading-edge offset used for the ram-line crash so no ship of any
 // size ever overlaps the mirror discs.
-const SHIP_SIZE = { skiff: 2.5, trireme: 3.5, quadrireme: 4.5, shieldbearer: 4.0, flagship: 8 };
+const SHIP_SIZE = { liburna: 2.5, trireme: 3.5, quadrireme: 4.5, cataphract: 4.0, quinquereme: 8 };
 function shipHalfHeight(type) { return (SHIP_SIZE[type] || 3) / 2; }
 
 const pool = [];
@@ -3019,7 +3026,7 @@ const shipTextures = {};
 
 // --- Procedural ship sprite generation (drawn to canvas at load) ---
 function generateShipTextures() {
-  const types = ['skiff', 'trireme', 'quadrireme', 'shieldbearer', 'flagship'];
+  const types = ['liburna', 'trireme', 'quadrireme', 'cataphract', 'quinquereme'];
   for (const type of types) {
     const sz = 128;
     const c = document.createElement('canvas');
@@ -3041,13 +3048,13 @@ function drawShip(ctx, sz, type) {
 
   // Ship type variations
   const configs = {
-    skiff:        { hullW: 0.55, hullH: 0.18, prowLen: 0.12, mastH: 0.40, sailW: 0.35, sailH: 0.30, oars: 0, stripe: '#8B4513', hullCol: '#6B4226', deckCol: '#9E6B3E' },
+    liburna:      { hullW: 0.55, hullH: 0.18, prowLen: 0.12, mastH: 0.40, sailW: 0.35, sailH: 0.30, oars: 0, stripe: '#8B4513', hullCol: '#6B4226', deckCol: '#9E6B3E' },
     trireme:      { hullW: 0.65, hullH: 0.20, prowLen: 0.15, mastH: 0.30, sailW: 0.18, sailH: 0.15, oars: 5, stripe: '#C41E3A', hullCol: '#5C3317', deckCol: '#8B6B4A' },
     quadrireme:   { hullW: 0.72, hullH: 0.22, prowLen: 0.16, mastH: 0.30, sailW: 0.20, sailH: 0.15, oars: 7, stripe: '#1E5631', hullCol: '#4A2B10', deckCol: '#7A5B3A' },
-    shieldbearer: { hullW: 0.68, hullH: 0.22, prowLen: 0.14, mastH: 0.28, sailW: 0.16, sailH: 0.12, oars: 5, stripe: '#CC8844', hullCol: '#5C3317', deckCol: '#8B6B4A' },
-    flagship:     { hullW: 0.80, hullH: 0.25, prowLen: 0.18, mastH: 0.55, sailW: 0.50, sailH: 0.40, oars: 0, stripe: '#DAA520', hullCol: '#3D1F00', deckCol: '#6B4226' },
+    cataphract:   { hullW: 0.68, hullH: 0.22, prowLen: 0.14, mastH: 0.28, sailW: 0.16, sailH: 0.12, oars: 5, stripe: '#CC8844', hullCol: '#5C3317', deckCol: '#8B6B4A' },
+    quinquereme:  { hullW: 0.80, hullH: 0.25, prowLen: 0.18, mastH: 0.55, sailW: 0.50, sailH: 0.40, oars: 0, stripe: '#DAA520', hullCol: '#3D1F00', deckCol: '#6B4226' },
   };
-  const cfg = configs[type] || configs.skiff;
+  const cfg = configs[type] || configs.liburna;
 
   const hullW = cfg.hullW * sz;
   const hullH = cfg.hullH * sz;
@@ -3173,7 +3180,7 @@ function initEnemies() {
     // Ship sprite (canvas-drawn, swapped per type)
     const spriteGeo = new THREE.PlaneGeometry(6, 6);
     const spriteMat = new THREE.MeshBasicMaterial({
-      map: shipTextures.skiff, transparent: true, alphaTest: 0.05, depthWrite: false
+      map: shipTextures.liburna, transparent: true, alphaTest: 0.05, depthWrite: false
     });
     const spriteMesh = new THREE.Mesh(spriteGeo, spriteMat);
     spriteMesh.position.z = 0.01;
@@ -3273,7 +3280,7 @@ function initEnemies() {
 
     enemyGroup.add(mesh);
     pool.push({
-      active: false, type: 'skiff',
+      active: false, type: 'liburna',
       hp: 0, maxHp: 0, armour: 0, heat: 0,
       lane: 0, y: SHIP_SPAWN_Y,
       speed: 0, baseSpeed: 0,
@@ -3435,7 +3442,7 @@ function updateEnemies(dt) {
       // One-shot damage: the full breach amount (was bled over the sink window),
       // reduced if the ship was already burning.
       wallDamage += WALL_MAX_HP * dripPct * BREACH_SINK_TIME * Math.max(0.2, 1 - heatFrac);
-      const heavy = (e.type === 'flagship' || e.type === 'quadrireme');
+      const heavy = (e.type === 'quinquereme' || e.type === 'quadrireme');
       spawnDestruction(cx, BATTLEMENT_TOP_Y + half, heavy); // explosion + embers
       spawnSmoke(cx, BATTLEMENT_TOP_Y + 1, 2);              // parting smoke burst
       lastBreaches.push({ x: cx, lane: e.lane });           // battlement stone flash
@@ -3512,7 +3519,7 @@ function updateEnemyVisual(e) {
   e.barFill.position.x = -2.5 * (1 - e.burn);
 
   // Swap sprite texture to match type
-  const tex = shipTextures[e.type] || shipTextures.skiff;
+  const tex = shipTextures[e.type] || shipTextures.liburna;
   if (e.spriteMat.map !== tex) {
     e.spriteMat.map = tex;
     e.spriteMat.needsUpdate = true;
@@ -3557,7 +3564,7 @@ function updateEnemyVisual(e) {
   e.mesh.scale.set(s/3, s/3, 1);
   // Shield plate visibility + glint
   if (e.shieldPlate) {
-    const isShield = (e.type === 'shieldbearer');
+    const isShield = (e.type === 'cataphract');
     e.shieldPlate.visible = isShield;
     if (isShield) {
       // Subtle glint: opacity pulse
@@ -3585,10 +3592,10 @@ function updateEnemyVisual(e) {
 // === src/enemy-spawner.js ===
 // ============================================================
 // src/enemy-spawner.js — Spawn schedule for 600s session
-// Phase 1 (0-60s): Skiffs, first shield-bearer at 30s.
-// Phase 2 (60-180s): Mixed, shield-bearer escorts every 20s.
-// Phase 3 (180-540s): Heavy, shield-bearers on all lanes.
-// Phase 4 (540-600s): Flagship.
+// Phase 1 (0-60s): Liburnae, first cataphract at 30s.
+// Phase 2 (60-180s): Mixed, cataphract escorts every 20s.
+// Phase 3 (180-540s): Heavy, cataphracts on all lanes.
+// Phase 4 (540-600s): Quinquereme.
 // ============================================================
 
 
@@ -3605,7 +3612,7 @@ const ESCORT_SPACING = 6;
 let spawnTimer = 0;
 let spawnerElapsed = 0;
 let totalSpawns = 0;
-let flagshipSpawned = false;
+let quinqueremeSpawned = false;
 let shieldBearerTimer = 0;
 let firstShieldSpawned = false;
 let shieldBearerLaneIndex = 0; // cycles through lanes
@@ -3615,13 +3622,13 @@ let shieldBearerLaneIndex = 0; // cycles through lanes
 // session clock passes its time. After 90s the normal phase spawner takes over.
 const SCRIPT_END = 90;
 const OPENING_SCRIPT = [
-  // 0-20s: 3 slow skiffs, spaced — easy beam-aiming + altar-feeding tutorial
-  { t: 2,  fn: () => spawnEnemy('skiff', 2, 1.0) },
-  { t: 9,  fn: () => spawnEnemy('skiff', 1, 1.0) },
-  { t: 15, fn: () => spawnEnemy('skiff', 3, 1.0) },
+  // 0-20s: 3 slow liburnae, spaced — easy beam-aiming + altar-feeding tutorial
+  { t: 2,  fn: () => spawnEnemy('liburna', 2, 1.0) },
+  { t: 9,  fn: () => spawnEnemy('liburna', 1, 1.0) },
+  { t: 15, fn: () => spawnEnemy('liburna', 3, 1.0) },
   // 20-45s: paired flank spawns — forces a 2nd mirror purchase
-  { t: 21, fn: () => { spawnEnemy('skiff', 0, 1.0); spawnEnemy('skiff', 4, 1.0); } },
-  { t: 28, fn: () => { spawnEnemy('skiff', 0, 1.0); spawnEnemy('skiff', 4, 1.0); } },
+  { t: 21, fn: () => { spawnEnemy('liburna', 0, 1.0); spawnEnemy('liburna', 4, 1.0); } },
+  { t: 28, fn: () => { spawnEnemy('liburna', 0, 1.0); spawnEnemy('liburna', 4, 1.0); } },
   { t: 34, fn: () => { spawnEnemy('trireme', 0, 1.0); spawnEnemy('trireme', 4, 1.0); } },
   { t: 40, fn: () => { spawnEnemy('trireme', 1, 1.0); spawnEnemy('trireme', 3, 1.0); } },
   // 45-75s: shield-bearers + triremes — pushes Helios stun / Poseidon vortex
@@ -3630,10 +3637,10 @@ const OPENING_SCRIPT = [
   { t: 64, fn: () => { spawnShieldFormation(3, 1.1); spawnEnemy('trireme', 1, 1.1); } },
   { t: 71, fn: () => { spawnEnemy('quadrireme', 2, 1.1); spawnEnemy('trireme', 0, 1.1); spawnEnemy('trireme', 4, 1.1); } },
   // 75-90s: fast assault wave — tests defence + ultimate combos
-  { t: 76, fn: () => { for (let l = 0; l < 5; l++) spawnEnemy('skiff', l, 1.15); } },
+  { t: 76, fn: () => { for (let l = 0; l < 5; l++) spawnEnemy('liburna', l, 1.15); } },
   { t: 81, fn: () => { spawnEnemy('trireme', 0, 1.2); spawnEnemy('trireme', 2, 1.2); spawnEnemy('trireme', 4, 1.2); } },
   { t: 85, fn: () => { spawnShieldFormation(2, 1.2); spawnEnemy('quadrireme', 0, 1.2); spawnEnemy('quadrireme', 4, 1.2); } },
-  { t: 89, fn: () => { for (let l = 0; l < 5; l++) spawnEnemy('skiff', l, 1.25); } },
+  { t: 89, fn: () => { for (let l = 0; l < 5; l++) spawnEnemy('liburna', l, 1.25); } },
 ];
 let scriptIndex = 0;
 
@@ -3691,9 +3698,9 @@ function updateSpawner(dt, sessionTime) {
 // Spawn shield-bearer leading 2-3 escorts in tight column
 function spawnShieldFormation(lane, hpMult) {
   // Leader
-  spawnEnemy('shieldbearer', lane, hpMult, 0);
-  // 2 trailing ships (skiffs early, triremes later)
-  const escortType = spawnerElapsed < PHASE_2_END ? 'skiff' : 'trireme';
+  spawnEnemy('cataphract', lane, hpMult, 0);
+  // 2 trailing ships (liburnae early, triremes later)
+  const escortType = spawnerElapsed < PHASE_2_END ? 'liburna' : 'trireme';
   const escortCount = spawnerElapsed < PHASE_2_END ? 2 : 3;
   for (let i = 1; i <= escortCount; i++) {
     spawnEnemy(escortType, lane, hpMult, ESCORT_SPACING * i);
@@ -3712,7 +3719,7 @@ function resetSpawner() {
   spawnTimer = INITIAL_DELAY;
   spawnerElapsed = 0;
   totalSpawns = 0;
-  flagshipSpawned = false;
+  quinqueremeSpawned = false;
   shieldBearerTimer = 0;
   firstShieldSpawned = false;
   shieldBearerLaneIndex = 0;
@@ -3728,11 +3735,11 @@ function getInterval() {
 function doSpawn() {
   const hpMult = 1 + (spawnerElapsed / SESSION_DURATION) * ESCALATION_HP_FACTOR;
 
-  if (spawnerElapsed >= PHASE_3_END && !flagshipSpawned) {
-    // Flagship: random lane, drifts laterally (handled in enemy update if desired)
+  if (spawnerElapsed >= PHASE_3_END && !quinqueremeSpawned) {
+    // Quinquereme flagship: random lane, drifts laterally (handled in enemy update if desired)
     const bossLane = Math.floor(Math.random() * ENEMY_LANE_COUNT);
-    spawnEnemy('flagship', bossLane, 1.0);
-    flagshipSpawned = true;
+    spawnEnemy('quinquereme', bossLane, 1.0);
+    quinqueremeSpawned = true;
     return;
   }
 
@@ -3740,8 +3747,8 @@ function doSpawn() {
   const lane = Math.floor(Math.random() * ENEMY_LANE_COUNT);
 
   if (spawnerElapsed < PHASE_1_END) {
-    // Phase 1: skiffs on random lanes
-    spawnEnemy('skiff', lane, hpMult);
+    // Phase 1: liburnae on random lanes
+    spawnEnemy('liburna', lane, hpMult);
   } else if (spawnerElapsed < PHASE_2_END) {
     // Phase 2: mix of types across all lanes
     const roll = Math.random();
@@ -3750,14 +3757,14 @@ function doSpawn() {
     } else if (roll < 0.55) {
       spawnEnemy('trireme', lane, hpMult);
     } else {
-      spawnEnemy('skiff', lane, hpMult);
+      spawnEnemy('liburna', lane, hpMult);
     }
     // Paired pressure every 5th spawn on random opposite lanes
     if (totalSpawns % 5 === 0) {
       const pairA = Math.floor(Math.random() * 2);       // 0 or 1
       const pairB = ENEMY_LANE_COUNT - 1 - pairA;        // 4 or 3
-      spawnEnemy('skiff', pairA, hpMult);
-      spawnEnemy('skiff', pairB, hpMult);
+      spawnEnemy('liburna', pairA, hpMult);
+      spawnEnemy('liburna', pairB, hpMult);
     }
   } else {
     // Phase 3: heavy across all lanes
@@ -3767,7 +3774,7 @@ function doSpawn() {
     } else if (roll < 0.65) {
       spawnEnemy('trireme', lane, hpMult);
     } else {
-      spawnEnemy('skiff', lane, hpMult);
+      spawnEnemy('liburna', lane, hpMult);
     }
     // Paired heavy pressure every 4th spawn
     if (totalSpawns % 4 === 0) {
@@ -5078,7 +5085,7 @@ function spawnSparks(x, y, colour, count) {
 }
 
 // Destruction sequence: flash + debris + audio
-// heavy=true for flagship/large ships → deeper bass + bigger flash
+// heavy=true for quinquereme/large ships → deeper bass + bigger flash
 function spawnDestruction(x, y, heavy) {
   // Flash (large bright glow)
   spawnContactGlow(x, y, 0xffffff, heavy ? 160 : 100);
@@ -6037,7 +6044,7 @@ function updateDamage(dt) {
         addSlagDirect(reward);
         totalKills++;
         const ex = -worldWidth / 2 + laneWidth * (enemy.lane + 0.5);
-        const heavy = (enemy.type === 'flagship' || enemy.type === 'quadrireme');
+        const heavy = (enemy.type === 'quinquereme' || enemy.type === 'quadrireme');
         spawnDestruction(ex, enemy.y, heavy);
         // Sinking glug plays after the explosion (200ms delay)
         setTimeout(playSinkGlug, 200);
@@ -6653,7 +6660,7 @@ function triggerWin() {
     const pool = getEnemyPool();
     for (const e of pool) {
       if (!e.active) continue;
-      const heavy = !!(e.type && (e.type === 'quadrireme' || e.type === 'flagship' || e.type === 'shieldbearer'));
+      const heavy = !!(e.type && (e.type === 'quadrireme' || e.type === 'quinquereme' || e.type === 'cataphract'));
       spawnDestruction(e.mesh.position.x, e.mesh.position.y, heavy);
       deactivateEnemy(e);
     }
