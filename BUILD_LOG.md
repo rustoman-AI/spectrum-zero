@@ -828,3 +828,33 @@ Swept all src for `\bAu\b` / `\bAz\b` afterward — only remaining hit is an exp
 Build 284.9 KB exit 0 (luminance gate passes), rotation 11/11, smoke 29/29. Grepped index.html: new dark stops present, old `#1f8f8a`/`#186b74` gone (no override survived to the build). Deleted the throwaway `_lum.js`.
 
 **Honest caveat:** These are computed luminance numbers (the same formula now gates the build), not a screen capture — I can't view the render here. But the sea is now provably within the requested band and every surface is provably below both its cap and the palest beam, and the gate will fail any future build that lets the water drift bright again.
+
+---
+
+## 2026-08-25 — Proved the luminance gate by exercising it (and hardened it)
+
+**Asked:** don't claim the gate works by reasoning — trip it for real. Set a sea stop to the old #1f8f8a, run the build, confirm it exits non-zero, names the offender, and deletes/refuses the output; then revert and report the actual output.
+
+**Exercising it surfaced a real flaw:** the first trip printed "Built index.html (284.9 KB)" and left a stale bright index.html on disk (size/mtime changed) — because the luminance gate ran AFTER writeFileSync and only did process.exit(1), unlike the syntax/lint gates which unlink the output. So a broken artifact could ship if the exit code were ignored. Fixed: the gate now `fs.unlinkSync(outPath)` on failure.
+
+**Actual output of the failed build (after the fix), with sea lower stop = #1f8f8a:**
+```
+Built index.html (284.9 KB)
+  Luminance budget (sea cap 5.3%, others 22%):
+    sea upper (top stop)   #12303F  2.6%
+    sea lower (bottom stop) #1f8f8a  21.8%  ✗ OVER
+    sea mid stop 1         #143543  3.1%
+    sea mid stop 2         #163B4C  3.8%
+    COL_GROUND             0x2E2419  1.9%
+    COL_SKY                0x0a1520  0.7%
+    COL_WALL               0x554433  6.3%
+    (ref) beam gold full   #ffe9a0  82.1%  (additive; brightest on screen)
+
+❌ BUILD FAILED: background surface(s) over luminance cap:
+  sea lower (bottom stop) #1f8f8a 21.8% (cap 5.3%)
+  Sea must stay within #12303F..#1A4257 so the beams remain brightest.
+  (deleted index.html)
+```
+Post-check: `EXIT=1`, and `Test-Path index.html` returned false — **index.html DELETED, broken build refused**. Confirms: (a) non-zero exit, (b) names the offending stop, (c) deletes the output. Also confirms the tight sea cap catches 21.8% (a plain 22% ceiling would not).
+
+**Reverted** the stop to #1A4257; clean build exits 0, sea lower back to 4.8%, output restored. Source grepped clean of the temp colour. Rotation 11/11, smoke 29/29.

@@ -378,7 +378,10 @@ console.log(`Built index.html (${(size / 1024).toFixed(1)} KB)`);
   if (offenders.length) {
     console.error(`\n❌ BUILD FAILED: background surface(s) over luminance cap:`);
     for (const o of offenders) console.error('  ' + o);
-    console.error('  Sea must stay within #12303F..#1A4257 so the beams remain brightest.\n');
+    console.error('  Sea must stay within #12303F..#1A4257 so the beams remain brightest.');
+    // Delete the just-written output so a failed build can never leave a stale,
+    // too-bright index.html on disk (matches the syntax/lint gates above).
+    try { fs.unlinkSync(outPath); console.error('  (deleted index.html)\n'); } catch (_) { console.error(''); }
     process.exit(1);
   }
 })();
