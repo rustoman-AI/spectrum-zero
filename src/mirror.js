@@ -94,8 +94,10 @@ function createMirror(socketIndex) {
   const [sx, sy] = SOCKET_POSITIONS[socketIndex];
   const angle = 0; // default, overridden in initMirrors per-mirror
 
-  // Draw mirror as bronze shield on wooden cart (canvas texture)
-  const texSize = 64;
+  // Draw mirror as an elongated bronze shield (canvas texture). Higher-res than
+  // the old disc so the lengthwise specular streak, rim, and end rivets stay
+  // crisp when the sprite is scaled up on screen.
+  const texSize = 128;
   const c = document.createElement('canvas');
   c.width = texSize; c.height = texSize;
   const ctx = c.getContext('2d');
@@ -112,9 +114,12 @@ function createMirror(socketIndex) {
   mesh.rotation.z = angle;
   mirrorMeshGroup.add(mesh);
 
-  // Dynamic specular highlight: a soft additive glint sprite over the bronze
-  // disc. As the disc rotates, the glint slides across its face (as if catching
-  // a fixed overhead sun), and it flares brightest when the disc faces up.
+  // Dynamic sun-catch glint: a soft additive glow sitting ON the shield face
+  // that brightens when the polished surface tilts up toward the overhead sun.
+  // The orientation cue comes from the elongated shape + baked lengthwise
+  // streak; this glint just adds a live "catches the light" flare so the
+  // surface reads as a real reflector. Kept centred on the face (not floating
+  // off to the side) so it stays married to the narrow shield at every angle.
   const hlCanvas = document.createElement('canvas');
   hlCanvas.width = 32; hlCanvas.height = 32;
   const hlCtx = hlCanvas.getContext('2d');
@@ -126,8 +131,8 @@ function createMirror(socketIndex) {
   const hlTex = new THREE.CanvasTexture(hlCanvas);
   hlTex.minFilter = THREE.LinearFilter;
   const highlight = new THREE.Mesh(
-    new THREE.PlaneGeometry(3.2, 3.2),
-    new THREE.MeshBasicMaterial({ map: hlTex, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })
+    new THREE.PlaneGeometry(4.5, 2.2), // wide, low — hugs the elongated face
+    new THREE.MeshBasicMaterial({ map: hlTex, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false })
   );
   highlight.position.set(sx, sy, 0.05);
   mirrorMeshGroup.add(highlight);
@@ -204,62 +209,101 @@ export function addMirror() {
   return mirror;
 }
 
+// Draw an elongated bronze shield mirror seen at an angle. The whole thing is
+// drawn LONG along the local X axis (which is the mirror's reflecting line,
+// p1->p2), so when the mesh rotates by mirror.angle the elongation + lengthwise
+// specular streak rotate with it — the tilt is readable at a glance, unlike the
+// old near-circular disc. Layers, back to front: wooden backing frame, then the
+// long oval bronze face with a darker rim, a bright specular highlight running
+// the length of the face, and forged rivets at each end.
 function drawMirrorSprite(ctx, sz) {
   const cx = sz / 2;
   const cy = sz / 2;
   ctx.clearRect(0, 0, sz, sz);
 
-  // Wooden cart frame (horizontal bar behind the shield)
-  ctx.fillStyle = '#3D2010';
-  ctx.fillRect(cx - sz * 0.42, cy - 2, sz * 0.84, 4);
+  // Long/short half-extents of the shield face. Clearly wider than tall
+  // (~2.6:1) so orientation is unmistakable at any angle.
+  const rx = sz * 0.40;   // half-length along local X (the reflecting line)
+  const ry = sz * 0.155;  // half-height across it
 
-  // Wheels (small circles at ends)
-  ctx.fillStyle = '#2A1500';
-  ctx.beginPath();
-  ctx.arc(cx - sz * 0.38, cy + 3, 3.5, 0, Math.PI * 2);
+  // --- Wooden backing frame (a plank a touch longer + taller than the face) ---
+  const fx = rx + sz * 0.05;
+  const fy = ry + sz * 0.055;
+  ctx.save();
+  ctx.translate(cx, cy);
+  // Plank body with rounded ends.
+  ctx.fillStyle = '#3a2412';
+  roundRectPath(ctx, -fx, -fy, fx * 2, fy * 2, fy);
   ctx.fill();
-  ctx.beginPath();
-  ctx.arc(cx + sz * 0.38, cy + 3, 3.5, 0, Math.PI * 2);
-  ctx.fill();
-  // Wheel spokes
-  ctx.strokeStyle = '#5C3D2E';
-  ctx.lineWidth = 0.8;
-  for (let w = -1; w <= 1; w += 2) {
-    const wx = cx + w * sz * 0.38;
-    const wy = cy + 3;
-    ctx.beginPath(); ctx.moveTo(wx - 2, wy); ctx.lineTo(wx + 2, wy); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(wx, wy - 2); ctx.lineTo(wx, wy + 2); ctx.stroke();
-  }
+  // Wood-grain edge highlight (top) + shadow (bottom) for a little depth.
+  ctx.strokeStyle = 'rgba(120,84,50,0.7)';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(-fx + fy, -fy + 0.6); ctx.lineTo(fx - fy, -fy + 0.6); ctx.stroke();
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+  ctx.beginPath(); ctx.moveTo(-fx + fy, fy - 0.6); ctx.lineTo(fx - fy, fy - 0.6); ctx.stroke();
+  ctx.restore();
 
-  // Bronze polished shield face (large ellipse — wider than tall since mirror is oriented horizontally)
-  const shieldRx = sz * 0.32;
-  const shieldRy = sz * 0.28;
-  // Metallic gradient
-  const grad = ctx.createRadialGradient(cx - 4, cy - 4, 2, cx, cy, shieldRx);
-  grad.addColorStop(0, '#E8C87A');   // bright highlight
-  grad.addColorStop(0.3, '#CC9944'); // polished bronze
-  grad.addColorStop(0.7, '#996633'); // darker bronze
-  grad.addColorStop(1, '#664422');   // rim shadow
+  // --- Bronze face (long oval) with a metallic cross-gradient (top-lit) ---
+  const grad = ctx.createLinearGradient(0, cy - ry, 0, cy + ry);
+  grad.addColorStop(0.0, '#f0d18a');  // top edge catching light
+  grad.addColorStop(0.35, '#cf9e4c'); // polished bronze
+  grad.addColorStop(0.7, '#9a6a34');  // lower bronze
+  grad.addColorStop(1.0, '#5f3e1f');  // bottom rim shadow
   ctx.fillStyle = grad;
   ctx.beginPath();
-  ctx.ellipse(cx, cy, shieldRx, shieldRy, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Shield rim ring
-  ctx.strokeStyle = '#553311';
-  ctx.lineWidth = 2;
+  // Darker rim ring around the face.
+  ctx.strokeStyle = '#4a2f14';
+  ctx.lineWidth = 2.2;
   ctx.beginPath();
-  ctx.ellipse(cx, cy, shieldRx, shieldRy, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
   ctx.stroke();
 
-  // Centre boss (raised bump)
-  ctx.fillStyle = '#DDAA55';
+  // --- Specular highlight running along the length of the face ---
+  // A long, bright, soft streak just above the centreline — reads as sunlight
+  // glancing off a polished curved surface. Baked into the sprite so it turns
+  // with the mirror.
+  ctx.save();
   ctx.beginPath();
-  ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+  ctx.ellipse(cx, cy, rx - 2, ry - 1.5, 0, 0, Math.PI * 2);
+  ctx.clip(); // keep the streak inside the face
+  const streak = ctx.createLinearGradient(0, cy - ry, 0, cy + ry * 0.2);
+  streak.addColorStop(0.0, 'rgba(255,250,235,0.0)');
+  streak.addColorStop(0.45, 'rgba(255,252,240,0.95)');
+  streak.addColorStop(0.7, 'rgba(255,245,215,0.25)');
+  streak.addColorStop(1.0, 'rgba(255,245,215,0.0)');
+  ctx.fillStyle = streak;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy - ry * 0.32, rx * 0.86, ry * 0.42, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = '#AA7733';
-  ctx.lineWidth = 1;
-  ctx.stroke();
+  ctx.restore();
+
+  // --- Forged rivets at each end of the shield ---
+  const rivetX = rx * 0.82;
+  for (const s of [-1, 1]) {
+    const px = cx + s * rivetX;
+    ctx.beginPath();
+    ctx.arc(px, cy, 2.4, 0, Math.PI * 2);
+    ctx.fillStyle = '#e8c880';       // bright rivet head
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = '#6b4a22';     // rivet shadow ring
+    ctx.stroke();
+  }
+}
+
+// Rounded-rectangle path helper (canvas has no built-in in older engines).
+function roundRectPath(ctx, x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
 }
 
 export function updateMirrorGeometry(mirror) {
@@ -281,15 +325,15 @@ export function updateMirrorGeometry(mirror) {
   mirror.mesh.position.set(sx, sy, 0);
   mirror.mesh.rotation.z = mirror.angle;
 
-  // Specular glint: slides along the disc's surface normal and flares brightest
-  // when the normal faces up toward a virtual overhead sun (normal.y -> 1).
+  // Sun-catch glint: centred on the shield face and rotated with it so its wide
+  // axis lies along the shield's length. Brightens when the polished face tilts
+  // up toward the virtual overhead sun (surface normal.y -> 1).
   if (mirror.highlight) {
-    const nx = mirror.normal.x, ny = mirror.normal.y;
-    const off = 1.6; // how far along the normal the glint sits
-    mirror.highlight.position.set(sx + nx * off, sy + ny * off, 0.05);
-    // Brightness peaks when the polished face tilts toward the sun (ny high).
+    const ny = mirror.normal.y;
+    mirror.highlight.position.set(sx, sy, 0.05);
+    mirror.highlight.rotation.z = mirror.angle; // wide glint follows the length
     const facing = Math.max(0, ny);              // 0..1
-    mirror.highlight.material.opacity = 0.2 + 0.65 * facing;
+    mirror.highlight.material.opacity = 0.12 + 0.5 * facing;
   }
 }
 
@@ -366,9 +410,10 @@ export function updateMirrorTweens(dt) {
     tw.mirror.p1 = { x: x - halfLen * cos, y: y - halfLen * sin };
     tw.mirror.p2 = { x: x + halfLen * cos, y: y + halfLen * sin };
     tw.mirror.normal = { x: -sin, y: cos };
-    // Keep the specular glint tracking the disc during the tween.
+    // Keep the sun-catch glint centred on the shield (and aligned) during tween.
     if (tw.mirror.highlight) {
-      tw.mirror.highlight.position.set(x + (-sin) * 1.6, y + cos * 1.6, 0.05);
+      tw.mirror.highlight.position.set(x, y, 0.05);
+      tw.mirror.highlight.rotation.z = tw.mirror.angle;
     }
 
     markDirty(); // re-solve beam every frame during tween

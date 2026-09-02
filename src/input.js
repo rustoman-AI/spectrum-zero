@@ -74,14 +74,17 @@ export function initInput(canvas) {
   createDebugOverlay();
 }
 function createHighlight() {
-  const geo = new THREE.RingGeometry(4, 4.6, 24);
+  // Ring sized to fully enclose the elongated bronze shield (its tips reach
+  // ~4.8u from centre), so the green selection halo reads clearly around the
+  // whole mirror at every rotation without the shape poking through it.
+  const geo = new THREE.RingGeometry(4.9, 5.5, 28);
   const mat = new THREE.MeshBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0.9 });
   highlightMesh = new THREE.Mesh(geo, mat);
   highlightMesh.position.z = 0.5;
   highlightMesh.visible = false;
   getScene().add(highlightMesh);
   // Second highlight for secondary pointer
-  const geo1b = new THREE.RingGeometry(4, 4.6, 24);
+  const geo1b = new THREE.RingGeometry(4.9, 5.5, 28);
   const mat1b = new THREE.MeshBasicMaterial({ color: 0x00ff88, transparent: true, opacity: 0.9 });
   highlight2Mesh = new THREE.Mesh(geo1b, mat1b);
   highlight2Mesh.position.z = 0.5;

@@ -765,3 +765,20 @@ Swept all src for `\bAu\b` / `\bAz\b` afterward — only remaining hit is an exp
 **Verified:** `node build.js` -> 280.8 KB, exit 0. Rotation 11/11, smoke 29/29. Diagnostics clean on session/config/crafting/foundry. Grepped index.html to confirm HUD `Gd:`, altar `short:'Gd'`, and both cost maps `gold:'Gd'` are bundled. HUD reads `Bz: Si: Gd: Fa:`; altar popups/label ticks derive "Gd" from config. Underlying resource keys stay bronze/silver/gold/faith (only the display ticker changed), so no logic/balance impact.
 
 **Honest caveat:** Can't see the render here — a quick device look confirms the HUD shows "Gd:" and a lit gold altar pops "+1 Gd", but the change is a pure display-string swap so behaviour is unaffected.
+
+---
+
+## 2026-08-25 — Mirror sprite: round disc -> elongated bronze shield (orientation readability)
+
+**Asked:** Revert mirrors from round discs (a readability regression — a circle looks identical at every angle, reads as a coin/button) back to an elongated shape, but NOT the plain bar. Draw an elongated bronze shield seen at an angle: long oval face, bright specular highlight along its length, darker rim, rivets at both ends, simple wooden frame behind. Clearly wider than tall so tilt is unmistakable; highlight rotates with the mirror so it reads as a real reflecting surface. Keep the hit area exactly as-is (sprite only). Confirm the selection ring still reads.
+
+**Generated (`mirror.js` + `input.js`), sprite-only:**
+- **`drawMirrorSprite` rewritten:** now draws the mirror LONG along local X (which is the reflecting line p1->p2), ~2.6:1 wider than tall, so rotating the mesh by `mirror.angle` turns the whole elongated shape + its highlight — orientation is legible at a glance. Layers back-to-front: a wooden backing plank (rounded ends, grain highlight/shadow), a long bronze oval face with a top-lit metallic cross-gradient and a darker rim ring, a bright specular streak baked along the length of the face (clipped inside the oval), and forged rivets at each end. Texture bumped 64 -> 128px for crisp detail. Added a small `roundRectPath` helper (verified unique across the bundle, no name collision).
+- **Sun-catch glint reworked:** the separate additive glint that used to float off to the side (offset along the normal) now sits CENTRED on the face, is wide-and-low (4.5x2.2), rotates with the mirror (`highlight.rotation.z = angle`), and is toned down (opacity 0.12 + 0.5*face-up) so it complements the baked streak instead of reading as a detached blob. Updated both `updateMirrorGeometry` and the tween path to centre+rotate it.
+- **Selection ring (`input.js`):** bumped `RingGeometry` 4/4.6 -> 4.9/5.5 (both primary + second-pointer rings) so the green halo fully encloses the shield (tips reach ~4.8u from centre) at every rotation without the shape poking through. A circular ring stays rotation-invariant and reads cleanly around the elongated shield.
+
+**Hit area untouched:** collision is a circular `HIT_RADIUS` test around `freeX/freeY` in `findObjectAt`; the reflecting geometry is `p1`/`p2`/`normal`/`mirror.length` (= MIRROR_LENGTH) and `MIRROR_RADIUS`/`clampMirrorPos` — none changed. The sprite plane stayed square, so rotation doesn't distort the shield. The rotation test (which exercises the real p1/p2/normal geometry) stays 11/11, confirming no gameplay/geometry change.
+
+**Verified:** `node build.js` -> 283.5 KB, exit 0 (strict lint + duplicate-id guard pass). Rotation 11/11, smoke 29/29. Grepped index.html to confirm the new sprite, `roundRectPath`, and the resized rings are bundled.
+
+**Honest caveat:** Can't see the render here. Device check worth doing: (a) the shield reads clearly wider-than-tall and its tilt is obvious at all angles, (b) the lengthwise highlight looks like a real specular reflection turning with the surface (streak brightness/position are canvas constants, easy to tune), (c) the wooden frame/rivets read at on-screen size, and (d) the green selection ring sits as a clean halo around the shield without clipping. All are constant/asset tweaks (shield rx/ry ratio, streak alpha, ring radius) if anything needs nudging.
