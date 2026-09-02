@@ -51,6 +51,7 @@ export function initFortress() {
   fortCtx = fortCanvas.getContext('2d');
 
   fortTexture = new THREE.CanvasTexture(fortCanvas);
+  fortTexture.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   fortTexture.minFilter = THREE.LinearFilter;
   fortTexture.magFilter = THREE.LinearFilter;
 

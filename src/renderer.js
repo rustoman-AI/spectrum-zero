@@ -30,6 +30,15 @@ export function initRenderer() {
 
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  // Colour pipeline (three.js r160): output is sRGB and NoToneMapping is the
+  // default. Every CanvasTexture in the project holds ALREADY-sRGB pixels, so
+  // each one is tagged `.colorSpace = SRGBColorSpace` at creation (see
+  // makeCanvasTexture / the per-module textures). That makes three.js linearise
+  // the texels on sample and encode once on output — instead of the r160
+  // default (CanvasTexture = NoColorSpace) which skipped linearisation and
+  // double-encoded, lifting every dark canvas colour into light grey-blue.
+  // Set explicitly so a future vendor swap can't silently change the default.
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.autoClear = false; // we manage clearing manually for two-pass
   document.body.appendChild(renderer.domElement);
 

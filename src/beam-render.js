@@ -121,6 +121,7 @@ function getBeamTexture() {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, w, h);
   beamTexture = new THREE.CanvasTexture(c);
+  beamTexture.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   beamTexture.minFilter = THREE.LinearFilter;
   beamTexture.magFilter = THREE.LinearFilter;
   return beamTexture;

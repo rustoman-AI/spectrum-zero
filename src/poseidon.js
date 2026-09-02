@@ -47,6 +47,7 @@ export function initPoseidon() {
   const ctx = c.getContext('2d');
   drawWhirlpool(ctx, 128);
   const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   tex.minFilter = THREE.LinearFilter;
   tex.premultiplyAlpha = false;
   const geo = new THREE.PlaneGeometry(size, size);

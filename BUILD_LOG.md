@@ -858,3 +858,22 @@ Built index.html (284.9 KB)
 Post-check: `EXIT=1`, and `Test-Path index.html` returned false — **index.html DELETED, broken build refused**. Confirms: (a) non-zero exit, (b) names the offending stop, (c) deletes the output. Also confirms the tight sea cap catches 21.8% (a plain 22% ceiling would not).
 
 **Reverted** the stop to #1A4257; clean build exits 0, sea lower back to 4.8%, output restored. Source grepped clean of the temp colour. Rotation 11/11, smoke 29/29.
+
+---
+
+## 2026-08-25 — Colour pipeline fix: sRGB double-encode of CanvasTextures (the real cause of "bright water")
+
+**Root cause (confirmed last round):** vendored three.js is **r160** (the `'160'` string literal; `r150` only appears in the deprecation banner). r150+ has colour management ON by default: `outputColorSpace` defaults to `SRGBColorSpace`, `toneMapping` defaults to `NoToneMapping`, and — critically — **`CanvasTexture.colorSpace` defaults to `NoColorSpace`**. So every canvas texture (already holding sRGB pixels) was treated as linear and skipped linearisation, then got the sRGB output encode applied anyway → a double encode that lifted `#12303F` (2.6%) to roughly `#4D7887` light grey-blue on screen, uniformly, and washed out the additive beams. Palette edits never showed because the distortion was in the pipeline, not the values.
+
+**Applied (pipeline only, no palette changes):**
+- `renderer.js`: set `renderer.outputColorSpace = THREE.SRGBColorSpace` explicitly (documents intent; guards against a future vendor default change). Left `toneMapping` at its `NoToneMapping` default (tone mapping was not lifting anything).
+- Tagged **all 21 CanvasTexture sites** across 12 files with `.colorSpace = THREE.SRGBColorSpace` (sea, foam line, beam, crafting tray, effects glow, fortress, ship sprites, ship shield plate, altar popup/brazier bowl/flame/label, mirror sprite + highlight, rotation indicator, poseidon whirlpool, HUD, overlay, tutorial banner). Verified count: 21 CanvasTexture == 21 colorSpace assignments.
+- Flat-colour materials (`MeshBasicMaterial({color})`, `scene.background`) need NO change: in r160 they're already interpreted as sRGB inputs and encoded once. Now textured surfaces do the same single round-trip, so the sea (texture) and its neighbouring sky/ground (flat colour) are lifted identically and the seam at the plane boundary closes. This was the whole point — before, textures got two encodes and flat colours one, so they diverged exactly at plane edges.
+
+**r150-era assumptions checked in renderer setup:** no `outputEncoding`, no `physicallyCorrectLights`, no `useLegacyLights`, no `gammaFactor` in our code (all removed/renamed in r150) — the renderer relied purely on r160 defaults plus the now-added `outputColorSpace`. Nothing else to migrate.
+
+**Verified the full chain:** dumped the sea canvas gradient to PNG (reproducing drawSeaBase's stops exactly) — it renders a DARK deep-blue gradient, 2.6%→4.8%, smooth, no seam. So: source hex 2.6–4.8% → dark canvas PNG → sRGB-tagged texture → single output encode → dark pixels. The dark PNG + (pending) dark screen together confirm the whole path. Build 286.9 KB exit 0, luminance gate green (source hex unchanged), rotation 11/11, smoke 29/29. Diagnostic scripts (_rev.js, _seapng.js) and the PNG deleted after use.
+
+**Expected side effect (as flagged):** EVERY canvas texture was double-encoded, so all of them shift darker at once now — ships, mirrors, altars, fortress, wall, HUD, tray. Some may now read too dark. That is expected; per instruction we retune from the corrected baseline, NOT in this pass. No palette values were touched here.
+
+**Honest caveat:** I can't view the rendered frame here — the PNG confirms the source/texture end of the chain is dark and seamless, and the pipeline maths now applies exactly one sRGB encode, but the on-screen confirmation is the user's to make. If the water now reads dark and the seam is gone, the luminance gate's numbers finally correspond to pixels.

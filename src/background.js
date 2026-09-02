@@ -72,6 +72,7 @@ export function initBackground() {
   // scrolling (texture.offset) instead of redrawing the canvas every frame.
   drawWaveCrests(seaCtx, seaW, seaH, 0);
   seaTexture = new THREE.CanvasTexture(seaCanvas);
+  seaTexture.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   seaTexture.minFilter = THREE.LinearFilter;
   seaTexture.magFilter = THREE.LinearFilter;
   seaTexture.wrapS = THREE.RepeatWrapping;
@@ -105,6 +106,7 @@ export function initBackground() {
   flGrad.addColorStop(1, 'rgba(255,255,255,0)');
   flCtx.fillStyle = flGrad; flCtx.fillRect(0, 0, 64, 8);
   const flTex = new THREE.CanvasTexture(flCanvas);
+  flTex.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   flTex.minFilter = THREE.LinearFilter;
   const foamLineGeo = new THREE.PlaneGeometry(ww + 4, foamLineH);
   const foamLineMat = new THREE.MeshBasicMaterial({ map: flTex, transparent: true, opacity: 0.6, depthWrite: false });

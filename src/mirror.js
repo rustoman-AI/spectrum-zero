@@ -103,6 +103,7 @@ function createMirror(socketIndex) {
   const ctx = c.getContext('2d');
   drawMirrorSprite(ctx, texSize);
   const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   tex.minFilter = THREE.LinearFilter;
   tex.premultiplyAlpha = false;
 
@@ -129,6 +130,7 @@ function createMirror(socketIndex) {
   hlGrad.addColorStop(1, 'rgba(255,240,200,0)');
   hlCtx.fillStyle = hlGrad; hlCtx.fillRect(0, 0, 32, 32);
   const hlTex = new THREE.CanvasTexture(hlCanvas);
+  hlTex.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   hlTex.minFilter = THREE.LinearFilter;
   const highlight = new THREE.Mesh(
     new THREE.PlaneGeometry(4.5, 2.2), // wide, low — hugs the elongated face

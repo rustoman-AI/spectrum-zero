@@ -89,6 +89,7 @@ export function initCrafting() {
   trayCtx.scale(2, 2); // logical coordinates remain 512x40
 
   trayTexture = new THREE.CanvasTexture(trayCanvas);
+  trayTexture.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   trayTexture.minFilter = THREE.LinearFilter;
 
   const geo = new THREE.PlaneGeometry(trayWidth, trayHeight);

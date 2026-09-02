@@ -523,6 +523,15 @@ function initRenderer() {
 
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  // Colour pipeline (three.js r160): output is sRGB and NoToneMapping is the
+  // default. Every CanvasTexture in the project holds ALREADY-sRGB pixels, so
+  // each one is tagged `.colorSpace = SRGBColorSpace` at creation (see
+  // makeCanvasTexture / the per-module textures). That makes three.js linearise
+  // the texels on sample and encode once on output — instead of the r160
+  // default (CanvasTexture = NoColorSpace) which skipped linearisation and
+  // double-encoded, lifting every dark canvas colour into light grey-blue.
+  // Set explicitly so a future vendor swap can't silently change the default.
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.autoClear = false; // we manage clearing manually for two-pass
   document.body.appendChild(renderer.domElement);
 
@@ -654,6 +663,7 @@ function initBackground() {
   // scrolling (texture.offset) instead of redrawing the canvas every frame.
   drawWaveCrests(seaCtx, seaW, seaH, 0);
   seaTexture = new THREE.CanvasTexture(seaCanvas);
+  seaTexture.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   seaTexture.minFilter = THREE.LinearFilter;
   seaTexture.magFilter = THREE.LinearFilter;
   seaTexture.wrapS = THREE.RepeatWrapping;
@@ -687,6 +697,7 @@ function initBackground() {
   flGrad.addColorStop(1, 'rgba(255,255,255,0)');
   flCtx.fillStyle = flGrad; flCtx.fillRect(0, 0, 64, 8);
   const flTex = new THREE.CanvasTexture(flCanvas);
+  flTex.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   flTex.minFilter = THREE.LinearFilter;
   const foamLineGeo = new THREE.PlaneGeometry(ww + 4, foamLineH);
   const foamLineMat = new THREE.MeshBasicMaterial({ map: flTex, transparent: true, opacity: 0.6, depthWrite: false });
@@ -838,6 +849,7 @@ function initFortress() {
   fortCtx = fortCanvas.getContext('2d');
 
   fortTexture = new THREE.CanvasTexture(fortCanvas);
+  fortTexture.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   fortTexture.minFilter = THREE.LinearFilter;
   fortTexture.magFilter = THREE.LinearFilter;
 
@@ -1498,6 +1510,7 @@ function initPoseidon() {
   const ctx = c.getContext('2d');
   drawWhirlpool(ctx, 128);
   const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   tex.minFilter = THREE.LinearFilter;
   tex.premultiplyAlpha = false;
   const geo = new THREE.PlaneGeometry(size, size);
@@ -2299,6 +2312,7 @@ function getBeamTexture() {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, w, h);
   beamTexture = new THREE.CanvasTexture(c);
+  beamTexture.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   beamTexture.minFilter = THREE.LinearFilter;
   beamTexture.magFilter = THREE.LinearFilter;
   return beamTexture;
@@ -2455,6 +2469,7 @@ function createMirror(socketIndex) {
   const ctx = c.getContext('2d');
   drawMirrorSprite(ctx, texSize);
   const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   tex.minFilter = THREE.LinearFilter;
   tex.premultiplyAlpha = false;
 
@@ -2481,6 +2496,7 @@ function createMirror(socketIndex) {
   hlGrad.addColorStop(1, 'rgba(255,240,200,0)');
   hlCtx.fillStyle = hlGrad; hlCtx.fillRect(0, 0, 32, 32);
   const hlTex = new THREE.CanvasTexture(hlCanvas);
+  hlTex.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   hlTex.minFilter = THREE.LinearFilter;
   const highlight = new THREE.Mesh(
     new THREE.PlaneGeometry(4.5, 2.2), // wide, low — hugs the elongated face
@@ -3044,6 +3060,7 @@ function generateShipTextures() {
     const ctx = c.getContext('2d');
     drawShip(ctx, sz, type);
     const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
     tex.minFilter = THREE.LinearFilter;
     tex.magFilter = THREE.LinearFilter;
     tex.premultiplyAlpha = false;
@@ -3258,6 +3275,7 @@ function initEnemies() {
       shCtx.stroke();
     }
     const shTex = new THREE.CanvasTexture(shieldCanvas);
+    shTex.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
     shTex.minFilter = THREE.LinearFilter;
     shTex.premultiplyAlpha = false;
     const shieldPlate = new THREE.Mesh(
@@ -3974,6 +3992,7 @@ function initResourcePopups() {
     c.fillStyle = def.popup || '#ffffff';
     c.fillText(txt, 64, 34);
     const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
     tex.minFilter = THREE.LinearFilter;
     popupTextures[def.type] = tex;
   }
@@ -4067,6 +4086,7 @@ function makeBrazierMesh(def) {
   b.quadraticCurveTo(64, 61, 98, 47);
   b.stroke();
   const bowlTex = new THREE.CanvasTexture(bowlCv);
+  bowlTex.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   bowlTex.minFilter = THREE.LinearFilter;
   const bowlMesh = new THREE.Mesh(
     new THREE.PlaneGeometry(4.2, 3.15),
@@ -4094,6 +4114,7 @@ function makeBrazierMesh(def) {
   drawFlame(32, 24, 11, 56, '#fff6d8', 0.9);
   f.globalAlpha = 1;
   const flTex = new THREE.CanvasTexture(flCv);
+  flTex.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   flTex.minFilter = THREE.LinearFilter;
   const flameMesh = new THREE.Mesh(
     new THREE.PlaneGeometry(2.1, 3.15),
@@ -4142,6 +4163,7 @@ function makeAltarLabelMesh(def) {
   c.fillText(tick, 128, 68);
 
   const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   tex.minFilter = THREE.LinearFilter;
   // Plane aspect 256:96 -> keep it readable but compact over the altar.
   const mesh = new THREE.Mesh(
@@ -4436,6 +4458,7 @@ function initCrafting() {
   trayCtx.scale(2, 2); // logical coordinates remain 512x40
 
   trayTexture = new THREE.CanvasTexture(trayCanvas);
+  trayTexture.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   trayTexture.minFilter = THREE.LinearFilter;
 
   const geo = new THREE.PlaneGeometry(trayWidth, trayHeight);
@@ -4844,6 +4867,7 @@ function radialTexture(stops) {
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, s, s);
   const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   tex.minFilter = THREE.LinearFilter;
   tex.magFilter = THREE.LinearFilter;
   return tex;
@@ -6212,6 +6236,7 @@ function initTutorial() {
   bannerCtx.scale(2, 2); // logical coordinates remain 512x128
 
   bannerTexture = new THREE.CanvasTexture(bannerCanvas);
+  bannerTexture.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   bannerTexture.minFilter = THREE.LinearFilter;
 
   // Plane sized to a comfortable card in world units. Aspect 512:128 = 4:1.
@@ -6808,6 +6833,7 @@ function createHud() {
   hudCtx.scale(dpr, dpr);
 
   hudTexture = new THREE.CanvasTexture(hudCanvas);
+  hudTexture.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   hudTexture.minFilter = THREE.LinearFilter;
 
   const hudGeo = new THREE.PlaneGeometry(worldWidth * 0.95, 7);
@@ -6856,6 +6882,7 @@ function createOverlay() {
   overlayCtx = overlayCanvas.getContext('2d');
 
   overlayTexture = new THREE.CanvasTexture(overlayCanvas);
+  overlayTexture.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   overlayTexture.minFilter = THREE.LinearFilter;
 
   const geo = new THREE.PlaneGeometry(worldWidth * 0.8, 30);
@@ -7099,6 +7126,7 @@ function createRotIndicator() {
   drawArrowHead(c, cx, cy, r, a0, -1);
 
   rotIndicatorTex = new THREE.CanvasTexture(cv);
+  rotIndicatorTex.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   rotIndicatorTex.minFilter = THREE.LinearFilter;
   const geo = new THREE.PlaneGeometry(11, 11); // ~ around the 5u mirror disc
   const mat = new THREE.MeshBasicMaterial({

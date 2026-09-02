@@ -52,6 +52,7 @@ export function initTutorial() {
   bannerCtx.scale(2, 2); // logical coordinates remain 512x128
 
   bannerTexture = new THREE.CanvasTexture(bannerCanvas);
+  bannerTexture.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   bannerTexture.minFilter = THREE.LinearFilter;
 
   // Plane sized to a comfortable card in world units. Aspect 512:128 = 4:1.

@@ -128,6 +128,7 @@ function createRotIndicator() {
   drawArrowHead(c, cx, cy, r, a0, -1);
 
   rotIndicatorTex = new THREE.CanvasTexture(cv);
+  rotIndicatorTex.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   rotIndicatorTex.minFilter = THREE.LinearFilter;
   const geo = new THREE.PlaneGeometry(11, 11); // ~ around the 5u mirror disc
   const mat = new THREE.MeshBasicMaterial({

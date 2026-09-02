@@ -464,6 +464,7 @@ function createHud() {
   hudCtx.scale(dpr, dpr);
 
   hudTexture = new THREE.CanvasTexture(hudCanvas);
+  hudTexture.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   hudTexture.minFilter = THREE.LinearFilter;
 
   const hudGeo = new THREE.PlaneGeometry(worldWidth * 0.95, 7);
@@ -512,6 +513,7 @@ function createOverlay() {
   overlayCtx = overlayCanvas.getContext('2d');
 
   overlayTexture = new THREE.CanvasTexture(overlayCanvas);
+  overlayTexture.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   overlayTexture.minFilter = THREE.LinearFilter;
 
   const geo = new THREE.PlaneGeometry(worldWidth * 0.8, 30);

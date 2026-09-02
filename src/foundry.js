@@ -177,6 +177,7 @@ function initResourcePopups() {
     c.fillStyle = def.popup || '#ffffff';
     c.fillText(txt, 64, 34);
     const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
     tex.minFilter = THREE.LinearFilter;
     popupTextures[def.type] = tex;
   }
@@ -270,6 +271,7 @@ function makeBrazierMesh(def) {
   b.quadraticCurveTo(64, 61, 98, 47);
   b.stroke();
   const bowlTex = new THREE.CanvasTexture(bowlCv);
+  bowlTex.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   bowlTex.minFilter = THREE.LinearFilter;
   const bowlMesh = new THREE.Mesh(
     new THREE.PlaneGeometry(4.2, 3.15),
@@ -297,6 +299,7 @@ function makeBrazierMesh(def) {
   drawFlame(32, 24, 11, 56, '#fff6d8', 0.9);
   f.globalAlpha = 1;
   const flTex = new THREE.CanvasTexture(flCv);
+  flTex.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   flTex.minFilter = THREE.LinearFilter;
   const flameMesh = new THREE.Mesh(
     new THREE.PlaneGeometry(2.1, 3.15),
@@ -345,6 +348,7 @@ function makeAltarLabelMesh(def) {
   c.fillText(tick, 128, 68);
 
   const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   tex.minFilter = THREE.LinearFilter;
   // Plane aspect 256:96 -> keep it readable but compact over the altar.
   const mesh = new THREE.Mesh(

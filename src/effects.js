@@ -19,6 +19,7 @@ function radialTexture(stops) {
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, s, s);
   const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
   tex.minFilter = THREE.LinearFilter;
   tex.magFilter = THREE.LinearFilter;
   return tex;

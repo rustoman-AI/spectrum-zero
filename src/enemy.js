@@ -34,6 +34,7 @@ function generateShipTextures() {
     const ctx = c.getContext('2d');
     drawShip(ctx, sz, type);
     const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
     tex.minFilter = THREE.LinearFilter;
     tex.magFilter = THREE.LinearFilter;
     tex.premultiplyAlpha = false;
@@ -248,6 +249,7 @@ export function initEnemies() {
       shCtx.stroke();
     }
     const shTex = new THREE.CanvasTexture(shieldCanvas);
+    shTex.colorSpace = THREE.SRGBColorSpace; // canvas holds sRGB pixels
     shTex.minFilter = THREE.LinearFilter;
     shTex.premultiplyAlpha = false;
     const shieldPlate = new THREE.Mesh(
