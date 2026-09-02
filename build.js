@@ -329,6 +329,60 @@ if (scriptMatch) {
 const size = fs.statSync(outPath).size;
 console.log(`Built index.html (${(size / 1024).toFixed(1)} KB)`);
 
+// --- Luminance budget check (background must stay under the beam brightness) ---
+// Every background/environment surface must sit below 22% WCAG relative
+// luminance so the additive beams remain the brightest thing on screen. This
+// scans src/background.js for the actual colours in the build, prints them, and
+// HARD-FAILS if any exceeds the ceiling — so the sea can never drift bright
+// again unnoticed (the previous "turquoise" regression went unchecked because
+// no such gate existed).
+(function luminanceBudget() {
+  const LUM_CEIL = 0.22;
+  const srcBg = fs.readFileSync(path.join(__dirname, 'src/background.js'), 'utf8');
+  const relLum = (hex) => {
+    const n = parseInt(hex.replace(/^#|^0x/i, ''), 16);
+    const lin = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+    return 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+  };
+  // The sea has a TIGHTER cap than the 22% global ceiling: it must stay within
+  // the specified dark band #12303F(2.6%)..#1A4257(4.8%). The old regression
+  // (#1f8f8a) measured 21.8% — under 22% yet visibly turquoise and washing out
+  // the beams — so a plain 22% gate is too loose to protect the sea.
+  const SEA_CEIL = relLum('#1A4257') + 0.005; // ~5.3%, small tolerance
+  const surfaces = [];
+  // Sea gradient stops inside drawSeaBase (checked against SEA_CEIL).
+  const seaFn = (srcBg.match(/function drawSeaBase[\s\S]*?\n}/) || [''])[0];
+  const stopRe = /addColorStop\([\d.]+,\s*'(#[0-9a-fA-F]{6})'\)/g;
+  let m;
+  const seaStops = [];
+  while ((m = stopRe.exec(seaFn))) { seaStops.push(m[1]); }
+  if (seaStops.length) {
+    surfaces.push(['sea upper (top stop)', seaStops[0], SEA_CEIL]);
+    surfaces.push(['sea lower (bottom stop)', seaStops[seaStops.length - 1], SEA_CEIL]);
+    for (let i = 1; i < seaStops.length - 1; i++) surfaces.push([`sea mid stop ${i}`, seaStops[i], SEA_CEIL]);
+  }
+  // Named surface constants (checked against the global 22% ceiling).
+  for (const name of ['COL_GROUND', 'COL_SKY', 'COL_WALL']) {
+    const mm = srcBg.match(new RegExp(name + '\\s*=\\s*(0x[0-9a-fA-F]{6})'));
+    if (mm) surfaces.push([name, mm[1], LUM_CEIL]);
+  }
+  console.log('\n  Luminance budget (sea cap ' + (SEA_CEIL * 100).toFixed(1) + '%, others ' + (LUM_CEIL * 100) + '%):');
+  const offenders = [];
+  for (const [name, hex, cap] of surfaces) {
+    const L = relLum(hex);
+    const over = L >= cap;
+    console.log(`    ${name.padEnd(22)} ${hex}  ${(L * 100).toFixed(1)}%${over ? '  ✗ OVER' : ''}`);
+    if (over) offenders.push(`${name} ${hex} ${(L * 100).toFixed(1)}% (cap ${(cap * 100).toFixed(1)}%)`);
+  }
+  console.log(`    ${'(ref) beam gold full'.padEnd(22)} #ffe9a0  ${(relLum('#ffe9a0') * 100).toFixed(1)}%  (additive; brightest on screen)`);
+  if (offenders.length) {
+    console.error(`\n❌ BUILD FAILED: background surface(s) over luminance cap:`);
+    for (const o of offenders) console.error('  ' + o);
+    console.error('  Sea must stay within #12303F..#1A4257 so the beams remain brightest.\n');
+    process.exit(1);
+  }
+})();
+
 // --- DEV flag validation ---
 // Hard-error if any DEV flag is true (prevents shipping test overrides)
 const configSrc = fs.readFileSync(path.join(__dirname, 'src/config.js'), 'utf8');

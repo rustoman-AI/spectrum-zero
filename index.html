@@ -595,10 +595,12 @@ function screenToWorld(sx, sy) {
 
 
 
-// Colours (all below 22% luminance — beams must remain brightest)
-const COL_SKY = 0x0a1520;       // near-black blue
-const COL_GROUND = 0x2E2419;    // warm dark stone
-const COL_WALL = 0x554433;      // wall line
+// Colours (all below 22% luminance — beams must remain brightest). The build's
+// luminance-budget check (build.js) hard-fails if any of these, or the sea
+// gradient stops, reaches 22%, so the water can't drift bright unnoticed again.
+const COL_SKY = 0x0a1520;       // near-black blue      (0.7%)
+const COL_GROUND = 0x2E2419;    // warm dark stone      (1.9%)
+const COL_WALL = 0x554433;      // wall line            (6.3%)
 
 let seaMesh = null;
 let seaTexture = null;
@@ -738,30 +740,38 @@ function updateBackground(dt) {
 // --- Sea drawing ---
 
 function drawSeaBase(ctx, w, h) {
-  // Vertical DEPTH gradient (canvas top = spawn/open sea, bottom = battlement
-  // harbour): deep Mediterranean azure up top fading to a brighter turquoise
-  // harbour near the stone wall. Kept below the beam-brightness ceiling.
+  // Vertical DEPTH gradient (canvas top = open sea/spawn, bottom = battlement
+  // harbour). The WHOLE band is kept inside the dark #12303F..#1A4257 range so
+  // it stays well under the 22% luminance ceiling and the pale beams remain the
+  // brightest thing on screen. Stops are spread EVENLY across the full height
+  // (no clustering) so the upper and lower bands blend over a wide transition
+  // with no hard horizontal seam. Measured luminance (WCAG relative):
+  //   #12303F 2.6% -> #143543 3.1% -> #163B4C 3.8% -> #1A4257 4.8%.
   const grad = ctx.createLinearGradient(0, 0, 0, h);
-  grad.addColorStop(0.0, '#0a1a2e');  // deep dark azure (open sea, top/spawn)
-  grad.addColorStop(0.35, '#123a52'); // mid azure
-  grad.addColorStop(0.7, '#186b74');  // teal transition
-  grad.addColorStop(1.0, '#1f8f8a');  // bright turquoise harbour (battlement)
+  grad.addColorStop(0.0,  '#12303F'); // open sea (top) — darkest
+  grad.addColorStop(0.33, '#143543');
+  grad.addColorStop(0.66, '#163B4C');
+  grad.addColorStop(1.0,  '#1A4257'); // harbour (battlement) — lightest, still dark
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, w, h);
 }
 
 function drawWaveCrests(ctx, w, h, offset) {
-  // 6 thin wave crest lines scrolling downward
-  const NUM_CRESTS = 6;
+  // Faint wave crests scrolling downward. Kept DIM (a muted blue-grey, low
+  // alpha) so they read as surface shimmer, not bright lines against the dark
+  // water. Crests are spread across the full height so several always cross the
+  // mid gradient transition, breaking up any straight horizontal edge.
+  const NUM_CRESTS = 9;
   const spacing = h / NUM_CRESTS;
 
   ctx.save();
   for (let i = 0; i < NUM_CRESTS; i++) {
     const baseY = ((i * spacing + offset) % h);
-    // Varying opacity per crest — a soft turquoise shimmer against the gradient.
-    const alpha = 0.07 + 0.04 * Math.sin(i * 1.7);
-    ctx.strokeStyle = `rgba(120, 200, 210, ${alpha})`;
-    ctx.lineWidth = 1.2;
+    // Low, varying opacity — a subtle cool shimmer, dark enough to stay under
+    // the luminance ceiling and never form a hard seam.
+    const alpha = 0.045 + 0.025 * Math.sin(i * 1.7);
+    ctx.strokeStyle = `rgba(90, 140, 160, ${alpha})`;
+    ctx.lineWidth = 1.0;
     ctx.beginPath();
     for (let x = 0; x < w; x++) {
       const y = baseY + Math.sin(x * 0.3 + i * 2.1) * 1.5;

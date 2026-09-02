@@ -802,3 +802,29 @@ Swept all src for `\bAu\b` / `\bAz\b` afterward — only remaining hit is an exp
 **Verified (undefined-stats guard):** wrote a throwaway checker that walked the built bundle and confirmed ENEMY_TYPES, BREACH_DAMAGE, BREACH_DRIP_PCT and SHIP_SIZE all carry the identical 5-key set {liburna, trireme, quadrireme, cataphract, quinquereme}, and that every `spawnEnemy('...')` string in the bundle resolves to a valid key — so no spawn can hit an undefined stat. Result PASS; script then deleted. `node build.js` -> 284.1 KB, exit 0. Rotation 11/11, smoke 29/29, with the smoke output now reading "Liburna heat 45/30" and "Cataphract heat 200/400" — confirming the renamed keys resolve to the correct (unchanged) stats.
 
 **Honest caveat:** Stats are provably unchanged (same values, only keys renamed) and the key sets are provably consistent across all lookup tables + spawn calls, so a live session can't produce undefined stats from this change. I can't watch the game render here, but there's no gameplay/balance delta to observe — it's a pure identifier rename.
+
+---
+
+## 2026-08-25 — Sea darkened for real + luminance gate wired into build
+
+**The mechanism (what actually went wrong):** The sea colour has exactly ONE source — `drawSeaBase` in `background.js`. My previous turn never edited it (I was interrupted after only reading the file + writing a throwaway `_lum.js`), so the bright palette shipped unchanged; nothing was "overriding" it, it simply was never changed. And the luminance check I'd described was a standalone script run by hand once — NOT wired into build.js, so it printed nothing on a build and gated nothing. Two rounds looked "brighter" because the mirror-frame commit touched only mirror.js while the water stayed as-is.
+
+**Before (measured, WCAG relative luminance):**
+- upper sea `#0a1a2e` 1.0%, mid `#123a52` 3.8%, teal `#186b74` 12.0%, lower sea `#1f8f8a` **21.8%** (near-turquoise, washed out the pale beam), ground `#2E2419` 1.9%. The 1%→22% span across one gradient is the "two bands + hard seam".
+
+**Applied:**
+- `drawSeaBase` gradient collapsed into the dark band, stops spread EVENLY (0.0/0.33/0.66/1.0) for a wide seamless transition: `#12303F` → `#143543` → `#163B4C` → `#1A4257`.
+- Wave crests re-tinted dim blue-grey (was bright `rgba(120,200,210)`) at lower alpha and increased to 9 crests spread full-height so several always cross the mid transition, breaking up any straight edge.
+- Wired a REAL luminance-budget gate into `build.js`: it scans `background.js` for the sea gradient stops + `COL_GROUND/COL_SKY/COL_WALL`, computes relative luminance, prints them every build, and HARD-FAILS if the sea exceeds a tight `#1A4257`+tol cap (~5.3%) or any other surface hits 22%. (A plain 22% ceiling was too loose — the old `#1f8f8a` was 21.8%, under 22% yet visibly turquoise; the tight sea cap would have caught it.)
+
+**After (measured, printed by the build gate):**
+- sea upper `#12303F` **2.6%**
+- sea mid `#143543` **3.1%**
+- sea mid `#163B4C` **3.8%**
+- sea lower `#1A4257` **4.8%**
+- ground `#2E2419` **1.9%**, sky `#0a1520` 0.7%, wall `#554433` 6.3%
+- ref: dimmest/palest beam gold `#ffe9a0` **82.1%** (additive) — brightest on screen. ✓
+
+Build 284.9 KB exit 0 (luminance gate passes), rotation 11/11, smoke 29/29. Grepped index.html: new dark stops present, old `#1f8f8a`/`#186b74` gone (no override survived to the build). Deleted the throwaway `_lum.js`.
+
+**Honest caveat:** These are computed luminance numbers (the same formula now gates the build), not a screen capture — I can't view the render here. But the sea is now provably within the requested band and every surface is provably below both its cap and the palest beam, and the gate will fail any future build that lets the water drift bright again.
