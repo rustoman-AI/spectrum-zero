@@ -246,11 +246,14 @@ function drawMirrorSprite(ctx, sz) {
   ctx.restore();
 
   // --- Bronze face (long oval) with a metallic cross-gradient (top-lit) ---
+  // Foreground brightness lift (~+12%) applied to the bronze after the colour-
+  // pipeline fix left objects reading a touch dark. Sea/sky/ground are NOT
+  // touched (luminance gate); this is a foreground-only object lift.
   const grad = ctx.createLinearGradient(0, cy - ry, 0, cy + ry);
-  grad.addColorStop(0.0, '#f0d18a');  // top edge catching light
-  grad.addColorStop(0.35, '#cf9e4c'); // polished bronze
-  grad.addColorStop(0.7, '#9a6a34');  // lower bronze
-  grad.addColorStop(1.0, '#5f3e1f');  // bottom rim shadow
+  grad.addColorStop(0.0, '#ffe49a');  // top edge catching light (was #f0d18a)
+  grad.addColorStop(0.35, '#e6b158'); // polished bronze          (was #cf9e4c)
+  grad.addColorStop(0.7, '#ad793c');  // lower bronze             (was #9a6a34)
+  grad.addColorStop(1.0, '#6e4824');  // bottom rim shadow        (was #5f3e1f)
   ctx.fillStyle = grad;
   ctx.beginPath();
   ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
@@ -262,6 +265,14 @@ function drawMirrorSprite(ctx, sz) {
   ctx.beginPath();
   ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
   ctx.stroke();
+
+  // --- Arethusa emblem, engraved (the device of ancient Syracuse) ---
+  // Struck as a subtle DARKER relief in the bronze (recessed line + a 1px light
+  // bevel below it, so it reads as engraving catching the light) — never a
+  // bright overlay. Drawn BEFORE the specular streak so the highlight sits on
+  // top and stays dominant, and kept small/central so it doesn't obscure the
+  // elongation cue that shows the mirror's angle.
+  drawArethusa(ctx, cx, cy, rx, ry);
 
   // --- Specular highlight running along the length of the face ---
   // A long, bright, soft streak just above the centreline — reads as sunlight
@@ -294,6 +305,87 @@ function drawMirrorSprite(ctx, sz) {
     ctx.strokeStyle = '#6b4a22';     // rivet shadow ring
     ctx.stroke();
   }
+}
+
+// Engrave the Arethusa device of Syracuse: a nymph's head in profile (facing
+// left) wearing a laurel wreath, ringed by small dolphins. Rendered as recessed
+// dark lines (low alpha) with a 1px lighter bevel just below each, so it reads
+// as shallow engraving catching the light rather than a printed decal. All
+// geometry is scaled to a small central medallion so it never fights the
+// specular streak or the shield's angle read.
+function drawArethusa(ctx, cx, cy, rx, ry) {
+  const R = Math.min(rx * 0.42, ry * 0.86); // medallion radius (small, central)
+  // Two-pass stroker: a faint light bevel offset down-right, then the dark
+  // recess on top — the classic "chiselled groove" cue.
+  const engrave = (drawPath, w) => {
+    ctx.save();
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    // bevel highlight (below/right)
+    ctx.translate(0.6, 0.6);
+    ctx.strokeStyle = 'rgba(255,240,205,0.18)';
+    ctx.lineWidth = w;
+    drawPath();
+    ctx.stroke();
+    ctx.restore();
+    // dark recess
+    ctx.save();
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(40,24,8,0.42)';
+    ctx.lineWidth = w;
+    drawPath();
+    ctx.stroke();
+    ctx.restore();
+  };
+
+  // --- Profile head, facing left ---
+  engrave(() => {
+    ctx.beginPath();
+    // crown -> forehead -> nose -> lips -> chin -> jaw, then back up the neck
+    ctx.moveTo(cx + R * 0.30, cy - R * 0.62);              // top of head
+    ctx.quadraticCurveTo(cx - R * 0.55, cy - R * 0.70, cx - R * 0.60, cy - R * 0.15); // forehead sweep (left)
+    ctx.quadraticCurveTo(cx - R * 0.78, cy + R * 0.02, cx - R * 0.58, cy + R * 0.12); // brow -> nose bridge/tip
+    ctx.quadraticCurveTo(cx - R * 0.70, cy + R * 0.22, cx - R * 0.52, cy + R * 0.30); // upper lip
+    ctx.quadraticCurveTo(cx - R * 0.60, cy + R * 0.46, cx - R * 0.40, cy + R * 0.52); // chin
+    ctx.quadraticCurveTo(cx + R * 0.02, cy + R * 0.60, cx + R * 0.34, cy + R * 0.40); // jaw -> neck
+  }, 1.4);
+  // Eye (short dark dash) + hair bun at back
+  engrave(() => {
+    ctx.beginPath();
+    ctx.moveTo(cx - R * 0.40, cy - R * 0.06);
+    ctx.lineTo(cx - R * 0.26, cy - R * 0.04);
+  }, 1.1);
+  engrave(() => {
+    ctx.beginPath();
+    ctx.arc(cx + R * 0.34, cy - R * 0.18, R * 0.24, 0, Math.PI * 2); // bun
+  }, 1.2);
+
+  // --- Laurel wreath: a few angled leaves following the crown ---
+  for (let i = 0; i < 5; i++) {
+    const a = -0.7 + i * 0.42; // sweep across the top-back of the head
+    const bx = cx + Math.cos(a) * R * 0.72;
+    const by = cy - R * 0.30 + Math.sin(a) * R * 0.30;
+    engrave(() => {
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.quadraticCurveTo(bx + R * 0.16, by - R * 0.12, bx + R * 0.26, by - R * 0.02); // leaf
+    }, 1.0);
+  }
+
+  // --- Small dolphins ringing the head (two, arcing nose-down) ---
+  const dolphin = (dx, dy, flip) => {
+    engrave(() => {
+      ctx.beginPath();
+      // body arc
+      ctx.moveTo(dx - flip * R * 0.22, dy - R * 0.10);
+      ctx.quadraticCurveTo(dx, dy - R * 0.26, dx + flip * R * 0.24, dy - R * 0.06);
+      ctx.quadraticCurveTo(dx + flip * R * 0.30, dy + R * 0.04, dx + flip * R * 0.18, dy + R * 0.10); // to tail
+      // tail fluke
+      ctx.moveTo(dx + flip * R * 0.18, dy + R * 0.10);
+      ctx.lineTo(dx + flip * R * 0.30, dy + R * 0.16);
+    }, 0.9);
+  };
+  dolphin(cx - R * 0.10, cy + R * 0.72, 1);   // below-left
+  dolphin(cx + R * 0.62, cy + R * 0.30, -1);  // right side
 }
 
 // Rounded-rectangle path helper (canvas has no built-in in older engines).

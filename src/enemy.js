@@ -40,6 +40,40 @@ function generateShipTextures() {
     tex.premultiplyAlpha = false;
     shipTextures[type] = tex;
   }
+  makeSpqrTexture();
+}
+
+// One shared gold "SPQR" mark for the whole fleet — the standard of the Roman
+// Republic. Drawn small (reads as a sail marking, not UI) with a faint dark
+// outline for legibility on the red sail. Applied as a transparent overlay mesh
+// per ship so its opacity can fade to nothing once the sail is well alight.
+let spqrTexture = null;
+function makeSpqrTexture() {
+  const w = 64, h = 32;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 20px serif';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(30,10,6,0.7)';   // dark outline against the red
+  ctx.strokeText('SPQR', w / 2, h / 2 + 1);
+  ctx.fillStyle = '#e8c24a';                 // gold
+  ctx.fillText('SPQR', w / 2, h / 2 + 1);
+  spqrTexture = new THREE.CanvasTexture(c);
+  spqrTexture.colorSpace = THREE.SRGBColorSpace;
+  spqrTexture.minFilter = THREE.LinearFilter;
+}
+
+// Per-type sail rectangle in LOCAL MESH units (the sprite plane is 6x6 mapping
+// the 128px texture). Filled in by drawShip; used to place the SPQR overlay
+// child exactly on each type's sail. { x, y, w, h } local-space, Y up.
+const SAIL_METRICS = {};
+function texToLocal(px, py, sz) {
+  // 128px texture -> 6-unit plane, texture top = +Y.
+  return { x: (px / sz - 0.5) * 6, y: (0.5 - py / sz) * 6 };
 }
 
 function drawShip(ctx, sz, type) {
@@ -133,11 +167,27 @@ function drawShip(ctx, sz, type) {
   ctx.fillStyle = '#3D2010';
   ctx.fillRect(cx - 1.5, hullCenterY - mastH - hullH * 0.3, 3, mastH);
 
-  // Sail (trapezoid, clearly above hull)
+  // Sail (trapezoid, clearly above hull). Roman red, so the fleet reads as
+  // Rome at a glance; the gold SPQR mark is a separate fading overlay mesh (see
+  // makeSpqrTexture / updateEnemyVisual) so it can vanish once the sail is
+  // well alight rather than charring in place with the baked texture.
   if (sailW > 0 && sailH > 0) {
     const sailTop = hullCenterY - mastH - hullH * 0.3 + 4;
     const sailBot = sailTop + sailH;
-    ctx.fillStyle = 'rgba(230, 215, 190, 0.85)';
+    // Record the sail centre + size in local mesh units for the SPQR overlay.
+    const scTop = texToLocal(cx, sailTop, sz);
+    const scBot = texToLocal(cx, sailBot, sz);
+    SAIL_METRICS[type] = {
+      x: scTop.x,
+      y: (scTop.y + scBot.y) / 2,
+      w: (sailW * 0.7 / sz) * 6,   // narrower than the sail so letters sit inside
+      h: (sailH * 0.72 / sz) * 6,
+    };
+    // Vertical shade so the red canvas isn't flat.
+    const sg = ctx.createLinearGradient(0, sailTop, 0, sailBot);
+    sg.addColorStop(0, '#9e2b24');
+    sg.addColorStop(1, '#7c1f1a');
+    ctx.fillStyle = sg;
     ctx.beginPath();
     ctx.moveTo(cx - sailW / 2, sailBot);
     ctx.lineTo(cx + sailW / 2, sailBot);
@@ -190,6 +240,17 @@ export function initEnemies() {
     const spriteMesh = new THREE.Mesh(spriteGeo, spriteMat);
     spriteMesh.position.z = 0.01;
     mesh.add(spriteMesh);
+
+    // Shared gold SPQR mark, overlaid on the red sail. Size/position are set per
+    // type on spawn (from SAIL_METRICS); opacity fades out as the sail chars, so
+    // it never survives on a well-alight hull. Slightly in front of the sprite.
+    const spqrMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshBasicMaterial({ map: spqrTexture, transparent: true, opacity: 0, depthWrite: false })
+    );
+    spqrMesh.position.z = 0.02;
+    spqrMesh.visible = false;
+    mesh.add(spqrMesh);
 
     // Emissive ember glow behind the hull — an additive orange halo that ramps
     // up as the ship approaches ignition (charring). Uses the shared soft glow
@@ -292,7 +353,7 @@ export function initEnemies() {
       speed: 0, baseSpeed: 0,
       burn: 0, slowed: false,
       bandsHitting: 0, lastHitColour: 0,
-      mesh, barFill, shieldPlate, oarMeshes, spriteMat, hullMat: spriteMat, emberGlow
+      mesh, barFill, shieldPlate, oarMeshes, spriteMat, hullMat: spriteMat, emberGlow, spqrMesh
     });
   }
 }
@@ -324,6 +385,18 @@ export function spawnEnemy(type, lane, hpMultiplier, yOffset) {
       // Restore pooled-sprite state cleared by a prior sink/char.
       if (e.spriteMat) { e.spriteMat.opacity = 1; e.spriteMat.color.setRGB(1, 1, 1); }
       if (e.emberGlow) e.emberGlow.material.opacity = 0;
+      // Position + size the SPQR sail mark for this type (fades in updateEnemyVisual).
+      if (e.spqrMesh) {
+        const sm = SAIL_METRICS[type];
+        if (sm) {
+          e.spqrMesh.position.set(sm.x, sm.y, 0.02);
+          e.spqrMesh.scale.set(sm.w, sm.h, 1);
+          e.spqrMesh.material.opacity = 1;
+          e.spqrMesh.visible = true;
+        } else {
+          e.spqrMesh.visible = false;
+        }
+      }
       e.mesh.rotation.z = 0;
       e.lane = lane;
       // Spawn Y, clamped so the ship's TOP edge never crosses the crystal bound.
@@ -528,7 +601,11 @@ function updateEnemyVisual(e) {
   // --- Charring: hull darkens toward charcoal as heat fills. The sprite colour
   // multiplies from white (1) down toward near-black charcoal (0.12) by burn.
   // A brief coloured lick from the last beam hit rides on top for feedback.
-  const char = 1 - e.burn * 0.88;           // 1 → 0.12
+  // HULL_LIFT (>1) over-brightens the healthy hull ~12% as a FOREGROUND-only
+  // lift after the colour-pipeline fix (MeshBasicMaterial multiplies, so >1
+  // brightens). It tapers with char so a burning hull still goes to charcoal.
+  const HULL_LIFT = 1.12;
+  const char = (1 - e.burn * 0.88) * HULL_LIFT;   // ~1.12 healthy -> ~0.13 charred
   let cr = char, cg = char, cb = char;
   if (e.bandsHitting > 0 && e.lastHitColour !== 0) {
     const r = ((e.lastHitColour >> 16) & 0xff) / 255;
@@ -542,6 +619,18 @@ function updateEnemyVisual(e) {
     cr = char * 0.7; cg = char * 0.9; cb = char * 0.5; // frosty gold-slow tint
   }
   e.spriteMat.color.setRGB(cr, cg, cb);
+
+  // SPQR sail mark fades out as the sail chars, gone by ~60% burn ("well
+  // alight"), so it never survives on a burning hull. It also dims with the
+  // same char factor while still visible so it reads as part of the sail.
+  if (e.spqrMesh && e.spqrMesh.visible) {
+    const fade = Math.max(0, 1 - e.burn / 0.6); // 1 at burn 0 -> 0 at burn 0.6
+    if (fade <= 0.001) {
+      e.spqrMesh.visible = false;
+    } else {
+      e.spqrMesh.material.opacity = fade * (0.35 + 0.65 * char);
+    }
+  }
 
   // --- Emissive orange edge glow that ramps up just before ignition. Starts
   // appearing past ~55% heat and pulses hotter (toward white-orange) near 100%.

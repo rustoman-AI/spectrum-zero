@@ -923,3 +923,19 @@ Every common ship clears the lowest possible mirror by 3.5-5.5u; the boss only t
 **Verified:** build 290.6 KB exit 0, luminance gate green, rotation 11/11, smoke 29/29. Only config/enemy/mirror changed — the prior lane-spread, beam-dimming and Faith fixes are untouched. No palette or letterbox changes.
 
 **Honest caveat:** clearances/breach-gating are proven from the code + geometry; I can't watch the frame, so the eyes-on confirmation that a hull reaches the stone before the bar moves, and that hulls now pass cleanly under mirrors, is yours. Both knobs are one-liners if the boss's 0u boundary touch ever looks off (raise MIRROR_MIN_Y a touch or clamp the quinquereme's stop).
+
+---
+
+## 2026-08-25 — Arethusa engraving on mirrors, SPQR on Roman sails, foreground brightness lift
+
+**1. Arethusa emblem engraved on mirror faces (`mirror.js`).** New `drawArethusa()` strikes the device of Syracuse — nymph's head in profile (facing left) with a laurel wreath and two small dolphins — into the bronze as RECESSED relief: a two-pass stroker draws a faint light bevel (rgba 255,240,205,0.18) offset down-right, then a dark recess (rgba 40,24,8,0.42) on top, so it reads as shallow engraving catching the light, never a bright decal. Scaled to a small central medallion (R = min(rx*0.42, ry*0.86)) and drawn BEFORE the specular streak so the highlight stays dominant and the elongation/angle cue is untouched. Existing shape, rim, rivets and highlight are unchanged.
+
+**2. SPQR on the Roman sails (`enemy.js`).** Sail recoloured from cream to Roman red (vertical #9e2b24 -> #7c1f1a gradient). One shared gold "SPQR" mark (`makeSpqrTexture`, bold serif, dark outline for legibility) — NOT per-ship heraldry. It's a small transparent OVERLAY mesh (`spqrMesh`) per hull, sized/placed per type from `SAIL_METRICS` (sail rect captured in `drawShip`, converted texture-px -> the 6u sprite plane). In `updateEnemyVisual` its opacity fades `1 - burn/0.6` so it is GONE by ~60% burn ("well alight") and never survives on a burning sail; it also dims with the hull char while visible so it reads as part of the sail. Sits at group-local z 0.02 (behind mirrors with the hull, in front of its own sprite).
+
+**3. Foreground-only brightness lift (scene read a touch dark post-pipeline).** Did NOT touch sea/sky/ground — the luminance gate still prints them unchanged (sea 2.6-4.8%, ground 1.9%, sky 0.7%) and passes. Lifted only foreground objects:
+- Mirror bronze gradient stops ~+12%: #f0d18a->#ffe49a, #cf9e4c->#e6b158, #9a6a34->#ad793c, #5f3e1f->#6e4824.
+- Hulls/sails: `HULL_LIFT = 1.12` applied to the sprite colour multiply (`char = (1 - burn*0.88) * 1.12`). MeshBasicMaterial multiplies, so >1 over-brightens the healthy hull ~12%; it tapers with char so a burning hull still reaches charcoal. This lifts the whole ship sprite (hull + red sail) in one place; the gold SPQR overlay is a separate mesh and stays crisp.
+
+**Verified:** build 298.8 KB exit 0, luminance gate green (sea/sky/ground untouched), rotation 11/11, smoke 29/29. All new symbols (drawArethusa, makeSpqrTexture, SAIL_METRICS, spqrMesh, HULL_LIFT) confirmed in the bundle. No new files. Rejected extras (per-ship heraldry, altar statues, new wakes) NOT added.
+
+**Honest caveat:** can't view the frame here. The engraving subtlety, the SPQR size/legibility on each sail, and whether +12% is the right lift are eyes-on calls — all are single-constant tweaks (engrave alpha 0.42/0.18, SPQR font/SAIL_METRICS w-h factors, HULL_LIFT 1.12, bronze stops). SPQR fade threshold (burn 0.6) is one constant if "well alight" should be earlier/later.
