@@ -489,16 +489,19 @@ export function updateFoundries(dt) {
     }
   }
 
-  // Passive Faith trickle: +0.5 Faith/s per actively burning ship, so Faith
-  // builds naturally toward the ultimates even before a Helios cast.
-  // (Helios still grants its burst on top of this.)
+  // Passive Faith trickle per actively burning ship, so Faith builds naturally
+  // toward the ultimates even before a Helios cast. Rate cut 0.5 -> 0.15/s and
+  // the burning count capped, because a single Zeus ignites a whole screen and
+  // the old rate let one cast generate ~130 Faith — enough to nearly re-buy
+  // itself. Now a Zeus's own fire yields only a modest trickle; sustained beam
+  // burning is the reliable path. (Helios still grants its burst on top.)
   let burning = 0;
   const pool = getEnemyPool();
   for (let i = 0; i < pool.length; i++) {
     const e = pool[i];
     if (e.active && e.heat > 0 && !e.shieldBlocking) burning++;
   }
-  faith += burning * 0.5 * dt;
+  faith += Math.min(burning, 4) * 0.15 * dt; // cap so a mass ignition can't spike Faith
 
   // Animate + retire floating "+1" resource popups.
   updateResourcePopups(dt);

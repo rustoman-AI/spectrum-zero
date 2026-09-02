@@ -235,7 +235,14 @@ const ENEMY_LANE_COUNT = 5;
 // with their leading (bottom) edge resting just on top of it.
 const MIRROR_DISC_TOP = -6;         // top edge of the topmost mirror sprite (kept for refs)
 const BATTLEMENT_TOP_Y = WALL_Y + 1; // top of the stone the hull rams into (~ -39)
-const RAM_STOP_EDGE = BATTLEMENT_TOP_Y;
+// Ship hard-stop line: ships FREEZE here and breach from here — they never
+// enter the mirror field below (they used to sail all the way to the wall at
+// -39, overlapping mirror sprites on the way and piling at the battlement). The
+// line sits one mirror-radius above MIRROR_FIELD_TOP so that even a mirror
+// dragged to the very top of its field (centre clamped to MIRROR_FIELD_TOP,
+// sprite top ~MIRROR_FIELD_TOP+radius) can never overlap a stopped hull.
+const SHIP_STOP_Y = MIRROR_FIELD_TOP + 6; // ~ -6, just above the mirror row
+const RAM_STOP_EDGE = SHIP_STOP_Y;
 const RAM_LINE_Y = RAM_STOP_EDGE;
 // Hard floor for mirror dragging: a mirror's CENTRE may never go below the
 // battlement top + ~40px (≈5 world units). Keeps discs strictly in the water,
@@ -347,7 +354,7 @@ const GOD_ABILITIES = {
     duration: 5,
     costs: [
       { bronze: 25 },                 // #1: cheap opener
-      { faith: 15, gold: 5 },         // #2+: constant (does not escalate)
+      { faith: 40, gold: 5 },         // #2+: constant (raised 15->40 so a cast can't self-fund)
     ]
   },
   poseidon: {
@@ -355,7 +362,7 @@ const GOD_ABILITIES = {
     duration: 6,
     costs: [
       { bronze: 40 },                 // #1: cheap opener
-      { faith: 20, gold: 8 },         // #2+: constant
+      { faith: 45, gold: 8 },         // #2+: constant (raised 20->45)
     ]
   },
   // Helios: active Solar Overcharge. Generates Faith (the fuel for Zeus/Poseidon
@@ -2275,7 +2282,13 @@ function rebuildBeams(segments) {
         hh - Math.abs(seg.end.y) + edgeMargin
       );
       const edgeFade = Math.min(1, Math.max(0.1, endDistFromEdge / edgeMargin));
-      const finalOpacity = opacityMult * edgeFade * tierOpacity;
+
+      // Bounce-depth dimming: each reflection fades the segment so the PRIMARY
+      // path (bounce 0, straight from the prism/source) stays dominant and deep
+      // multi-mirror bounces recede into faint hints instead of "beam soup" once
+      // several mirrors are out. Floored so late bounces stay just visible.
+      const depthDim = Math.max(0.18, Math.pow(0.6, seg.bounces || 0));
+      const finalOpacity = opacityMult * edgeFade * tierOpacity * depthDim;
 
       positionQuad(entry.core, seg.start, seg.end, coreW);
       positionQuad(entry.glow, seg.start, seg.end, glowW);
@@ -2395,7 +2408,10 @@ function clampMirrorPos(x, y) {
   const minX = -hw + MIRROR_RADIUS;
   const maxX = hw - MIRROR_RADIUS;
   const minY = BATTLEMENT_TOP_Y + MIRROR_RADIUS + 10 * PX; // never below wall top
-  const maxY = PRISM_Y - 150 * PX;                         // never into spawn area
+  // Ceiling at the mirror-field top: a mirror centre may not rise above
+  // MIRROR_FIELD_TOP, so its sprite top stays at/below the ship hard-stop line
+  // (SHIP_STOP_Y = MIRROR_FIELD_TOP + 6) and a stopped hull can never overlap it.
+  const maxY = MIRROR_FIELD_TOP;
   return {
     x: Math.max(minX, Math.min(maxX, x)),
     y: Math.max(minY, Math.min(maxY, y)),
@@ -3436,24 +3452,20 @@ function updateEnemies(dt) {
       e.mesh.rotation.z = Math.sin(e.oarPhase * 0.7) * 0.015; // very slight roll
     }
 
-    // Ships descend to the stone battlement and only breach when their hull's
-    // LEADING (bottom) edge touches the battlement top. Damage is therefore
-    // always at the wall/shoreline — never in open water mid-screen. The
-    // `breached` guard makes the first-contact burst fire exactly once.
-    //
-    // STRICT STOP-LINE: hard-clamp the hull so its leading edge can never sink
-    // past the battlement top within a single frame step. Without this, a fast
-    // ship (or a large dt hitch) could overshoot the line for a frame and
-    // visually dip its hull down onto the Bronze/Silver/Gold discs sitting at
-    // the wall before the breach removes it. Clamping to `BATTLEMENT_TOP_Y +
-    // half` guarantees zero ship-on-disc overlap: the hull rests exactly on the
-    // line, then breaches. (BATTLEMENT_TOP_Y === RAM_LINE_Y === RAM_STOP_EDGE.)
+    // HARD STOP ABOVE THE MIRROR ROW: ships freeze at SHIP_STOP_Y and breach
+    // from there. They must NEVER enter the mirror field or overlap a mirror
+    // sprite (the prior behaviour sailed hulls all the way to the wall at -39,
+    // passing over/under the mirrors and piling at the battlement). We clamp the
+    // hull so its LEADING (bottom) edge can never cross SHIP_STOP_Y within a
+    // single frame step, even for a fast ship or a large dt hitch — the hull
+    // rests exactly on the line, then breaches. Breach damage/visuals fire here
+    // rather than at the wall.
     const half = shipHalfHeight(e.type);
-    if (e.y - half < BATTLEMENT_TOP_Y) {
-      e.y = BATTLEMENT_TOP_Y + half;
+    if (e.y - half < SHIP_STOP_Y) {
+      e.y = SHIP_STOP_Y + half;
     }
     const leadingEdge = e.y - half;
-    const atWall = leadingEdge <= BATTLEMENT_TOP_Y;
+    const atWall = leadingEdge <= SHIP_STOP_Y;
 
     // Clamp the contact X to the visible battlement so edge/flank ships (and
     // Poseidon-pulled ones) always render on-screen with a matching flash.
@@ -3471,9 +3483,9 @@ function updateEnemies(dt) {
       // reduced if the ship was already burning.
       wallDamage += WALL_MAX_HP * dripPct * BREACH_SINK_TIME * Math.max(0.2, 1 - heatFrac);
       const heavy = (e.type === 'quinquereme' || e.type === 'quadrireme');
-      spawnDestruction(cx, BATTLEMENT_TOP_Y + half, heavy); // explosion + embers
-      spawnSmoke(cx, BATTLEMENT_TOP_Y + 1, 2);              // parting smoke burst
-      lastBreaches.push({ x: cx, lane: e.lane });           // battlement stone flash
+      spawnDestruction(cx, SHIP_STOP_Y, heavy);   // explosion + embers at the stop line
+      spawnSmoke(cx, SHIP_STOP_Y + 1, 2);         // parting smoke burst
+      lastBreaches.push({ x: cx, lane: e.lane });  // battlement stone flash (wall x)
       deactivateEnemy(e);  // remove from logic array + fully hide/reset the mesh
       continue;
     }
@@ -3645,6 +3657,47 @@ let shieldBearerTimer = 0;
 let firstShieldSpawned = false;
 let shieldBearerLaneIndex = 0; // cycles through lanes
 
+// Per-lane last-spawn timestamps (seconds). Used to keep a minimum gap between
+// spawns on the SAME lane so hulls never concertina into a column, and to
+// distribute spawns across the full lane set instead of repeatedly re-rolling
+// the centre. A lane is "busy" until LANE_MIN_GAP has passed since its last use.
+let laneLastSpawn = [];
+const LANE_MIN_GAP = 2.4; // s — even the slowest galley (~2 u/s) clears ~5u first
+
+// Pick a lane for a single spawn: among the lanes whose last spawn is at least
+// LANE_MIN_GAP ago, choose the LEAST-recently-used (largest gap), breaking ties
+// randomly. If every lane is busy (heavy phase), fall back to the stalest lane
+// so we still spawn but always on the most-open lane. `avoid` optionally
+// excludes a lane already used this frame (for paired spawns).
+function pickLane(avoid) {
+  let best = -1, bestAge = -Infinity;
+  const order = [0, 1, 2, 3, 4];
+  // Shuffle so ties don't bias toward lane 0.
+  for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+  for (const l of order) {
+    if (l === avoid) continue;
+    const age = spawnerElapsed - (laneLastSpawn[l] != null ? laneLastSpawn[l] : -999);
+    if (age >= LANE_MIN_GAP && age > bestAge) { best = l; bestAge = age; }
+  }
+  if (best < 0) {
+    // All lanes busy — take the stalest eligible (still avoiding `avoid`).
+    for (const l of order) {
+      if (l === avoid) continue;
+      const age = spawnerElapsed - (laneLastSpawn[l] != null ? laneLastSpawn[l] : -999);
+      if (age > bestAge) { best = l; bestAge = age; }
+    }
+  }
+  if (best < 0) best = Math.floor(Math.random() * ENEMY_LANE_COUNT);
+  return best;
+}
+
+// Spawn on a chosen lane and stamp it so the same lane can't be re-used until
+// LANE_MIN_GAP passes. Wraps spawnEnemy for the procedural phases.
+function spawnOnLane(type, lane, hpMult, yOffset) {
+  spawnEnemy(type, lane, hpMult, yOffset);
+  laneLastSpawn[lane] = spawnerElapsed;
+}
+
 // --- Scripted 90s opening (judge-facing tutorial curve) ---
 // Deterministic spawns for the first 90s. Each event fires once when the
 // session clock passes its time. After 90s the normal phase spawner takes over.
@@ -3723,7 +3776,10 @@ function updateSpawner(dt, sessionTime) {
   }
 }
 
-// Spawn shield-bearer leading 2-3 escorts in tight column
+// Spawn cataphract leading 2-3 escorts in a tight column (an intentional
+// formation, evenly Y-spaced by ESCORT_SPACING so it reads as one column, not a
+// pile). The lane is stamped busy for the whole column length so the procedural
+// spawner won't drop an unrelated ship on top of the formation.
 function spawnShieldFormation(lane, hpMult) {
   // Leader
   spawnEnemy('cataphract', lane, hpMult, 0);
@@ -3733,6 +3789,8 @@ function spawnShieldFormation(lane, hpMult) {
   for (let i = 1; i <= escortCount; i++) {
     spawnEnemy(escortType, lane, hpMult, ESCORT_SPACING * i);
   }
+  // Reserve the lane long enough for the whole column to clear the spawn line.
+  if (laneLastSpawn.length) laneLastSpawn[lane] = spawnerElapsed + escortCount * 1.5;
 }
 
 // Cycle shield-bearer through lanes: 2, 0, 4, 1, 3, repeat
@@ -3752,6 +3810,7 @@ function resetSpawner() {
   firstShieldSpawned = false;
   shieldBearerLaneIndex = 0;
   scriptIndex = 0;
+  laneLastSpawn = new Array(ENEMY_LANE_COUNT).fill(-999);
 }
 
 function getInterval() {
@@ -3771,45 +3830,42 @@ function doSpawn() {
     return;
   }
 
-  // All phases: use full lane range for all types
-  const lane = Math.floor(Math.random() * ENEMY_LANE_COUNT);
+  // Lane chosen by the spread-picker (least-recently-used, min-gap enforced) so
+  // the same lane can't be re-rolled into a column and spawns fan across all 5.
+  const lane = pickLane();
 
   if (spawnerElapsed < PHASE_1_END) {
-    // Phase 1: liburnae on random lanes
-    spawnEnemy('liburna', lane, hpMult);
+    // Phase 1: liburnae
+    spawnOnLane('liburna', lane, hpMult);
   } else if (spawnerElapsed < PHASE_2_END) {
     // Phase 2: mix of types across all lanes
     const roll = Math.random();
     if (roll < 0.25) {
-      spawnEnemy('quadrireme', lane, hpMult);
+      spawnOnLane('quadrireme', lane, hpMult);
     } else if (roll < 0.55) {
-      spawnEnemy('trireme', lane, hpMult);
+      spawnOnLane('trireme', lane, hpMult);
     } else {
-      spawnEnemy('liburna', lane, hpMult);
+      spawnOnLane('liburna', lane, hpMult);
     }
-    // Paired pressure every 5th spawn on random opposite lanes
+    // Paired pressure every 5th spawn — a second, different open lane.
     if (totalSpawns % 5 === 0) {
-      const pairA = Math.floor(Math.random() * 2);       // 0 or 1
-      const pairB = ENEMY_LANE_COUNT - 1 - pairA;        // 4 or 3
-      spawnEnemy('liburna', pairA, hpMult);
-      spawnEnemy('liburna', pairB, hpMult);
+      const laneB = pickLane(lane);
+      spawnOnLane('liburna', laneB, hpMult);
     }
   } else {
     // Phase 3: heavy across all lanes
     const roll = Math.random();
     if (roll < 0.35) {
-      spawnEnemy('quadrireme', lane, hpMult);
+      spawnOnLane('quadrireme', lane, hpMult);
     } else if (roll < 0.65) {
-      spawnEnemy('trireme', lane, hpMult);
+      spawnOnLane('trireme', lane, hpMult);
     } else {
-      spawnEnemy('liburna', lane, hpMult);
+      spawnOnLane('liburna', lane, hpMult);
     }
-    // Paired heavy pressure every 4th spawn
+    // Paired heavy pressure every 4th spawn — a second, different open lane.
     if (totalSpawns % 4 === 0) {
-      const pairA = Math.floor(Math.random() * 2);       // 0 or 1
-      const pairB = ENEMY_LANE_COUNT - 1 - pairA;        // 4 or 3
-      spawnEnemy('trireme', pairA, hpMult);
-      spawnEnemy('trireme', pairB, hpMult);
+      const laneB = pickLane(lane);
+      spawnOnLane('trireme', laneB, hpMult);
     }
   }
 }
@@ -4304,16 +4360,19 @@ function updateFoundries(dt) {
     }
   }
 
-  // Passive Faith trickle: +0.5 Faith/s per actively burning ship, so Faith
-  // builds naturally toward the ultimates even before a Helios cast.
-  // (Helios still grants its burst on top of this.)
+  // Passive Faith trickle per actively burning ship, so Faith builds naturally
+  // toward the ultimates even before a Helios cast. Rate cut 0.5 -> 0.15/s and
+  // the burning count capped, because a single Zeus ignites a whole screen and
+  // the old rate let one cast generate ~130 Faith — enough to nearly re-buy
+  // itself. Now a Zeus's own fire yields only a modest trickle; sustained beam
+  // burning is the reliable path. (Helios still grants its burst on top.)
   let burning = 0;
   const pool = getEnemyPool();
   for (let i = 0; i < pool.length; i++) {
     const e = pool[i];
     if (e.active && e.heat > 0 && !e.shieldBlocking) burning++;
   }
-  faith += burning * 0.5 * dt;
+  faith += Math.min(burning, 4) * 0.15 * dt; // cap so a mass ignition can't spike Faith
 
   // Animate + retire floating "+1" resource popups.
   updateResourcePopups(dt);

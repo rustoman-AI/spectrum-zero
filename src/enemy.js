@@ -3,7 +3,7 @@
 // ============================================================
 
 import {
-  ENEMY_POOL_SIZE, ENEMY_TYPES, SHIP_SPAWN_Y, SHIP_TOP_BOUND, WALL_Y, BATTLEMENT_TOP_Y,
+  ENEMY_POOL_SIZE, ENEMY_TYPES, SHIP_SPAWN_Y, SHIP_TOP_BOUND, WALL_Y, BATTLEMENT_TOP_Y, SHIP_STOP_Y,
   ENEMY_LANE_COUNT, WORLD_HEIGHT, WALL_MAX_HP, BREACH_DRIP_PCT, BREACH_SINK_TIME
 } from './config.js';
 import { getScene, getWorldWidth } from './renderer.js';
@@ -410,24 +410,20 @@ export function updateEnemies(dt) {
       e.mesh.rotation.z = Math.sin(e.oarPhase * 0.7) * 0.015; // very slight roll
     }
 
-    // Ships descend to the stone battlement and only breach when their hull's
-    // LEADING (bottom) edge touches the battlement top. Damage is therefore
-    // always at the wall/shoreline — never in open water mid-screen. The
-    // `breached` guard makes the first-contact burst fire exactly once.
-    //
-    // STRICT STOP-LINE: hard-clamp the hull so its leading edge can never sink
-    // past the battlement top within a single frame step. Without this, a fast
-    // ship (or a large dt hitch) could overshoot the line for a frame and
-    // visually dip its hull down onto the Bronze/Silver/Gold discs sitting at
-    // the wall before the breach removes it. Clamping to `BATTLEMENT_TOP_Y +
-    // half` guarantees zero ship-on-disc overlap: the hull rests exactly on the
-    // line, then breaches. (BATTLEMENT_TOP_Y === RAM_LINE_Y === RAM_STOP_EDGE.)
+    // HARD STOP ABOVE THE MIRROR ROW: ships freeze at SHIP_STOP_Y and breach
+    // from there. They must NEVER enter the mirror field or overlap a mirror
+    // sprite (the prior behaviour sailed hulls all the way to the wall at -39,
+    // passing over/under the mirrors and piling at the battlement). We clamp the
+    // hull so its LEADING (bottom) edge can never cross SHIP_STOP_Y within a
+    // single frame step, even for a fast ship or a large dt hitch — the hull
+    // rests exactly on the line, then breaches. Breach damage/visuals fire here
+    // rather than at the wall.
     const half = shipHalfHeight(e.type);
-    if (e.y - half < BATTLEMENT_TOP_Y) {
-      e.y = BATTLEMENT_TOP_Y + half;
+    if (e.y - half < SHIP_STOP_Y) {
+      e.y = SHIP_STOP_Y + half;
     }
     const leadingEdge = e.y - half;
-    const atWall = leadingEdge <= BATTLEMENT_TOP_Y;
+    const atWall = leadingEdge <= SHIP_STOP_Y;
 
     // Clamp the contact X to the visible battlement so edge/flank ships (and
     // Poseidon-pulled ones) always render on-screen with a matching flash.
@@ -445,9 +441,9 @@ export function updateEnemies(dt) {
       // reduced if the ship was already burning.
       wallDamage += WALL_MAX_HP * dripPct * BREACH_SINK_TIME * Math.max(0.2, 1 - heatFrac);
       const heavy = (e.type === 'quinquereme' || e.type === 'quadrireme');
-      spawnDestruction(cx, BATTLEMENT_TOP_Y + half, heavy); // explosion + embers
-      spawnSmoke(cx, BATTLEMENT_TOP_Y + 1, 2);              // parting smoke burst
-      lastBreaches.push({ x: cx, lane: e.lane });           // battlement stone flash
+      spawnDestruction(cx, SHIP_STOP_Y, heavy);   // explosion + embers at the stop line
+      spawnSmoke(cx, SHIP_STOP_Y + 1, 2);         // parting smoke burst
+      lastBreaches.push({ x: cx, lane: e.lane });  // battlement stone flash (wall x)
       deactivateEnemy(e);  // remove from logic array + fully hide/reset the mesh
       continue;
     }

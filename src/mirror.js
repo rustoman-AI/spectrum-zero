@@ -29,7 +29,10 @@ export function clampMirrorPos(x, y) {
   const minX = -hw + MIRROR_RADIUS;
   const maxX = hw - MIRROR_RADIUS;
   const minY = BATTLEMENT_TOP_Y + MIRROR_RADIUS + 10 * PX; // never below wall top
-  const maxY = PRISM_Y - 150 * PX;                         // never into spawn area
+  // Ceiling at the mirror-field top: a mirror centre may not rise above
+  // MIRROR_FIELD_TOP, so its sprite top stays at/below the ship hard-stop line
+  // (SHIP_STOP_Y = MIRROR_FIELD_TOP + 6) and a stopped hull can never overlap it.
+  const maxY = MIRROR_FIELD_TOP;
   return {
     x: Math.max(minX, Math.min(maxX, x)),
     y: Math.max(minY, Math.min(maxY, y)),

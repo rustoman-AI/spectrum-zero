@@ -28,6 +28,47 @@ let shieldBearerTimer = 0;
 let firstShieldSpawned = false;
 let shieldBearerLaneIndex = 0; // cycles through lanes
 
+// Per-lane last-spawn timestamps (seconds). Used to keep a minimum gap between
+// spawns on the SAME lane so hulls never concertina into a column, and to
+// distribute spawns across the full lane set instead of repeatedly re-rolling
+// the centre. A lane is "busy" until LANE_MIN_GAP has passed since its last use.
+let laneLastSpawn = [];
+const LANE_MIN_GAP = 2.4; // s — even the slowest galley (~2 u/s) clears ~5u first
+
+// Pick a lane for a single spawn: among the lanes whose last spawn is at least
+// LANE_MIN_GAP ago, choose the LEAST-recently-used (largest gap), breaking ties
+// randomly. If every lane is busy (heavy phase), fall back to the stalest lane
+// so we still spawn but always on the most-open lane. `avoid` optionally
+// excludes a lane already used this frame (for paired spawns).
+function pickLane(avoid) {
+  let best = -1, bestAge = -Infinity;
+  const order = [0, 1, 2, 3, 4];
+  // Shuffle so ties don't bias toward lane 0.
+  for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+  for (const l of order) {
+    if (l === avoid) continue;
+    const age = spawnerElapsed - (laneLastSpawn[l] != null ? laneLastSpawn[l] : -999);
+    if (age >= LANE_MIN_GAP && age > bestAge) { best = l; bestAge = age; }
+  }
+  if (best < 0) {
+    // All lanes busy — take the stalest eligible (still avoiding `avoid`).
+    for (const l of order) {
+      if (l === avoid) continue;
+      const age = spawnerElapsed - (laneLastSpawn[l] != null ? laneLastSpawn[l] : -999);
+      if (age > bestAge) { best = l; bestAge = age; }
+    }
+  }
+  if (best < 0) best = Math.floor(Math.random() * ENEMY_LANE_COUNT);
+  return best;
+}
+
+// Spawn on a chosen lane and stamp it so the same lane can't be re-used until
+// LANE_MIN_GAP passes. Wraps spawnEnemy for the procedural phases.
+function spawnOnLane(type, lane, hpMult, yOffset) {
+  spawnEnemy(type, lane, hpMult, yOffset);
+  laneLastSpawn[lane] = spawnerElapsed;
+}
+
 // --- Scripted 90s opening (judge-facing tutorial curve) ---
 // Deterministic spawns for the first 90s. Each event fires once when the
 // session clock passes its time. After 90s the normal phase spawner takes over.
@@ -106,7 +147,10 @@ export function updateSpawner(dt, sessionTime) {
   }
 }
 
-// Spawn shield-bearer leading 2-3 escorts in tight column
+// Spawn cataphract leading 2-3 escorts in a tight column (an intentional
+// formation, evenly Y-spaced by ESCORT_SPACING so it reads as one column, not a
+// pile). The lane is stamped busy for the whole column length so the procedural
+// spawner won't drop an unrelated ship on top of the formation.
 function spawnShieldFormation(lane, hpMult) {
   // Leader
   spawnEnemy('cataphract', lane, hpMult, 0);
@@ -116,6 +160,8 @@ function spawnShieldFormation(lane, hpMult) {
   for (let i = 1; i <= escortCount; i++) {
     spawnEnemy(escortType, lane, hpMult, ESCORT_SPACING * i);
   }
+  // Reserve the lane long enough for the whole column to clear the spawn line.
+  if (laneLastSpawn.length) laneLastSpawn[lane] = spawnerElapsed + escortCount * 1.5;
 }
 
 // Cycle shield-bearer through lanes: 2, 0, 4, 1, 3, repeat
@@ -135,6 +181,7 @@ export function resetSpawner() {
   firstShieldSpawned = false;
   shieldBearerLaneIndex = 0;
   scriptIndex = 0;
+  laneLastSpawn = new Array(ENEMY_LANE_COUNT).fill(-999);
 }
 
 function getInterval() {
@@ -154,45 +201,42 @@ function doSpawn() {
     return;
   }
 
-  // All phases: use full lane range for all types
-  const lane = Math.floor(Math.random() * ENEMY_LANE_COUNT);
+  // Lane chosen by the spread-picker (least-recently-used, min-gap enforced) so
+  // the same lane can't be re-rolled into a column and spawns fan across all 5.
+  const lane = pickLane();
 
   if (spawnerElapsed < PHASE_1_END) {
-    // Phase 1: liburnae on random lanes
-    spawnEnemy('liburna', lane, hpMult);
+    // Phase 1: liburnae
+    spawnOnLane('liburna', lane, hpMult);
   } else if (spawnerElapsed < PHASE_2_END) {
     // Phase 2: mix of types across all lanes
     const roll = Math.random();
     if (roll < 0.25) {
-      spawnEnemy('quadrireme', lane, hpMult);
+      spawnOnLane('quadrireme', lane, hpMult);
     } else if (roll < 0.55) {
-      spawnEnemy('trireme', lane, hpMult);
+      spawnOnLane('trireme', lane, hpMult);
     } else {
-      spawnEnemy('liburna', lane, hpMult);
+      spawnOnLane('liburna', lane, hpMult);
     }
-    // Paired pressure every 5th spawn on random opposite lanes
+    // Paired pressure every 5th spawn — a second, different open lane.
     if (totalSpawns % 5 === 0) {
-      const pairA = Math.floor(Math.random() * 2);       // 0 or 1
-      const pairB = ENEMY_LANE_COUNT - 1 - pairA;        // 4 or 3
-      spawnEnemy('liburna', pairA, hpMult);
-      spawnEnemy('liburna', pairB, hpMult);
+      const laneB = pickLane(lane);
+      spawnOnLane('liburna', laneB, hpMult);
     }
   } else {
     // Phase 3: heavy across all lanes
     const roll = Math.random();
     if (roll < 0.35) {
-      spawnEnemy('quadrireme', lane, hpMult);
+      spawnOnLane('quadrireme', lane, hpMult);
     } else if (roll < 0.65) {
-      spawnEnemy('trireme', lane, hpMult);
+      spawnOnLane('trireme', lane, hpMult);
     } else {
-      spawnEnemy('liburna', lane, hpMult);
+      spawnOnLane('liburna', lane, hpMult);
     }
-    // Paired heavy pressure every 4th spawn
+    // Paired heavy pressure every 4th spawn — a second, different open lane.
     if (totalSpawns % 4 === 0) {
-      const pairA = Math.floor(Math.random() * 2);       // 0 or 1
-      const pairB = ENEMY_LANE_COUNT - 1 - pairA;        // 4 or 3
-      spawnEnemy('trireme', pairA, hpMult);
-      spawnEnemy('trireme', pairB, hpMult);
+      const laneB = pickLane(lane);
+      spawnOnLane('trireme', laneB, hpMult);
     }
   }
 }

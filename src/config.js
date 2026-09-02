@@ -32,7 +32,14 @@ export const ENEMY_LANE_COUNT = 5;
 // with their leading (bottom) edge resting just on top of it.
 export const MIRROR_DISC_TOP = -6;         // top edge of the topmost mirror sprite (kept for refs)
 export const BATTLEMENT_TOP_Y = WALL_Y + 1; // top of the stone the hull rams into (~ -39)
-export const RAM_STOP_EDGE = BATTLEMENT_TOP_Y;
+// Ship hard-stop line: ships FREEZE here and breach from here — they never
+// enter the mirror field below (they used to sail all the way to the wall at
+// -39, overlapping mirror sprites on the way and piling at the battlement). The
+// line sits one mirror-radius above MIRROR_FIELD_TOP so that even a mirror
+// dragged to the very top of its field (centre clamped to MIRROR_FIELD_TOP,
+// sprite top ~MIRROR_FIELD_TOP+radius) can never overlap a stopped hull.
+export const SHIP_STOP_Y = MIRROR_FIELD_TOP + 6; // ~ -6, just above the mirror row
+export const RAM_STOP_EDGE = SHIP_STOP_Y;
 export const RAM_LINE_Y = RAM_STOP_EDGE;
 // Hard floor for mirror dragging: a mirror's CENTRE may never go below the
 // battlement top + ~40px (≈5 world units). Keeps discs strictly in the water,
@@ -144,7 +151,7 @@ export const GOD_ABILITIES = {
     duration: 5,
     costs: [
       { bronze: 25 },                 // #1: cheap opener
-      { faith: 15, gold: 5 },         // #2+: constant (does not escalate)
+      { faith: 40, gold: 5 },         // #2+: constant (raised 15->40 so a cast can't self-fund)
     ]
   },
   poseidon: {
@@ -152,7 +159,7 @@ export const GOD_ABILITIES = {
     duration: 6,
     costs: [
       { bronze: 40 },                 // #1: cheap opener
-      { faith: 20, gold: 8 },         // #2+: constant
+      { faith: 45, gold: 8 },         // #2+: constant (raised 20->45)
     ]
   },
   // Helios: active Solar Overcharge. Generates Faith (the fuel for Zeus/Poseidon

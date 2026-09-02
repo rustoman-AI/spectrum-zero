@@ -84,7 +84,13 @@ export function rebuildBeams(segments) {
         hh - Math.abs(seg.end.y) + edgeMargin
       );
       const edgeFade = Math.min(1, Math.max(0.1, endDistFromEdge / edgeMargin));
-      const finalOpacity = opacityMult * edgeFade * tierOpacity;
+
+      // Bounce-depth dimming: each reflection fades the segment so the PRIMARY
+      // path (bounce 0, straight from the prism/source) stays dominant and deep
+      // multi-mirror bounces recede into faint hints instead of "beam soup" once
+      // several mirrors are out. Floored so late bounces stay just visible.
+      const depthDim = Math.max(0.18, Math.pow(0.6, seg.bounces || 0));
+      const finalOpacity = opacityMult * edgeFade * tierOpacity * depthDim;
 
       positionQuad(entry.core, seg.start, seg.end, coreW);
       positionQuad(entry.glow, seg.start, seg.end, glowW);
