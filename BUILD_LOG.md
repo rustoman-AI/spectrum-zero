@@ -897,3 +897,29 @@ Post-check: `EXIT=1`, and `Test-Path index.html` returned false — **index.html
 **Verified:** `node build.js` -> 290.4 KB, exit 0 (luminance gate green). Rotation 11/11, smoke 29/29. Lane spread + Faith drip changes reasoned/simulated numerically. REJECTED item (canvas fill to window) NOT applied — letterbox preserved.
 
 **Honest caveat:** can't view the running frame here. The hull/mirror clearance and lane spread are proven by the geometry + simulation; the beam-dimming and Faith feel need an eyes-on pass (both are single-constant tweaks: `depthDim` base 0.6/floor 0.18, drip 0.15 / cap 4 / repeat costs). No palette or letterbox changes.
+
+---
+
+## 2026-08-25 — Revert SHIP_STOP_Y; breach at the wall again; solve mirror overlap by render order + raised mirror floor
+
+**Why:** the previous SHIP_STOP_Y=-6 moved the breach line into open water, so the wall took damage from ships that never reached the stone — reads as a bug and undercuts the fortress. Reverted per instruction; the overlap is solved the other way.
+
+**Reverted (`config.js`, `enemy.js`):** removed `SHIP_STOP_Y`; `RAM_STOP_EDGE`/`RAM_LINE_Y` back to `BATTLEMENT_TOP_Y` (-39). Ships descend to the battlement and breach AT THE WALL; the hull hard-clamps its leading edge to -39 (no single-frame overshoot). Breach FX (`spawnDestruction`, `spawnSmoke`, `lastBreaches` flash) fire at the wall again, where the fortress/flash/altars are.
+
+**Mirror overlap solved the described way:**
+- Render order (`enemy.js`): ship group z +0.3 -> -0.1, so hulls draw BEHIND mirror sprites (mirrors at z=0) while staying in front of beams (z<=-0.3) and background (z=-10). A ship transiting the field passes under the disc, not over it.
+- Raised mirror floor (`config.js`): `MIRROR_MIN_Y` -34 -> -26. Lowest mirror bottom = centre(-26) - radius(5) = -31. A ship stopped at the wall (leading edge -39) can't sit under it.
+- `mirror.js`: drag `minY` uses `MIRROR_MIN_Y`; `getMirrorFloorY()` returns `MIRROR_MIN_Y` too so the sanitize/recovery threshold matches. Starting sockets (y=-26) and purchased-mirror rows (-26/-14) are all >= -26, so nothing gets shoved.
+
+**Restored the drag ceiling:** `clampMirrorPos maxY` back to `PRISM_Y - 150*PX` (~+11) — I had lowered it to MIRROR_FIELD_TOP as part of the SHIP_STOP_Y edit; it's not needed for clearance now, so it's restored.
+
+**Confirmation 1 (wall reacts only on contact):** wall damage is accumulated ONLY inside the `if (atWall)` branch of updateEnemies (verified: no other `wallDamage +=`), and `atWall` = leadingEdge <= -39 with the hull clamped to rest exactly on the stone that frame. `getLastBreaches()` (flash/shake/sound triggers) is pushed only there too. So the wall bar / flash / shake cannot move until a hull's bottom edge touches the battlement — a ship mid-screen deals zero damage. A ship visibly reaches the stone before the wall reacts.
+
+**Confirmation 2 (clearance, world units):** stopped hull bottom at -39; lowest mirror bottom at -31; clearance = 8 - shipHeight:
+- liburna (2.5) -> 5.5u ; trireme (3.5) -> 4.5u ; cataphract (4.0) -> 4.0u ; quadrireme (4.5) -> 3.5u.
+- quinquereme (8.0, rare late boss) -> 0.0u (meets the mirror bottom at the boundary; hidden by render order).
+Every common ship clears the lowest possible mirror by 3.5-5.5u; the boss only touches at the boundary and is drawn behind the disc.
+
+**Verified:** build 290.6 KB exit 0, luminance gate green, rotation 11/11, smoke 29/29. Only config/enemy/mirror changed — the prior lane-spread, beam-dimming and Faith fixes are untouched. No palette or letterbox changes.
+
+**Honest caveat:** clearances/breach-gating are proven from the code + geometry; I can't watch the frame, so the eyes-on confirmation that a hull reaches the stone before the bar moves, and that hulls now pass cleanly under mirrors, is yours. Both knobs are one-liners if the boss's 0u boundary touch ever looks off (raise MIRROR_MIN_Y a touch or clamp the quinquereme's stop).

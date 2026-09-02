@@ -235,19 +235,23 @@ const ENEMY_LANE_COUNT = 5;
 // with their leading (bottom) edge resting just on top of it.
 const MIRROR_DISC_TOP = -6;         // top edge of the topmost mirror sprite (kept for refs)
 const BATTLEMENT_TOP_Y = WALL_Y + 1; // top of the stone the hull rams into (~ -39)
-// Ship hard-stop line: ships FREEZE here and breach from here — they never
-// enter the mirror field below (they used to sail all the way to the wall at
-// -39, overlapping mirror sprites on the way and piling at the battlement). The
-// line sits one mirror-radius above MIRROR_FIELD_TOP so that even a mirror
-// dragged to the very top of its field (centre clamped to MIRROR_FIELD_TOP,
-// sprite top ~MIRROR_FIELD_TOP+radius) can never overlap a stopped hull.
-const SHIP_STOP_Y = MIRROR_FIELD_TOP + 6; // ~ -6, just above the mirror row
-const RAM_STOP_EDGE = SHIP_STOP_Y;
+// Ships ram the battlement and breach AT THE WALL, where the fortress, flash and
+// altars are — never mid-screen. (An earlier SHIP_STOP_Y at -6 moved breach up
+// into open water, which read as the city taking damage from a ship that never
+// arrived; reverted.) The mirror-overlap problem is solved by render order
+// (hulls draw behind mirror sprites) plus a raised mirror MIN height, not by
+// stopping ships early.
+const RAM_STOP_EDGE = BATTLEMENT_TOP_Y;
 const RAM_LINE_Y = RAM_STOP_EDGE;
-// Hard floor for mirror dragging: a mirror's CENTRE may never go below the
-// battlement top + ~40px (≈5 world units). Keeps discs strictly in the water,
-// never overlapping the brick wall or the shop bar below it.
-const MIRROR_MIN_Y = BATTLEMENT_TOP_Y + 5; // ~ -34
+// Hard floor for mirror dragging: a mirror's CENTRE may never go below this.
+// Raised from ~-34 to -26 so that a ship STOPPED at the battlement (leading
+// edge at BATTLEMENT_TOP_Y -39, tallest common hull ~4.5u -> top ~-34.5) sits
+// entirely BELOW the lowest possible mirror bottom (centre -26 minus radius 5
+// = -31): ~3.5u clearance for the common fleet, so no hull can sit under a
+// mirror at the wall. (The rare quinquereme boss, 8u tall -> top -31, meets the
+// mirror bottom at the boundary and is hidden by render order.) This is the
+// value that closes the overlap now that ships breach at the wall again.
+const MIRROR_MIN_Y = -26;
 
 // --- DEV flags ---
 const DEV = {
@@ -2407,17 +2411,14 @@ function clampMirrorPos(x, y) {
   const hw = getWorldWidth() / 2;
   const minX = -hw + MIRROR_RADIUS;
   const maxX = hw - MIRROR_RADIUS;
-  const minY = BATTLEMENT_TOP_Y + MIRROR_RADIUS + 10 * PX; // never below wall top
-  // Ceiling at the mirror-field top: a mirror centre may not rise above
-  // MIRROR_FIELD_TOP, so its sprite top stays at/below the ship hard-stop line
-  // (SHIP_STOP_Y = MIRROR_FIELD_TOP + 6) and a stopped hull can never overlap it.
-  const maxY = MIRROR_FIELD_TOP;
+  const minY = MIRROR_MIN_Y;                               // raised floor (see config)
+  const maxY = PRISM_Y - 150 * PX;                         // never into spawn area (restored)
   return {
     x: Math.max(minX, Math.min(maxX, x)),
     y: Math.max(minY, Math.min(maxY, y)),
   };
 }
-function getMirrorFloorY() { return BATTLEMENT_TOP_Y + MIRROR_RADIUS; }
+function getMirrorFloorY() { return MIRROR_MIN_Y; }
 
 // Active tweens: { mirror, fromX, fromY, toX, toY, elapsed, duration }
 const tweens = [];
@@ -3218,7 +3219,11 @@ function initEnemies() {
 
   for (let i = 0; i < ENEMY_POOL_SIZE; i++) {
     const mesh = new THREE.Group();
-    mesh.position.z = 0.3;
+    // Hulls render BEHIND the mirror sprites (mirrors sit at z=0): as a ship
+    // transits the mirror field on its way to the wall it passes under the disc
+    // instead of on top of it. Still in front of the beams (z<=-0.3) and the
+    // background (z=-10). Ship-group z was +0.3 (drew over mirrors) -> -0.1.
+    mesh.position.z = -0.1;
 
     // Ship sprite (canvas-drawn, swapped per type)
     const spriteGeo = new THREE.PlaneGeometry(6, 6);
@@ -3452,20 +3457,18 @@ function updateEnemies(dt) {
       e.mesh.rotation.z = Math.sin(e.oarPhase * 0.7) * 0.015; // very slight roll
     }
 
-    // HARD STOP ABOVE THE MIRROR ROW: ships freeze at SHIP_STOP_Y and breach
-    // from there. They must NEVER enter the mirror field or overlap a mirror
-    // sprite (the prior behaviour sailed hulls all the way to the wall at -39,
-    // passing over/under the mirrors and piling at the battlement). We clamp the
-    // hull so its LEADING (bottom) edge can never cross SHIP_STOP_Y within a
-    // single frame step, even for a fast ship or a large dt hitch — the hull
-    // rests exactly on the line, then breaches. Breach damage/visuals fire here
-    // rather than at the wall.
+    // Ships descend all the way to the stone battlement and only breach when
+    // their hull's LEADING (bottom) edge touches the battlement top — so wall
+    // damage is always AT THE WALL (fortress/flash/altars), never mid-screen.
+    // Hard-clamp so the leading edge can't cross BATTLEMENT_TOP_Y in a single
+    // frame step (fast ship / dt spike): the hull rests exactly on the stone,
+    // then breaches.
     const half = shipHalfHeight(e.type);
-    if (e.y - half < SHIP_STOP_Y) {
-      e.y = SHIP_STOP_Y + half;
+    if (e.y - half < BATTLEMENT_TOP_Y) {
+      e.y = BATTLEMENT_TOP_Y + half;
     }
     const leadingEdge = e.y - half;
-    const atWall = leadingEdge <= SHIP_STOP_Y;
+    const atWall = leadingEdge <= BATTLEMENT_TOP_Y;
 
     // Clamp the contact X to the visible battlement so edge/flank ships (and
     // Poseidon-pulled ones) always render on-screen with a matching flash.
@@ -3483,9 +3486,9 @@ function updateEnemies(dt) {
       // reduced if the ship was already burning.
       wallDamage += WALL_MAX_HP * dripPct * BREACH_SINK_TIME * Math.max(0.2, 1 - heatFrac);
       const heavy = (e.type === 'quinquereme' || e.type === 'quadrireme');
-      spawnDestruction(cx, SHIP_STOP_Y, heavy);   // explosion + embers at the stop line
-      spawnSmoke(cx, SHIP_STOP_Y + 1, 2);         // parting smoke burst
-      lastBreaches.push({ x: cx, lane: e.lane });  // battlement stone flash (wall x)
+      spawnDestruction(cx, BATTLEMENT_TOP_Y + half, heavy); // explosion + embers at the wall
+      spawnSmoke(cx, BATTLEMENT_TOP_Y + 1, 2);              // parting smoke burst
+      lastBreaches.push({ x: cx, lane: e.lane });           // battlement stone flash
       deactivateEnemy(e);  // remove from logic array + fully hide/reset the mesh
       continue;
     }

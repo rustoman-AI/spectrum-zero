@@ -32,19 +32,23 @@ export const ENEMY_LANE_COUNT = 5;
 // with their leading (bottom) edge resting just on top of it.
 export const MIRROR_DISC_TOP = -6;         // top edge of the topmost mirror sprite (kept for refs)
 export const BATTLEMENT_TOP_Y = WALL_Y + 1; // top of the stone the hull rams into (~ -39)
-// Ship hard-stop line: ships FREEZE here and breach from here — they never
-// enter the mirror field below (they used to sail all the way to the wall at
-// -39, overlapping mirror sprites on the way and piling at the battlement). The
-// line sits one mirror-radius above MIRROR_FIELD_TOP so that even a mirror
-// dragged to the very top of its field (centre clamped to MIRROR_FIELD_TOP,
-// sprite top ~MIRROR_FIELD_TOP+radius) can never overlap a stopped hull.
-export const SHIP_STOP_Y = MIRROR_FIELD_TOP + 6; // ~ -6, just above the mirror row
-export const RAM_STOP_EDGE = SHIP_STOP_Y;
+// Ships ram the battlement and breach AT THE WALL, where the fortress, flash and
+// altars are — never mid-screen. (An earlier SHIP_STOP_Y at -6 moved breach up
+// into open water, which read as the city taking damage from a ship that never
+// arrived; reverted.) The mirror-overlap problem is solved by render order
+// (hulls draw behind mirror sprites) plus a raised mirror MIN height, not by
+// stopping ships early.
+export const RAM_STOP_EDGE = BATTLEMENT_TOP_Y;
 export const RAM_LINE_Y = RAM_STOP_EDGE;
-// Hard floor for mirror dragging: a mirror's CENTRE may never go below the
-// battlement top + ~40px (≈5 world units). Keeps discs strictly in the water,
-// never overlapping the brick wall or the shop bar below it.
-export const MIRROR_MIN_Y = BATTLEMENT_TOP_Y + 5; // ~ -34
+// Hard floor for mirror dragging: a mirror's CENTRE may never go below this.
+// Raised from ~-34 to -26 so that a ship STOPPED at the battlement (leading
+// edge at BATTLEMENT_TOP_Y -39, tallest common hull ~4.5u -> top ~-34.5) sits
+// entirely BELOW the lowest possible mirror bottom (centre -26 minus radius 5
+// = -31): ~3.5u clearance for the common fleet, so no hull can sit under a
+// mirror at the wall. (The rare quinquereme boss, 8u tall -> top -31, meets the
+// mirror bottom at the boundary and is hidden by render order.) This is the
+// value that closes the overlap now that ships breach at the wall again.
+export const MIRROR_MIN_Y = -26;
 
 // --- DEV flags ---
 export const DEV = {
