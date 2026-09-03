@@ -974,3 +974,22 @@ Every common ship clears the lowest possible mirror by 3.5-5.5u; the boss only t
 **4. Regression sweep — clean.** Grepped the bundle: luminance gate green (sea 2.6-4.8%, ground 1.9%, sky 0.7% — untouched); hulls behind mirrors (`mesh.position.z = -0.1`); breach at the wall (`spawnDestruction(cx, BATTLEMENT_TOP_Y + half...)`); mirror floor `MIRROR_MIN_Y = -26`; enemy keys liburna/cataphract/quinquereme consistent across ENEMY_TYPES/BREACH_DAMAGE/BREACH_DRIP_PCT/SHIP_SIZE/spawner; Gd currency in HUD + costs; Arethusa engraving + SPQR overlay + HULL_LIFT all present. Build 301.9 KB exit 0, rotation 11/11, smoke 29/29. Deleted throwaway sim scripts.
 
 **Honest caveat:** the intro handoff is fixed in logic and the file is verified mobile-spec, but I can't run a phone here — the real "plays on a phone from the plain URL" confirmation is a device test (load the plain Pages URL on a phone, tap once, confirm it plays through to the game and doesn't cut early on desktop). Faith numbers are from a model of the loop, not live play; if a committed run feels like more/fewer than 3-4, the repeat cost is a one-line change (curve reported).
+
+---
+
+## 2026-08-25 — Faith: fix the SOURCE (Helios +15->+8), repeat costs Zeus 25 / Poseidon 30
+
+Applied exactly as requested: `GOD_ABILITIES.helios.faithGain` 15 -> 8; Zeus repeat 45 -> **25** Faith; Poseidon 50 -> **30**. Openers unchanged (Zeus 25 Bz, Poseidon 40 Bz).
+
+**Re-ran the sim, now counting TOTAL Zeus+Poseidon activations (bronze openers INCLUDED), Helios listed separately as the engine:**
+- CASUAL (2 burn, 0.5 Si/s): Zeus+Pos total **5** (4 zeus, 1 pos), of which 3 faith-funded; first Zeus opener @21s, **first faith repeat @56s**. Helios x6.
+- COMMITTED (3 burn, 0.8 Si/s): Zeus+Pos total **8**, 6 faith-funded; first Zeus @14s, first repeat @37s. Helios x9.
+- AGGRESSIVE (4 burn): Zeus+Pos total **10**, 8 faith-funded. Helios x13.
+
+**Honest result vs the target:** the CASUAL case now lands right where the original complaint was — a repeat IS reachable (~56s), one-plus over the run, at a low/reachable price. But a COMMITTED 3-minute run still lands ~6-8, NOT 4. Cutting Helios helped, but it is NOT the dominant source over a full run: the passive drip alone at 3 ships burning is 0.45 x 180s ≈ **81 Faith ≈ 3 Zeus casts before Helios contributes anything**. So over 180s the drip floor + any Helios inevitably exceeds 4 for a committed player. My earlier "~100s to a 2nd cast" only held for a player who let fires go out; a player who sustains burning accrues Faith steadily from the drip itself.
+
+**So the requested change is applied and improves things (casual complaint fixed, cost lower than 40), but if you want a COMMITTED run capped near 4 total, the remaining lever is the DRIP, not the price or Helios.** Proposal: drop the per-ship drip 0.15 -> 0.08 (halves the passive floor to ~43 Faith/180s ≈ under 2 casts from drip, so Helios+drip together land ~3-4 committed). I did NOT change the drip this pass since you specified Helios+prices; say the word and it's a one-line change.
+
+**Helios flavour check:** +8 Faith over a 5s flare is +1.6/s — still a noticeable trickle, but the flare's STUN (4s) and shield-plate burn are unchanged and remain the reason to cast it. Faith is now clearly a bonus, not the point, which matches your intent. It does not feel pointless — the stun/armour-burn are untouched.
+
+**Verified:** build 302.1 KB exit 0, luminance gate green, rotation 11/11, smoke 29/29. Values confirmed in the bundle (faithGain 8, faith 25/gold 5, faith 30/gold 8). Sim scripts deleted.
