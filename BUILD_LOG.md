@@ -184,7 +184,7 @@ All procedural canvas drawing at load time — zero image files, zip size unchan
 
 ## Deployment
 
-- GitHub Pages: https://rustoman-ai.github.io/spectrum-zero/
+- Hosting: static GitHub Pages from the repository root (handle redacted)
 - Branch: master (Pages deploys from root)
 - Safe revert: `git tag submission-fallback` at 87454b9
 
@@ -697,21 +697,21 @@ All procedural canvas drawing at load time — zero image files, zip size unchan
 
 ---
 
-## 2026-08-25 — Победа: время увеличено до 3:00 (полноценный челлендж)
+## 2026-08-25 — Victory: time raised to 3:00 (full challenge)
 
-**Запрос:** увеличить время до победы до 2:30–3:00 (полноценный челлендж). Взял верхнюю границу — 3:00 (180с).
+**Asked:** raise the time-to-win to 2:30-3:00 (a full challenge). Took the upper bound, 3:00 (180s).
 
-**Сделано (`config.js`, `session.js`):**
-- `VICTORY_TIME` 90 -> 180 (3:00). Теперь основной путь к победе — выжить со стеной до 3:00, пройдя Phase 1 (скиффы, 0–60с) и Phase 2 (бронированные галеры, 60–180с). Условие проверяется каждый кадр в `updateSession` при `wallIntegrity > 0`.
-- `VICTORY_KILLS` 45 -> 150. Это ключевой момент: за 180с спавнится ~120–140 кораблей (скриптовый опенинг ~43 за первые 90с + процедурный Phase 2 при интервале 1.5с и парных/формациях ещё ~80–100). Старый порог 45 срабатывал бы уже к ~40–50с и делал таймер бессмысленным. Подняв порог заметно выше реалистичного числа кораблей в окне, оставил килы как вторичный резерв «зачистил весь флот» — в обычной игре победа зарабатывается именно выживанием до 3:00.
-- Обновил устаревший комментарий в `updateSession` (был «survive to 1:30 OR sink 45»).
-- Победная карта показывает «SURVIVED <time>» из фактического `elapsed`, поэтому при таймерной победе автоматически покажет «SURVIVED 3:00» — хардкода «1:30» нигде нет.
+**Done (`config.js`, `session.js`):**
+- `VICTORY_TIME` 90 -> 180 (3:00). The main path to victory is now to survive with the wall intact to 3:00, through Phase 1 (liburnae, 0-60s) and Phase 2 (armoured galleys, 60-180s). Checked every frame in `updateSession` while `wallIntegrity > 0`.
+- `VICTORY_KILLS` 45 -> 150. This is the key point: ~120-140 ships spawn over 180s (scripted opening ~43 in the first 90s + procedural Phase 2 at 1.5s interval with pairs/formations another ~80-100). The old threshold of 45 would trip at ~40-50s and make the timer meaningless. Raising the threshold well above the realistic ship count in the window keeps kills as a secondary "cleared the whole fleet" fallback — in normal play the win is earned by surviving to 3:00.
+- Updated a stale comment in `updateSession` (was "survive to 1:30 OR sink 45").
+- The victory card shows "SURVIVED <time>" from the actual `elapsed`, so a timer win automatically shows "SURVIVED 3:00" — no "1:30" is hardcoded anywhere.
 
-**Не трогал:** скриптовый опенинг (`SCRIPT_END = 90`) — он покрывает первые 90с, дальше процедурный спавнер (Phase 2 до 180с) сам держит челлендж смешанными типами; продление скрипта не требовалось. Эскалация HP `1 + (elapsed/600)*3` к 180с даёт ~1.9x — естественный рост сложности к концу забега.
+**Left alone:** the scripted opening (`SCRIPT_END = 90`) covers the first 90s; after that the procedural spawner (Phase 2 to 180s) sustains the challenge with mixed types, so extending the script was not needed. HP escalation `1 + (elapsed/600)*3` reaches ~1.9x by 180s — a natural difficulty ramp toward the end of the run.
 
-**Проверка:** `node build.js` -> 270.1 KB, exit 0. Rotation 11/11, smoke 29/29. Диагностика чистая (config, session). Грепом подтвердил VICTORY_TIME=180 / VICTORY_KILLS=150 в собранном index.html.
+**Verified:** `node build.js` -> 270.1 KB, exit 0. Rotation 11/11, smoke 29/29. Diagnostics clean (config, session). Grep confirmed VICTORY_TIME=180 / VICTORY_KILLS=150 in the built index.html.
 
-**Честная оговорка:** не могу играть здесь, поэтому баланс «дойдёт ли средний игрок до 3:00, не потеряв стену под давлением Phase 2» нужно проверить на устройстве. Обе константы — правка в одну строку: если 3:00 окажется слишком тяжело, ставим 150 (2:30); если килы всё же обгоняют таймер при очень агрессивной игре — поднимаем VICTORY_KILLS ещё.
+**Honest caveat:** cannot playtest here, so the balance question — whether an average player reaches 3:00 without losing the wall under Phase 2 pressure — needs a device check. Both constants are one-line edits: if 3:00 proves too hard, set 150 (2:30); if kills still outrun the timer on very aggressive play, raise VICTORY_KILLS further.
 
 ---
 
@@ -1001,7 +1001,7 @@ Applied exactly as requested: `GOD_ABILITIES.helios.faithGain` 15 -> 8; Zeus rep
 Applied the drip cut in `foundry.js` (`min(burning,4) * 0.08 * dt`). Helios faithGain stays 8; Zeus repeat 25 Faith, Poseidon 30; openers unchanged.
 
 **Same table, re-run (total Zeus+Poseidon activations, bronze openers INCLUDED):**
-- CASUAL (2 burn): total **4** (3 zeus, 1 pos), faith-repeats 2, first Zeus opener @21s, **first faith repeat @64s** — reachable around the one-minute mark. ✓ (matches Sasha's actual complaint being fixed)
+- CASUAL (2 burn): total **4** (3 zeus, 1 pos), faith-repeats 2, first Zeus opener @21s, **first faith repeat @64s** — reachable around the one-minute mark. ✓ (matches the playtest complaint being fixed)
 - COMMITTED (3 burn): total **6** (5 zeus, 1 pos), **faith-funded repeats 4**, first repeat @42s. The faith-gated part is exactly 4; total is 6 with the two bronze openers.
 - AGGRESSIVE (4 burn): total **8**, faith-repeats 6. Left as-is per instruction (sustaining 4 fires for 3 min earns it).
 

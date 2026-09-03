@@ -1,1 +1,12 @@
 node_modules/
+# Stray / unreferenced media at repo root (NOT loaded by the game, must never
+# be packaged). The game loads only assets/*.
+/archimed_intro.mp4
+/fail.mp4
+/fixed_intro.mp4
+# Large unreferenced source media kept in assets/ but never loaded at runtime.
+assets/0902.mp4
+assets/approvepilot.mp4
+# Build artifacts
+submission.zip
+_verify_extract/
