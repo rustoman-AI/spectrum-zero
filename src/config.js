@@ -154,8 +154,14 @@ export const GOD_ABILITIES = {
     name: 'Keraunos',        // Zeus's thunderbolt (English: Thunderbolt)
     duration: 5,
     costs: [
-      { bronze: 25 },                 // #1: cheap opener
-      { faith: 40, gold: 5 },         // #2+: constant (raised 15->40 so a cast can't self-fund)
+      { bronze: 25 },                 // #1: cheap opener (reachable in minute one)
+      { faith: 45, gold: 5 },         // #2+: constant. Tuned by simulation: with
+                                      // the +15 Helios Faith burst (Silver-gated)
+                                      // + drip, 45 yields ~4 faith-funded casts
+                                      // for a committed run, first repeat ~40s.
+                                      // (Was 40 with the drip ALSO cut = too slow
+                                      // for a casual player; the fix is the number
+                                      // that hits 3-4, not stacking both brakes.)
     ]
   },
   poseidon: {
@@ -163,7 +169,7 @@ export const GOD_ABILITIES = {
     duration: 6,
     costs: [
       { bronze: 40 },                 // #1: cheap opener
-      { faith: 45, gold: 8 },         // #2+: constant (raised 20->45)
+      { faith: 50, gold: 8 },         // #2+: constant — a touch dearer than Zeus.
     ]
   },
   // Helios: active Solar Overcharge. Generates Faith (the fuel for Zeus/Poseidon

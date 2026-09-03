@@ -195,11 +195,13 @@ export function updateCraftingTray() {
     const cxc = x + btnW / 2;
     const iconTint = (affordable || zeusGlow) ? '#ffffff' : '#888888';
     const hasIcon = (item.id === 'zeus' || item.id === 'helios' || item.id === 'poseidon');
-    // God abilities get a vector icon at the top, then name, then cost — so the
-    // three rows are: icon (y~8), name (y~20), cost (y~31). Non-ability items
-    // keep the classic name (y~13) + cost (y~27) layout.
+    // God abilities: icon (top), the Greek epithet as the main label, then a
+    // SMALLER god-name line beneath it (so a player who doesn't know the epithet
+    // still sees Zeus / Poseidon / Helios), then the cost. Icon is drawn a touch
+    // smaller (s=6) to open room for the extra line inside the 40px button.
+    // Non-ability items keep the classic name (y~13) + cost (y~27) layout.
     if (hasIcon) {
-      drawAbilityIcon(item.id, cxc, 8, 8, iconTint);
+      drawAbilityIcon(item.id, cxc, 7, 6, iconTint);
     }
 
     // Kill any inherited shadow before drawing text. The ready-pulse glow above
@@ -208,9 +210,8 @@ export function updateCraftingTray() {
     trayCtx.shadowBlur = 0;
     trayCtx.shadowColor = 'transparent';
 
-    // Wipe the name band back to the flat button background before drawing it,
-    // matching the cost-band wipe below, so no sub-label can ever ghost/stack.
-    const nameY = hasIcon ? 20 : 13;
+    // Main label (Greek epithet for gods). Wipe the band first so nothing ghosts.
+    const nameY = hasIcon ? 18 : 13;
     trayCtx.fillStyle = bgColour;
     trayCtx.fillRect(x + 1, nameY - 8, btnW - 2, 11);
 
@@ -218,6 +219,17 @@ export function updateCraftingTray() {
     trayCtx.font = 'bold 8px monospace';
     trayCtx.textAlign = 'center';
     trayCtx.fillText(item.label, cxc, nameY);
+
+    // Smaller god-name line under the epithet (gods only), so Zeus/Poseidon/
+    // Helios stay visible in the interface alongside Keraunos/Enosichthon/Hyperion.
+    if (hasIcon && GOD_NAMES[item.id]) {
+      const godY = 25;
+      trayCtx.fillStyle = bgColour;
+      trayCtx.fillRect(x + 1, godY - 6, btnW - 2, 7);
+      trayCtx.fillStyle = (affordable || zeusGlow) ? '#c9c2b0' : '#6a6658';
+      trayCtx.font = '6px monospace';
+      trayCtx.fillText(GOD_NAMES[item.id], cxc, godY);
+    }
 
     // Cost line — but ONLY when the button is NOT on cooldown. During cooldown
     // the radial timer draws its own "Ns" in the same spot; showing both stacks
@@ -227,7 +239,7 @@ export function updateCraftingTray() {
       // multi-token cost (e.g. Helios "15Si 20Bz") can never leave a ghosted /
       // stacked remnant from a wider previous string or the glow halo. We're
       // already clipped to this button cell, so this only repaints its own row.
-      const costY = hasIcon ? 31 : 27;
+      const costY = hasIcon ? 34 : 27;
       trayCtx.fillStyle = bgColour;
       trayCtx.fillRect(x + 1, costY - 8, btnW - 2, 12);
       drawCostTokens(cost, res, faith, cxc, costY, btnW);
@@ -425,6 +437,11 @@ function drawAbilityIcon(id, cx, cy, s, col) {
   }
   trayCtx.restore();
 }
+
+// God behind each Greek epithet, shown as a small second line on the button so
+// the deity stays identifiable (KERAUNOS->Zeus, ENOSICHTHON->Poseidon,
+// HYPERION->Helios). Internal ids are the keys.
+const GOD_NAMES = { zeus: 'Zeus', poseidon: 'Poseidon', helios: 'Helios' };
 
 const COST_LABELS = { bronze: 'Bz', silver: 'Si', gold: 'Gd', faith: 'Fa' };
 const COST_SEP = ' + '; // explicit separator, e.g. "15Si + 20Bz"

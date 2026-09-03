@@ -110,64 +110,102 @@ canvas { display: block; width: 100%; height: 100%; }
   // Force layout so video has real dimensions (iOS refuses zero-size play)
   void video.offsetHeight;
 
-  // On iOS, video won't load until a user gesture, so we allow tap immediately.
-  // play() in the gesture handler will trigger load+play in one step.
+  // File facts (verified with ffprobe): assets/fixed_intro.mp4 is H.264
+  // Constrained-Baseline L3.1, 720x1280, AAC-LC, moov BEFORE mdat (fast-start),
+  // duration 10.625s. silencedetect finds NO trailing silence — audio runs to
+  // the end — so the correct handoff is the natural 'ended' event, not any
+  // mid-file cut. Two failsafes below guarantee the game starts regardless, and
+  // a progress-aware watchdog guarantees a PLAYING video is never cut early.
 
-  // --- TAP HANDLER ---
-  layer.addEventListener('pointerdown', function() {
+  var HARD_CAP_MS = 15000; // absolute ceiling (> 10.625s + buffer): game starts no matter what
+
+  // --- TAP HANDLER: begin muted playback from the user gesture ---
+  layer.addEventListener('pointerdown', function onTap() {
     if (started) return;
     started = true;
-    // Strategy: start muted (always succeeds from gesture), then unmute immediately.
-    // Chrome rejects unmuted play() on low-engagement sites, but allows unmuting
-    // a playing video within the same user activation.
-    video.muted = true;
-    var playPromise = video.play();
     tapMsg.style.display = 'none';
-    if (playPromise && playPromise.then) {
-      playPromise.then(function() {
-        // Unmute now — still within the user activation microtask chain
+    // Muted play() always succeeds from a gesture; unmute inside the same
+    // activation so the narration is audible where the browser allows it.
+    video.muted = true;
+    var p = video.play();
+    if (p && p.then) {
+      p.then(function() {
         video.muted = false;
-        updateDebugInfo('video playing, unmuted');
+        updateDebugInfo('playing');
+        armWatchdog(); // only watch progress once playback has actually begun
       }).catch(function(err) {
-        updateDebugInfo('play() failed entirely: ' + err.name);
+        // Could not play at all (autoplay refusal, decode failure, etc.) —
+        // the game must start regardless.
+        updateDebugInfo('play() rejected: ' + err.name);
         startGame();
       });
     } else {
-      // Older browser, no promise — just unmute
       video.muted = false;
+      armWatchdog();
     }
-    // Failsafe — ONLY start the game early if the video genuinely failed to
-    // begin playing. We check playback PROGRESS at 4s: if it's still stuck near
-    // the start (paused / no advance), the video didn't play, so hand off.
-    // If it IS playing we leave it alone so the full narration (~10.5s) is heard
-    // to the end — previously this fired unconditionally at 5s and cut the
-    // opening line off mid-sentence at "According to...".
-    setTimeout(function() {
-      if (gameStarted) return;
-      var stuck = video.paused || video.currentTime < 0.3 || video.readyState < 2;
-      if (stuck) {
-        updateDebugInfo('FAILSAFE: video stuck');
-        startGame();
-      }
-    }, 4000);
   });
 
-  video.addEventListener('ended', startGame);
-  // Narration runs to ~10.5s (file is 10.6s). Let video play to end naturally.
-  // No early timeupdate transition — the 'ended' event above handles handoff.
+  // Normal transition: the video played through to its end.
+  video.addEventListener('ended', function() {
+    updateDebugInfo('ended');
+    startGame();
+  });
+
+  // Any hard media error -> start the game (never block on a broken file).
   video.addEventListener('error', function() {
     updateDebugInfo('video error');
     startGame();
   });
-  // If video stalls for too long, start the game
-  video.addEventListener('stalled', function() {
-    updateDebugInfo('video stalled');
-    setTimeout(function() { if (!gameStarted) startGame(); }, 3000);
-  });
 
-  // Skip by tapping during playback
+  // Progress-aware watchdog: instead of a blind timer that can cut a playing
+  // video (the old 4s "stuck" check and the 3s 'stalled' handler both could),
+  // we poll currentTime. We only hand off early if the video has genuinely
+  // STOPPED advancing for a while (readiness/stall failure). A steadily
+  // advancing video is left alone to reach 'ended'. The hard cap is the final
+  // backstop so the game always starts.
+  var watchStart = 0;
+  var lastTime = -1;
+  var stalledFor = 0;
+  var watchdog = null;
+  function armWatchdog() {
+    if (watchdog) return;
+    watchStart = Date.now();
+    lastTime = video.currentTime;
+    watchdog = setInterval(function() {
+      if (gameStarted) { clearInterval(watchdog); return; }
+      var t = video.currentTime;
+      var advanced = t > lastTime + 0.05;
+      if (advanced) { stalledFor = 0; lastTime = t; }
+      else { stalledFor += 250; }
+      // Never advanced past the very start within 4s => it never really played.
+      var neverStarted = (t < 0.3 && Date.now() - watchStart > 4000);
+      // Was playing but has been frozen for >3s mid-clip => stalled buffer.
+      var frozenMidClip = (t >= 0.3 && stalledFor >= 3000);
+      // Absolute ceiling regardless of state.
+      var pastCap = (Date.now() - watchStart > HARD_CAP_MS);
+      if (neverStarted || frozenMidClip || pastCap) {
+        updateDebugInfo('FAILSAFE: ' + (pastCap ? 'cap' : neverStarted ? 'never-started' : 'frozen'));
+        clearInterval(watchdog);
+        startGame();
+      }
+    }, 250);
+  }
+
+  // Absolute backstop even if the tap's play() promise never settles (some
+  // mobile browsers): if playback hasn't begun a while after the first tap,
+  // start the game so recording is never blocked on a dead video.
+  layer.addEventListener('pointerdown', function armHardCap() {
+    setTimeout(function() {
+      if (!gameStarted && (video.paused || video.currentTime < 0.3)) {
+        updateDebugInfo('FAILSAFE: no-playback backstop');
+        startGame();
+      }
+    }, HARD_CAP_MS);
+  }, { once: true });
+
+  // Skip by tapping DURING playback (second tap onward), once it's actually rolling.
   video.addEventListener('pointerdown', function(e) {
-    if (started && !video.ended && !gameStarted) {
+    if (started && video.currentTime > 0.3 && !video.ended && !gameStarted) {
       e.stopPropagation();
       video.pause();
       startGame();
