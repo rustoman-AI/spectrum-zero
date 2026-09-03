@@ -195,11 +195,11 @@ export function updateCraftingTray() {
     const cxc = x + btnW / 2;
     const iconTint = (affordable || zeusGlow) ? '#ffffff' : '#888888';
     const hasIcon = (item.id === 'zeus' || item.id === 'helios' || item.id === 'poseidon');
-    // God abilities: icon (top), the Greek epithet as the main label, then a
-    // SMALLER god-name line beneath it (so a player who doesn't know the epithet
-    // still sees Zeus / Poseidon / Helios), then the cost. Icon is drawn a touch
-    // smaller (s=6) to open room for the extra line inside the 40px button.
-    // Non-ability items keep the classic name (y~13) + cost (y~27) layout.
+    // God abilities: icon (top), the GOD'S NAME as the main label (instantly
+    // recognisable — Zeus/Poseidon/Helios), then a SMALLER Greek-epithet line
+    // beneath it as flavour (Keraunos/Enosichthon/Hyperion). The recognisable
+    // name carries the button; the epithet reads as lore underneath. Icon is a
+    // touch smaller (s=6) to open room. Non-god items keep name(y13)+cost(y27).
     if (hasIcon) {
       drawAbilityIcon(item.id, cxc, 7, 6, iconTint);
     }
@@ -210,7 +210,9 @@ export function updateCraftingTray() {
     trayCtx.shadowBlur = 0;
     trayCtx.shadowColor = 'transparent';
 
-    // Main label (Greek epithet for gods). Wipe the band first so nothing ghosts.
+    // Main label: god name for gods (POSEIDON is the widest at ~38px in 8px
+    // monospace, well inside the ~102px button), else the item's own label.
+    const mainLabel = (hasIcon && GOD_NAMES[item.id]) ? GOD_NAMES[item.id] : item.label;
     const nameY = hasIcon ? 18 : 13;
     trayCtx.fillStyle = bgColour;
     trayCtx.fillRect(x + 1, nameY - 8, btnW - 2, 11);
@@ -218,17 +220,17 @@ export function updateCraftingTray() {
     trayCtx.fillStyle = (affordable || zeusGlow) ? '#ffffff' : '#777777';
     trayCtx.font = 'bold 8px monospace';
     trayCtx.textAlign = 'center';
-    trayCtx.fillText(item.label, cxc, nameY);
+    trayCtx.fillText(mainLabel, cxc, nameY);
 
-    // Smaller god-name line under the epithet (gods only), so Zeus/Poseidon/
-    // Helios stay visible in the interface alongside Keraunos/Enosichthon/Hyperion.
-    if (hasIcon && GOD_NAMES[item.id]) {
-      const godY = 25;
+    // Smaller Greek-epithet line under the god name (gods only) — the mythology
+    // as flavour beneath the instantly-legible name.
+    if (hasIcon && EPITHETS[item.id]) {
+      const epiY = 25;
       trayCtx.fillStyle = bgColour;
-      trayCtx.fillRect(x + 1, godY - 6, btnW - 2, 7);
+      trayCtx.fillRect(x + 1, epiY - 6, btnW - 2, 7);
       trayCtx.fillStyle = (affordable || zeusGlow) ? '#c9c2b0' : '#6a6658';
       trayCtx.font = '6px monospace';
-      trayCtx.fillText(GOD_NAMES[item.id], cxc, godY);
+      trayCtx.fillText(EPITHETS[item.id], cxc, epiY);
     }
 
     // Cost line — but ONLY when the button is NOT on cooldown. During cooldown
@@ -438,10 +440,12 @@ function drawAbilityIcon(id, cx, cy, s, col) {
   trayCtx.restore();
 }
 
-// God behind each Greek epithet, shown as a small second line on the button so
-// the deity stays identifiable (KERAUNOS->Zeus, ENOSICHTHON->Poseidon,
-// HYPERION->Helios). Internal ids are the keys.
-const GOD_NAMES = { zeus: 'Zeus', poseidon: 'Poseidon', helios: 'Helios' };
+// God name (the instantly-recognisable MAIN label) and Greek epithet (the small
+// flavour line beneath) per ability id. The god name carries the button; the
+// epithet reads as lore underneath. God names all-caps to match the tray's
+// label style; epithets mixed-case so they read as a name, not a shout.
+const GOD_NAMES = { zeus: 'ZEUS', poseidon: 'POSEIDON', helios: 'HELIOS' };
+const EPITHETS  = { zeus: 'Keraunos', poseidon: 'Enosichthon', helios: 'Hyperion' };
 
 const COST_LABELS = { bronze: 'Bz', silver: 'Si', gold: 'Gd', faith: 'Fa' };
 const COST_SEP = ' + '; // explicit separator, e.g. "15Si + 20Bz"

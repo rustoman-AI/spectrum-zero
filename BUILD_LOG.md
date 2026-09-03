@@ -1008,3 +1008,18 @@ Applied the drip cut in `foundry.js` (`min(burning,4) * 0.08 * dt`). Helios fait
 **Against the targets:** casual reachable ~1min ✓; aggressive "stays under six" — the FAITH-funded repeats are 6, total-with-openers is 8 (you said leave it if high, so left). committed "near four": the FAITH-gated repeats are exactly **4**; counting the two bronze openers makes the raw total 6. Note the model is an UPPER BOUND — it spends Faith the instant it can, never misses a Helios window, keeps 3 ships burning the entire run; a real committed player lands lower. I did not tune further to force the total to read 4, because that would mean re-touching the price/Helios you've settled, and the honest faith-gated number is already on target.
 
 **Verified:** build 302.3 KB exit 0, luminance gate green, rotation 11/11, smoke 29/29. 0.08 drip confirmed in the bundle. Sim script deleted.
+
+---
+
+## 2026-08-25 — God buttons: swap lines — god name is the main label, epithet the small line
+
+Reversed the two lines on the god ability buttons (same type sizes + positions, just which string goes where):
+- Main label (bold 8px, y18): the GOD NAME — ZEUS / POSEIDON / HELIOS (all-caps to match tray style).
+- Small line (6px, y25): the Greek epithet as flavour — Keraunos / Enosichthon / Hyperion (mixed-case so it reads as a name).
+Implemented via `GOD_NAMES` (now the main label) + a new `EPITHETS` map (the small line); `mainLabel` picks the god name for gods, else the item's own label. Layout/positions unchanged.
+
+**Width confirmed at the larger size:** widest god name POSEIDON (8 chars) ≈ 38px at bold 8px monospace, inside the worst-case ~102px button (512/5) with ~30px margin per side; ZEUS/HELIOS shorter. Epithet line (Enosichthon, 11 chars ≈ 40px at 6px) also fits. Text is also clipped to the button cell as a safety net. So POSEIDON fits fine at the promoted size.
+
+**Epithet + lore sentence — no surface exists yet (reported, not built):** swept the code — there is NO ability tooltip, description panel, or cast-time text line anywhere (the only text surfaces are the shop tray buttons, the altar labels, the start-of-match tutorial banner which is full with the 3 control hints, and the win/defeat card). So the epithet lives on the button's small line for now. A cast-time lore line like "KERAUNOS, the thunderbolt the Cyclopes forged for Zeus" would be NET-NEW UI (a fired-power banner) — I did not build it unprompted this pass. Say the word and I'll add a brief lore flash when each power fires (or a tooltip), which is the natural home for the sentence.
+
+**Verified:** build 302.7 KB exit 0, luminance gate green, rotation 11/11, smoke 29/29. Swap confirmed in the bundle.
