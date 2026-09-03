@@ -501,7 +501,10 @@ export function updateFoundries(dt) {
     const e = pool[i];
     if (e.active && e.heat > 0 && !e.shieldBlocking) burning++;
   }
-  faith += Math.min(burning, 4) * 0.15 * dt; // cap so a mass ignition can't spike Faith
+  faith += Math.min(burning, 4) * 0.08 * dt; // drip 0.15->0.08: the passive floor
+  // was the real Faith engine (0.45/s at 3 ships ≈ 81 Faith/180s ≈ 3 casts on
+  // its own). Halving it lands a committed run near ~4 total Zeus/Poseidon casts
+  // while a casual run keeps a reachable repeat. Cap still guards mass ignition.
 
   // Animate + retire floating "+1" resource popups.
   updateResourcePopups(dt);

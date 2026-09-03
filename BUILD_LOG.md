@@ -993,3 +993,18 @@ Applied exactly as requested: `GOD_ABILITIES.helios.faithGain` 15 -> 8; Zeus rep
 **Helios flavour check:** +8 Faith over a 5s flare is +1.6/s — still a noticeable trickle, but the flare's STUN (4s) and shield-plate burn are unchanged and remain the reason to cast it. Faith is now clearly a bonus, not the point, which matches your intent. It does not feel pointless — the stun/armour-burn are untouched.
 
 **Verified:** build 302.1 KB exit 0, luminance gate green, rotation 11/11, smoke 29/29. Values confirmed in the bundle (faithGain 8, faith 25/gold 5, faith 30/gold 8). Sim scripts deleted.
+
+---
+
+## 2026-08-25 — Faith: drip 0.15 -> 0.08 (the real engine), Helios 8 + repeats 25/30 kept
+
+Applied the drip cut in `foundry.js` (`min(burning,4) * 0.08 * dt`). Helios faithGain stays 8; Zeus repeat 25 Faith, Poseidon 30; openers unchanged.
+
+**Same table, re-run (total Zeus+Poseidon activations, bronze openers INCLUDED):**
+- CASUAL (2 burn): total **4** (3 zeus, 1 pos), faith-repeats 2, first Zeus opener @21s, **first faith repeat @64s** — reachable around the one-minute mark. ✓ (matches Sasha's actual complaint being fixed)
+- COMMITTED (3 burn): total **6** (5 zeus, 1 pos), **faith-funded repeats 4**, first repeat @42s. The faith-gated part is exactly 4; total is 6 with the two bronze openers.
+- AGGRESSIVE (4 burn): total **8**, faith-repeats 6. Left as-is per instruction (sustaining 4 fires for 3 min earns it).
+
+**Against the targets:** casual reachable ~1min ✓; aggressive "stays under six" — the FAITH-funded repeats are 6, total-with-openers is 8 (you said leave it if high, so left). committed "near four": the FAITH-gated repeats are exactly **4**; counting the two bronze openers makes the raw total 6. Note the model is an UPPER BOUND — it spends Faith the instant it can, never misses a Helios window, keeps 3 ships burning the entire run; a real committed player lands lower. I did not tune further to force the total to read 4, because that would mean re-touching the price/Helios you've settled, and the honest faith-gated number is already on target.
+
+**Verified:** build 302.3 KB exit 0, luminance gate green, rotation 11/11, smoke 29/29. 0.08 drip confirmed in the bundle. Sim script deleted.
